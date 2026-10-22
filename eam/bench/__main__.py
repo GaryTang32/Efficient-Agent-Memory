@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--models-config", default=None)
         p.add_argument("--region", default=None)
         p.add_argument("--out", default=None)
+        p.add_argument("--workers", type=int, default=1, help="concurrent runs (useful for slow backends)")
 
     p_run = sub.add_parser("run", help="run technique specs on one task family")
     p_run.add_argument("--task", required=True)
@@ -69,7 +70,8 @@ def main(argv: list[str] | None = None) -> None:
         plan = {k: v for k, v in SUITES[args.name].items() if not args.only or k in args.only}
     out = args.out or f"results/{args.cmd}-{args.backend}-{args.model}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
     rows = run_suite(plan, backend=args.backend, model_key=args.model, aux_key=args.aux_model, n=args.n,
-                     seed=args.seed, out=out, models_path=args.models_config, region=args.region)
+                     seed=args.seed, out=out, models_path=args.models_config, region=args.region,
+                     workers=args.workers)
     print()
     print(markdown_table(rows))
     print(f"\nrows written to {out}")

@@ -27,4 +27,11 @@ COMBINED = {
 
 SMOKE = {family: specs[:3] for family, specs in INDIVIDUAL.items()}
 
-SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE}
+# First real comparison (phase 1, each method alone) on the deep sequential task. `cache_layout` is omitted
+# because the Claude Code CLI route places cache breakpoints itself (it equals `full` there); add it on Bedrock.
+# turn_control limits come from `calibrate` on this suite's `full` rows.
+REAL_V1 = {
+    "chain_hunt": ["full", "obs_mask", "agentdiet", "folding", "resum:max_context_k=16"],
+}
+
+SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1}

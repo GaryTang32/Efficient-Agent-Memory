@@ -57,3 +57,4 @@ class TaskInstance:
     sessions: list[str] = field(default_factory=list)  # earlier sessions (multi-session tasks)
     system_prompt: str | None = None
     max_steps: int = 30
+    score: Callable[[str], float] | None = None  # partial credit in [0, 1]; defaults to check()

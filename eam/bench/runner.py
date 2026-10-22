@@ -53,6 +53,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "model": model.key,
         "aux_model": aux_model.key,
         "success": bool(res.finished and inst.check(res.answer)),
+        "score": (inst.score(res.answer) if inst.score else float(inst.check(res.answer))) if res.finished else 0.0,
         "finished": res.finished,
         "steps": res.steps,
         "cost_usd": summary["cost_usd"],
@@ -73,33 +74,60 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
 
 def run_suite(families_specs: dict[str, list[str]], *, backend: str, model_key: str, aux_key: str | None,
               n: int, seed: int, out: str | Path, models_path: str | None = None, region: str | None = None,
-              task_kwargs: dict[str, dict[str, Any]] | None = None, echo: bool = True) -> list[dict[str, Any]]:
+              task_kwargs: dict[str, dict[str, Any]] | None = None, echo: bool = True,
+              workers: int = 1) -> list[dict[str, Any]]:
+    """Run every (task instance × spec). With workers > 1, runs execute concurrently (each run is independent:
+    own client, meter and technique instances), which matters for slow backends such as the Claude Code CLI."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
     models = load_models(models_path)
     model = models[model_key]
     aux = models[aux_key] if aux_key else model
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    rows = []
-    with out.open("a") as fh:
-        for family, specs in families_specs.items():
-            gen = FAMILIES[family]
-            for i in range(n):
-                inst = gen(seed + i, **(task_kwargs or {}).get(family, {}))
-                for spec in specs:
-                    row = run_instance(inst, spec, backend=backend, model=model, aux_model=aux, models=models,
-                                       region=region)
-                    fh.write(json.dumps(row) + "\n")
-                    fh.flush()
-                    rows.append(row)
-                    if echo:
-                        print(f"{family:22s} {inst.instance_id:14s} {spec:40s} "
-                              f"{'OK ' if row['success'] else 'FAIL'} ${row['cost_usd']:.4f} "
-                              f"steps={row['steps']} hit={row['cache_hit_rate']:.2f}", flush=True)
-    return rows
+    jobs = []
+    for family, specs in families_specs.items():
+        gen = FAMILIES[family]
+        for i in range(n):
+            for spec in specs:
+                jobs.append((family, seed + i, spec))
+    lock = threading.Lock()
+    rows: list[dict[str, Any]] = []
+
+    def one(job):
+        family, s, spec = job
+        inst = FAMILIES[family](s, **(task_kwargs or {}).get(family, {}))
+        try:
+            row = run_instance(inst, spec, backend=backend, model=model, aux_model=aux, models=models, region=region)
+        except Exception as exc:  # keep the suite going; record the failure
+            row = {"family": family, "instance": inst.instance_id, "spec": spec, "backend": backend,
+                   "model": model.key, "error": f"{type(exc).__name__}: {exc}"[:500]}
+        with lock:
+            with out.open("a") as fh:
+                fh.write(json.dumps(row) + "\n")
+            rows.append(row)
+            if echo:
+                if "error" in row:
+                    print(f"{family:22s} {row['instance']:14s} {spec:40s} ERROR {row['error'][:80]}", flush=True)
+                else:
+                    print(f"{family:22s} {row['instance']:14s} {spec:40s} "
+                          f"{'OK ' if row['success'] else 'FAIL'} score={row['score']:.2f} ${row['cost_usd']:.4f} "
+                          f"steps={row['steps']} hit={row['cache_hit_rate']:.2f}", flush=True)
+        return row
+
+    if workers <= 1:
+        for job in jobs:
+            one(job)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for fut in as_completed([pool.submit(one, j) for j in jobs]):
+                fut.result()
+    return [r for r in rows if "error" not in r]
 
 
 def load_rows(paths: Iterable[str | Path]) -> list[dict[str, Any]]:
     rows = []
     for p in paths:
         rows.extend(json.loads(line) for line in Path(p).read_text().splitlines() if line.strip())
-    return rows
+    return [r for r in rows if "error" not in r]
