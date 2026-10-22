@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import time
 
-from eam.bench.experiments import SUITES
+from eam.bench.experiments import SUITE_TASK_KWARGS, SUITES
 from eam.bench.report import calibrate, markdown_table
 from eam.bench.runner import load_rows, run_suite
 from eam.llm.routes import ROUTES
@@ -69,7 +69,9 @@ def main(argv: list[str] | None = None) -> None:
     else:
         plan = {k: v for k, v in SUITES[args.name].items() if not args.only or k in args.only}
     out = args.out or f"results/{args.cmd}-{args.backend}-{args.model}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
+    task_kwargs = SUITE_TASK_KWARGS.get(args.name, {}) if args.cmd == "suite" else {}
     rows = run_suite(plan, backend=args.backend, model_key=args.model, aux_key=args.aux_model, n=args.n,
+                     task_kwargs=task_kwargs,
                      seed=args.seed, out=out, models_path=args.models_config, region=args.region,
                      workers=args.workers)
     print()

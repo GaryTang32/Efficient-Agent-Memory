@@ -43,4 +43,9 @@ REAL_V2 = {
                      "fs_workspace+obs_mask", "fs_workspace+resum:max_context_k=40"],
 }
 
-SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1, "real_v2": REAL_V2}
+SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1, "real_v2": REAL_V2,
+          "real_v2_aware": REAL_V2}
+
+# Task settings per suite. real_v2 = "unaware" (the papers' setting: the harness silently enforces the window);
+# real_v2_aware = the agent is told the limit and sees a context gauge each step.
+SUITE_TASK_KWARGS = {"real_v2_aware": {"ledger_audit": {"disclose_limit": True}}}

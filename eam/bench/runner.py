@@ -37,9 +37,11 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     t0 = time.perf_counter()
     rewrites, events = 0, Counter()
     if inst.context_limit:
-        common["system_prompt"] = (common["system_prompt"] + f"\n\nContext window: your conversation can hold at most "
-                                   f"{inst.context_limit:,} tokens in total. If it grows beyond that, the task fails.")
         common["context_limit"] = inst.context_limit
+        common["context_gauge"] = inst.disclose_limit
+        if inst.disclose_limit:
+            common["system_prompt"] = (common["system_prompt"] + f"\n\nContext window: your conversation can hold at "
+                                       f"most {inst.context_limit:,} tokens in total. If it grows beyond that, the task fails.")
     for session in inst.sessions:  # earlier sessions of multi-session tasks: costs count, answers don't
         r = run_agent(session, max_steps=inst.max_steps, final_marker=None, **common)
         rewrites += r.history_rewrites
@@ -79,6 +81,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "round_scores": round_scores,
         "round_answers": round_answers,
         "overflow": events.get("context_overflow", 0) > 0,
+        "limit_disclosed": inst.disclose_limit if inst.context_limit else None,
         "finished": res.finished,
         "steps": res.steps,
         "cost_usd": summary["cost_usd"],

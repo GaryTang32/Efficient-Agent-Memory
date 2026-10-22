@@ -118,10 +118,6 @@ def run_agent(
         if ctx.stop_reason:
             break
 
-        snapshot = [_fingerprint(m) for m in ctx.messages]
-        if prev_snapshot and snapshot[: len(prev_snapshot)] != prev_snapshot:
-            rewrites += 1  # earlier context changed => any cached prefix past that point is lost
-            ctx.log("history_rewrite")
 
         req = Request(
             model=ctx.model,
@@ -140,6 +136,10 @@ def run_agent(
             used = int(estimate * token_ratio)
             ctx.messages[-1]["content"].append({"text": GAUGE.format(used=used, limit=context_limit)})
             estimate = estimate_request_tokens(req)
+        snapshot = [_fingerprint(m) for m in ctx.messages]
+        if prev_snapshot and snapshot[: len(prev_snapshot)] != prev_snapshot:
+            rewrites += 1  # earlier context changed => any cached prefix past that point is lost
+            ctx.log("history_rewrite")
         if context_limit and estimate * token_ratio > context_limit:
             ctx.stop_reason = "context_overflow"  # what a real API does when the window is exceeded
             ctx.log("context_overflow", tokens=int(estimate * token_ratio), limit=context_limit, when="before_call")

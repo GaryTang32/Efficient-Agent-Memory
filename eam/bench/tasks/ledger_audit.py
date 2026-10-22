@@ -69,8 +69,8 @@ def _vendor_value(answer: str, vendor: str, value: float) -> bool:
 
 
 def generate(seed: int, n_ledgers: int = 16, n_refund_files: int = 8, ledger_tokens: int = 4000,
-             refund_tokens: int = 3500, context_limit: int = 48_000, relevant_per_file: tuple[int, int] = (1, 2)
-             ) -> TaskInstance:
+             refund_tokens: int = 3500, context_limit: int = 48_000, relevant_per_file: tuple[int, int] = (1, 2),
+             disclose_limit: bool = False) -> TaskInstance:
     rng = random.Random(seed)
     targets = rng.sample(VENDORS, 5)
     others = [v for v in VENDORS if v not in targets]
@@ -232,5 +232,5 @@ def generate(seed: int, n_ledgers: int = 16, n_refund_files: int = 8, ledger_tok
     return TaskInstance(
         family="ledger_audit", instance_id=f"ledger-{seed}", prompt=rounds[-1], tools=tools,
         check=lambda a: False, gold=gold, oracle=oracle, max_steps=60,
-        rounds=rounds, round_score=score_round, context_limit=context_limit,
+        rounds=rounds, round_score=score_round, context_limit=context_limit, disclose_limit=disclose_limit,
     )
