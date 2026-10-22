@@ -75,7 +75,7 @@ class AgentContext:
             tag=f"aux:{purpose}",
         )
         resp = self.llm.converse(req)
-        self.meter.record(req.tag, self.aux_model, resp.usage, resp.latency_ms)
+        self.meter.record(req.tag, self.aux_model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
         return resp.text
 
     def estimate_context_tokens(self) -> int:

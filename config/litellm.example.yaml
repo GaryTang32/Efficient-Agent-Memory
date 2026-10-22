@@ -1,0 +1,35 @@
+# Option (a): LiteLLM proxy in front of Amazon Bedrock.
+# Copy to config/litellm.yaml, check every model id against the Bedrock console for your region, then:
+#   pip install 'litellm[proxy]'
+#   scripts/start_litellm.sh            # serves http://localhost:4000/v1
+# Repos then use OPENAI_BASE_URL=http://localhost:4000/v1 and OPENAI_API_KEY=$LITELLM_API_KEY.
+# The proxy signs Bedrock calls with the normal AWS credential chain (env vars, ~/.aws, SSO, instance role).
+model_list:
+  - model_name: sonnet
+    litellm_params:
+      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      aws_region_name: os.environ/AWS_REGION
+  - model_name: haiku
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_region_name: os.environ/AWS_REGION
+  # Open-weight models served by Bedrock — fill in the exact ids from the console.
+  - model_name: deepseek
+    litellm_params:
+      model: bedrock/converse/<deepseek-v3.2-model-id>
+      aws_region_name: os.environ/AWS_REGION
+  - model_name: qwen
+    litellm_params:
+      model: bedrock/converse/<qwen3-model-id>
+      aws_region_name: os.environ/AWS_REGION
+  # Embeddings for memory repos (served on /v1/embeddings).
+  - model_name: titan-embed
+    litellm_params:
+      model: bedrock/amazon.titan-embed-text-v2:0
+      aws_region_name: os.environ/AWS_REGION
+
+litellm_settings:
+  drop_params: true   # silently drop OpenAI params a Bedrock model does not support
+
+general_settings:
+  master_key: os.environ/LITELLM_API_KEY

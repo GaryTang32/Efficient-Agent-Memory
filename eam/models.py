@@ -29,10 +29,15 @@ class ModelProfile:
     min_cache_tokens: int = 1024
     context_window: int = 200_000
     thinking_fields: dict[str, Any] | None = field(default=None, hash=False)
+    # Model name to use on each non-Converse route, e.g. {"claude-cli": "haiku", "litellm": "haiku"}.
+    route_ids: dict[str, str] | None = field(default=None, hash=False)
 
     @property
     def supports_cache(self) -> bool:
         return self.price_cache_read is not None
+
+    def id_for(self, route: str) -> str:
+        return (self.route_ids or {}).get(route, self.model_id)
 
 
 # Offline profiles for the mock backend. Prices mirror a typical

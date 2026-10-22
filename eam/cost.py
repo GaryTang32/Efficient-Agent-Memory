@@ -30,8 +30,11 @@ class CallRecord:
 class CostMeter:
     records: list[CallRecord] = field(default_factory=list)
 
-    def record(self, tag: str, model: ModelProfile, usage: Usage, latency_ms: float) -> None:
-        self.records.append(CallRecord(tag, model.key, usage, usage_cost(usage, model), latency_ms))
+    def record(self, tag: str, model: ModelProfile, usage: Usage, latency_ms: float,
+               reported_cost: float | None = None) -> None:
+        # Prefer the backend's own figure when it reports one (e.g. Claude Code's total_cost_usd).
+        cost = reported_cost if reported_cost is not None else usage_cost(usage, model)
+        self.records.append(CallRecord(tag, model.key, usage, cost, latency_ms))
 
     @property
     def usage(self) -> Usage:

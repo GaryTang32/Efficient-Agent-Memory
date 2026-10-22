@@ -116,7 +116,7 @@ def run_agent(
             req = tech.render(ctx, req)
 
         resp = llm.converse(req)
-        ctx.meter.record(tag, req.model, resp.usage, resp.latency_ms)
+        ctx.meter.record(tag, req.model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
         ctx.last_prompt_tokens = resp.usage.prompt_tokens
         ctx.peak_prompt_tokens = max(ctx.peak_prompt_tokens, ctx.last_prompt_tokens)
         prev_snapshot = snapshot + [_fingerprint(resp.message)]

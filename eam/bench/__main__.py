@@ -20,6 +20,7 @@ import time
 from eam.bench.experiments import SUITES
 from eam.bench.report import markdown_table
 from eam.bench.runner import load_rows, run_suite
+from eam.llm.routes import ROUTES
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -27,7 +28,8 @@ def main(argv: list[str] | None = None) -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def common(p):
-        p.add_argument("--backend", default="mock", choices=["mock", "bedrock"])
+        p.add_argument("--backend", default="mock", choices=[*ROUTES, "bedrock"],
+                       help="how to reach the model (see eam/llm/routes.py); bedrock = converse")
         p.add_argument("--model", default="mock-strong")
         p.add_argument("--aux-model", default=None, help="model for summaries/extraction (default: --model)")
         p.add_argument("--n", type=int, default=2, help="task instances per family")

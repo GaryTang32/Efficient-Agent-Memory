@@ -98,6 +98,7 @@ class Response:
     usage: Usage
     latency_ms: float
     model_key: str
+    reported_cost_usd: float | None = None  # set when the backend reports its own cost (Claude Code CLI)
 
     @property
     def text(self) -> str:

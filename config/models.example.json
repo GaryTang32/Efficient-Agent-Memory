@@ -1,39 +1,86 @@
 {
-  "_readme": "Copy to config/models.json and verify every value against the Bedrock console and pricing page for your region. Prices are USD per 1M tokens. Set price_cache_read/price_cache_write to null for models without prompt caching on Bedrock. Entries whose model_id starts with '<' are skipped.",
+  "_readme": "Copy to config/models.json and verify every value against the Bedrock console and pricing page for your region. Prices are USD per 1M tokens. Set price_cache_read/price_cache_write to null for models without prompt caching on Bedrock. Entries whose model_id starts with '<' are skipped. route_ids gives the model name per non-Converse route (litellm = model_name in config/litellm.yaml; claude-cli = a Claude Code --model alias). cc-* profiles run through the Claude Code CLI: their cost is the total_cost_usd Claude Code reports, so the prices here are only placeholders (0 = caching supported).",
   "models": {
     "sonnet": {
       "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-      "price_in": 3.0, "price_out": 15.0,
-      "price_cache_write": 3.75, "price_cache_read": 0.30,
-      "min_cache_tokens": 1024, "context_window": 200000,
-      "thinking_fields": {"thinking": {"type": "enabled", "budget_tokens": 2048}}
+      "price_in": 3.0,
+      "price_out": 15.0,
+      "price_cache_write": 3.75,
+      "price_cache_read": 0.3,
+      "min_cache_tokens": 1024,
+      "context_window": 200000,
+      "thinking_fields": {
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 2048
+        }
+      },
+      "route_ids": {
+        "litellm": "sonnet"
+      }
     },
     "haiku": {
       "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-      "price_in": 1.0, "price_out": 5.0,
-      "price_cache_write": 1.25, "price_cache_read": 0.10,
-      "min_cache_tokens": 2048, "context_window": 200000
+      "price_in": 1.0,
+      "price_out": 5.0,
+      "price_cache_write": 1.25,
+      "price_cache_read": 0.1,
+      "min_cache_tokens": 2048,
+      "context_window": 200000,
+      "route_ids": {
+        "litellm": "haiku"
+      }
     },
     "kimi": {
       "_note": "Kimi K3 is reported to support explicit prompt caching on Bedrock; fill in id and cache prices.",
       "model_id": "<fill-in>",
-      "price_in": 3.0, "price_out": 15.0,
-      "price_cache_write": null, "price_cache_read": null
+      "price_in": 3.0,
+      "price_out": 15.0,
+      "price_cache_write": null,
+      "price_cache_read": null
     },
     "deepseek": {
       "model_id": "<fill-in: DeepSeek V3.2 model id>",
-      "price_in": 0.0, "price_out": 0.0,
-      "price_cache_write": null, "price_cache_read": null
+      "price_in": 0.0,
+      "price_out": 0.0,
+      "price_cache_write": null,
+      "price_cache_read": null
     },
     "qwen": {
       "model_id": "<fill-in: Qwen3 model id>",
-      "price_in": 0.0, "price_out": 0.0,
-      "price_cache_write": null, "price_cache_read": null
+      "price_in": 0.0,
+      "price_out": 0.0,
+      "price_cache_write": null,
+      "price_cache_read": null
     },
     "glm": {
       "model_id": "<fill-in: GLM 4.7 model id>",
-      "price_in": 0.0, "price_out": 0.0,
-      "price_cache_write": null, "price_cache_read": null
+      "price_in": 0.0,
+      "price_out": 0.0,
+      "price_cache_write": null,
+      "price_cache_read": null
+    },
+    "cc-sonnet": {
+      "model_id": "sonnet",
+      "price_in": 0.0,
+      "price_out": 0.0,
+      "price_cache_write": 0.0,
+      "price_cache_read": 0.0,
+      "route_ids": {
+        "claude-cli": "sonnet",
+        "gateway": "cc-sonnet"
+      }
+    },
+    "cc-haiku": {
+      "model_id": "haiku",
+      "price_in": 0.0,
+      "price_out": 0.0,
+      "price_cache_write": 0.0,
+      "price_cache_read": 0.0,
+      "route_ids": {
+        "claude-cli": "haiku",
+        "gateway": "cc-haiku"
+      }
     }
   }
 }

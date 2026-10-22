@@ -13,6 +13,7 @@ from eam.bench.tasks import FAMILIES
 from eam.bench.tasks.common import TaskInstance
 from eam.cost import CostMeter
 from eam.llm.mock import MockLLM
+from eam.llm.routes import make_client
 from eam.llm.types import LLMClient
 from eam.models import ModelProfile, load_models
 from eam.store import ArtifactStore
@@ -22,11 +23,7 @@ from eam.techniques import build
 def make_llm(backend: str, inst: TaskInstance, region: str | None = None) -> LLMClient:
     if backend == "mock":
         return MockLLM(inst.oracle())
-    if backend == "bedrock":
-        from eam.llm.bedrock import BedrockClient
-
-        return BedrockClient(region=region)
-    raise ValueError(f"unknown backend '{backend}'")
+    return make_client(backend, region=region)
 
 
 def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelProfile, aux_model: ModelProfile,
