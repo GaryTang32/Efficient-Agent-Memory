@@ -106,6 +106,7 @@ def run_agent(
         ctx.messages.append({"role": "user", "content": [{"text": "\n\n".join([ctx.task_header(), *ctx.preamble])}]})
 
     answer, finished, rewrites, nudges = "", False, 0, 0
+    token_ratio = 1.0
     prev_snapshot: list[str] = []
     step = 0
     for step in range(1, max_steps + 1):
@@ -130,12 +131,23 @@ def run_agent(
         )
         for tech in techniques:
             req = tech.render(ctx, req)
-        if context_limit and (size := estimate_request_tokens(req)) > context_limit:
+        estimate = estimate_request_tokens(req) if context_limit else 0
+        if context_limit and estimate * token_ratio > context_limit:
             ctx.stop_reason = "context_overflow"  # what a real API does when the window is exceeded
-            ctx.log("context_overflow", tokens=size, limit=context_limit)
+            ctx.log("context_overflow", tokens=int(estimate * token_ratio), limit=context_limit, when="before_call")
             break
 
         resp = llm.converse(req)
+        if context_limit:
+            # The character-based estimate undercounts dense text (numbers, ids); calibrate it with the real count,
+            # and treat a request whose real size exceeded the window as rejected.
+            if estimate:
+                token_ratio = max(1.0, resp.usage.prompt_tokens / estimate)
+            if resp.usage.prompt_tokens > context_limit:
+                ctx.meter.record(tag, req.model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
+                ctx.stop_reason = "context_overflow"
+                ctx.log("context_overflow", tokens=resp.usage.prompt_tokens, limit=context_limit, when="actual")
+                break
         ctx.meter.record(tag, req.model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
         ctx.last_prompt_tokens = resp.usage.prompt_tokens
         ctx.peak_prompt_tokens = max(ctx.peak_prompt_tokens, ctx.last_prompt_tokens)
