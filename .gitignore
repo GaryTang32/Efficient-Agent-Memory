@@ -5,3 +5,6 @@ __pycache__/
 results/
 *.egg-info/
 config/models.json
+
+# Downloaded papers (local reading copies; not redistributed)
+papers/**/*.pdf
