@@ -45,11 +45,13 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         rewrites += r.history_rewrites
         events.update(e["kind"] for e in r.events)
     round_scores: list[float] = []
+    round_answers: list[str] = []
     if inst.rounds:  # multi-round tasks: one fresh session per round; technique objects (memory) persist
         steps, peak, finished = 0, 0, True
         for k, prompt in enumerate(inst.rounds):
             r = run_agent(prompt, max_steps=inst.max_steps, **common)
             round_scores.append(inst.round_score(k, r.answer) if r.finished else 0.0)
+            round_answers.append(r.answer[:1500])
             rewrites += r.history_rewrites
             events.update(e["kind"] for e in r.events)
             steps += r.steps
@@ -75,6 +77,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "score": (sum(round_scores) / len(round_scores) if inst.rounds else
                   (inst.score(res.answer) if inst.score else float(inst.check(res.answer))) if res.finished else 0.0),
         "round_scores": round_scores,
+        "round_answers": round_answers,
         "overflow": events.get("context_overflow", 0) > 0,
         "finished": res.finished,
         "steps": res.steps,

@@ -68,10 +68,12 @@ def _vendor_value(answer: str, vendor: str, value: float) -> bool:
     return False
 
 
-def generate(seed: int, n_ledgers: int = 24, n_refund_files: int = 10, ledger_tokens: int = 4000,
-             refund_tokens: int = 3500, context_limit: int = 48_000) -> TaskInstance:
+def generate(seed: int, n_ledgers: int = 16, n_refund_files: int = 8, ledger_tokens: int = 4000,
+             refund_tokens: int = 3500, context_limit: int = 48_000, relevant_per_file: tuple[int, int] = (1, 2)
+             ) -> TaskInstance:
     rng = random.Random(seed)
     targets = rng.sample(VENDORS, 5)
+    others = [v for v in VENDORS if v not in targets]
     files: dict[str, str] = {}
     paid = {v: 0 for v in targets}
     refunds = {v: 0 for v in targets}
@@ -79,9 +81,10 @@ def generate(seed: int, n_ledgers: int = 24, n_refund_files: int = 10, ledger_to
     for m in range(1, n_ledgers + 1):
         fid = f"L-{m:02d}"
         lines = []
-        for _ in range(60):
+        hits = set(rng.sample(range(60), rng.randint(*relevant_per_file)))  # only a few lines matter per file
+        for j in range(60):
             txn += rng.randint(1, 9)
-            v = rng.choice(VENDORS)
+            v = rng.choice(targets) if j in hits else rng.choice(others)
             amt = rng.randint(50, 2500)
             if v in paid:
                 paid[v] += amt
@@ -93,8 +96,9 @@ def generate(seed: int, n_ledgers: int = 24, n_refund_files: int = 10, ledger_to
     for r in range(1, n_refund_files + 1):
         fid = f"R-{r:02d}"
         lines = []
-        for _ in range(40):
-            v = rng.choice(VENDORS)
+        hits = set(rng.sample(range(40), rng.randint(*relevant_per_file)))
+        for j in range(40):
+            v = rng.choice(targets) if j in hits else rng.choice(others)
             amt = rng.randint(10, 400)
             if v in refunds:
                 refunds[v] += amt
