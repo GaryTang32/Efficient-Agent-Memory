@@ -25,6 +25,7 @@ DEFAULT_SYSTEM = (
 )
 
 
+GAUGE = "[Context used: about {used:,} of {limit:,} tokens]"
 NUDGE = ("Your last reply contained no tool call and no final answer. Continue the task: call a tool, or give "
          "your final answer starting with '{marker}'.")
 
@@ -75,6 +76,7 @@ def run_agent(
     final_marker: str | None = "FINAL ANSWER:",
     max_nudges: int = 2,
     context_limit: int | None = None,
+    context_gauge: bool = True,
 ) -> RunResult:
     techniques = list(techniques)
     ctx = AgentContext(
@@ -132,6 +134,12 @@ def run_agent(
         for tech in techniques:
             req = tech.render(ctx, req)
         estimate = estimate_request_tokens(req) if context_limit else 0
+        if context_limit and context_gauge:
+            # Environment feedback, like the context meter real harnesses show: how full the window is right now.
+            # Appended to the newest message only, so it never rewrites cached history; identical for every technique.
+            used = int(estimate * token_ratio)
+            ctx.messages[-1]["content"].append({"text": GAUGE.format(used=used, limit=context_limit)})
+            estimate = estimate_request_tokens(req)
         if context_limit and estimate * token_ratio > context_limit:
             ctx.stop_reason = "context_overflow"  # what a real API does when the window is exceeded
             ctx.log("context_overflow", tokens=int(estimate * token_ratio), limit=context_limit, when="before_call")
