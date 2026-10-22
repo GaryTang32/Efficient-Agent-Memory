@@ -75,7 +75,8 @@ class ContextFolding(Technique):
             sub = run_agent(ctx.task, llm=ctx.llm, model=ctx.model, aux_model=ctx.aux_model, models=ctx.models,
                             env_tools=sub_tools, techniques=list(self.sub_techniques),
                             system_prompt=ctx.system_text, max_steps=self.max_sub_steps, resources=ctx.resources,
-                            meter=ctx.meter, store=ctx.store, tag="subagent", initial_messages=history)
+                            meter=ctx.meter, store=ctx.store, tag="subagent", initial_messages=history,
+                            context_limit=ctx.context_limit)
             ctx.log("folded", description=description, sub_steps=sub.steps, returned=sub.finished)
             if sub.finished and sub.answer:
                 return P.RETURNED.format(message=sub.answer)

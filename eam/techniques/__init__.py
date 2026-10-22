@@ -25,6 +25,7 @@ from eam.techniques.router import ThinkingRouter
 from eam.techniques.tiered_memory import FullCarryover, TieredMemory
 from eam.techniques.todo import TodoRecitation
 from eam.techniques.turn_control import TurnControl
+from eam.techniques.workspace import NoteWorkspace
 
 REGISTRY: dict[str, type[Technique]] = {
     # paper-faithful (official prompts / algorithms)
@@ -42,6 +43,7 @@ REGISTRY: dict[str, type[Technique]] = {
     "compression": PromptCompression,
     "iter_research": IterResearch,
     "carryover": FullCarryover,
+    "fs_workspace": NoteWorkspace,
     # provisional (ours, not yet backed by an official source)
     "tiered_memory": TieredMemory,
     "keep_last_n": KeepLastN,

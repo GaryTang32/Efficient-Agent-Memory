@@ -85,3 +85,16 @@ def test_memagent_uses_official_templates(models):
     run(models, "long_document_qa", "memagent", aux_policy=mem)
     assert seen[0].startswith(MA.TEMPLATE.split("{")[0]) and "<memory>\nNo previous memory\n</memory>" in seen[0]
     assert seen[-1].startswith(MA.TEMPLATE_FINAL.split("{")[0])
+
+
+def test_context_limit_ends_run_and_rounds_are_separate_sessions(models):
+    from eam.bench.runner import run_instance
+
+    inst = FAMILIES["ledger_audit"](0)
+    full = run_instance(inst, "full", backend="mock", model=models["mock-strong"], aux_model=models["mock-cheap"],
+                        models=models)
+    assert full["overflow"] and len(full["round_scores"]) == 3
+    ws = FAMILIES["ledger_audit"](0, context_limit=10**7)  # no limit: the mock solves it, notes carry rounds
+    row = run_instance(ws, "fs_workspace", backend="mock", model=models["mock-strong"],
+                       aux_model=models["mock-cheap"], models=models)
+    assert not row["overflow"] and row["round_scores"] == [1.0, 1.0, 1.0] and row["success"]

@@ -1,14 +1,14 @@
 import pytest
 
 from eam.agent.loop import run_agent
-from eam.bench.experiments import COMBINED, INDIVIDUAL, REAL_V1
+from eam.bench.experiments import COMBINED, INDIVIDUAL, REAL_V1, REAL_V2
 from eam.bench.runner import run_instance
 from eam.bench.tasks import FAMILIES
 from eam.llm.mock import MockLLM
 from eam.techniques import build
 from eam.techniques.tiered_memory import TieredMemory
 
-CASES = sorted({(fam, spec) for suite in (INDIVIDUAL, COMBINED, REAL_V1) for fam, specs in suite.items() for spec in specs})
+CASES = sorted({(fam, spec) for suite in (INDIVIDUAL, COMBINED, REAL_V1, REAL_V2) for fam, specs in suite.items() for spec in specs})
 
 
 @pytest.mark.parametrize("family,spec", CASES)

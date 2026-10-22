@@ -47,6 +47,16 @@ def render_converse(req: Request) -> dict[str, Any]:
     return kwargs
 
 
+def estimate_request_tokens(req: Request) -> int:
+    """Rough size of everything a request sends (tools + system + messages), for context-limit checks."""
+    from eam.tokens import estimate_block_tokens
+
+    total = sum(estimate_block_tokens(t.to_converse()) for t in req.tools)
+    total += sum(estimate_block_tokens(b) for b in req.system)
+    total += sum(estimate_block_tokens(b) for m in req.messages for b in m["content"])
+    return total
+
+
 def validate_messages(messages: list[Message], has_tools: bool) -> None:
     """Raise if Bedrock would reject the conversation shape.
 

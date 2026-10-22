@@ -13,6 +13,7 @@ from typing import Any, Iterable
 
 from eam.agent.context import AgentContext, Tool, ToolOutcome
 from eam.cost import CostMeter
+from eam.llm.render import estimate_request_tokens
 from eam.llm.types import LLMClient, Message, Request
 from eam.models import ModelProfile
 from eam.store import ArtifactStore
@@ -73,6 +74,7 @@ def run_agent(
     initial_messages: list[Message] | None = None,
     final_marker: str | None = "FINAL ANSWER:",
     max_nudges: int = 2,
+    context_limit: int | None = None,
 ) -> RunResult:
     techniques = list(techniques)
     ctx = AgentContext(
@@ -88,6 +90,7 @@ def run_agent(
         techniques=techniques,
         tag=tag,
     )
+    ctx.context_limit = context_limit
     tools = collect_tools(env_tools, techniques, ctx)
     tool_map = {t.spec.name: t for t in tools}
     # Static instructions only: the system prompt must not change between calls.
@@ -127,6 +130,10 @@ def run_agent(
         )
         for tech in techniques:
             req = tech.render(ctx, req)
+        if context_limit and (size := estimate_request_tokens(req)) > context_limit:
+            ctx.stop_reason = "context_overflow"  # what a real API does when the window is exceeded
+            ctx.log("context_overflow", tokens=size, limit=context_limit)
+            break
 
         resp = llm.converse(req)
         ctx.meter.record(tag, req.model, resp.usage, resp.latency_ms, resp.reported_cost_usd)

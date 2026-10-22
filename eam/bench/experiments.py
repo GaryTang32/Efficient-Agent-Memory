@@ -35,4 +35,12 @@ REAL_V1 = {
     "chain_hunt": ["full", "obs_mask", "agentdiet", "folding", "resum:max_context_k=16", "turn_control:limit=21"],
 }
 
-SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1}
+# Overflow + multiple rounds: 24 ledgers (~100K tokens) and 10 refund files under a 48K-token window, three
+# sessions that depend on each other. Each method alone, plus one combination (workspace for cross-round memory +
+# masking for the window) because no single method addresses both requirements.
+REAL_V2 = {
+    "ledger_audit": ["full", "obs_mask", "agentdiet", "resum:max_context_k=40", "folding", "fs_workspace",
+                     "fs_workspace+obs_mask"],
+}
+
+SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1, "real_v2": REAL_V2}

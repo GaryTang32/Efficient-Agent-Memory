@@ -56,6 +56,7 @@ class AgentContext:
     last_prompt_tokens: int = 0
     peak_prompt_tokens: int = 0
     last_tool_error: bool = False
+    context_limit: int | None = None  # simulated context window (tokens)
     system_text: str = ""  # the run's full system prompt (FoldAgent branches reuse it)
     stop_reason: str | None = None  # a technique sets this to end the run (turn limit, branch return)
     final_answer: str | None = None  # answer to report when a technique ends the run

@@ -36,12 +36,31 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
                   resources=inst.resources, meter=meter, store=store)
     t0 = time.perf_counter()
     rewrites, events = 0, Counter()
+    if inst.context_limit:
+        common["system_prompt"] = (common["system_prompt"] + f"\n\nContext window: your conversation can hold at most "
+                                   f"{inst.context_limit:,} tokens in total. If it grows beyond that, the task fails.")
+        common["context_limit"] = inst.context_limit
     for session in inst.sessions:  # earlier sessions of multi-session tasks: costs count, answers don't
         r = run_agent(session, max_steps=inst.max_steps, final_marker=None, **common)
         rewrites += r.history_rewrites
         events.update(e["kind"] for e in r.events)
-    res = run_agent(inst.prompt, max_steps=inst.max_steps, **common)
-    events.update(e["kind"] for e in res.events)
+    round_scores: list[float] = []
+    if inst.rounds:  # multi-round tasks: one fresh session per round; technique objects (memory) persist
+        steps, peak, finished = 0, 0, True
+        for k, prompt in enumerate(inst.rounds):
+            r = run_agent(prompt, max_steps=inst.max_steps, **common)
+            round_scores.append(inst.round_score(k, r.answer) if r.finished else 0.0)
+            rewrites += r.history_rewrites
+            events.update(e["kind"] for e in r.events)
+            steps += r.steps
+            peak = max(peak, r.peak_prompt_tokens)
+            finished = finished and r.finished
+        res = r
+        res.steps, res.peak_prompt_tokens, res.finished = steps, peak, finished
+        rewrites -= res.history_rewrites  # counted in the loop above
+    else:
+        res = run_agent(inst.prompt, max_steps=inst.max_steps, **common)
+        events.update(e["kind"] for e in res.events)
     summary = meter.summary()
     return {
         "family": inst.family,
@@ -52,8 +71,11 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "backend": backend,
         "model": model.key,
         "aux_model": aux_model.key,
-        "success": bool(res.finished and inst.check(res.answer)),
-        "score": (inst.score(res.answer) if inst.score else float(inst.check(res.answer))) if res.finished else 0.0,
+        "success": (all(x == 1.0 for x in round_scores) if inst.rounds else bool(res.finished and inst.check(res.answer))),
+        "score": (sum(round_scores) / len(round_scores) if inst.rounds else
+                  (inst.score(res.answer) if inst.score else float(inst.check(res.answer))) if res.finished else 0.0),
+        "round_scores": round_scores,
+        "overflow": events.get("context_overflow", 0) > 0,
         "finished": res.finished,
         "steps": res.steps,
         "cost_usd": summary["cost_usd"],

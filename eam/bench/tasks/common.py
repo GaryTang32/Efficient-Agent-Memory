@@ -58,3 +58,6 @@ class TaskInstance:
     system_prompt: str | None = None
     max_steps: int = 30
     score: Callable[[str], float] | None = None  # partial credit in [0, 1]; defaults to check()
+    rounds: list[str] = field(default_factory=list)  # multi-round tasks: one fresh session per prompt, all scored
+    round_score: Callable[[int, str], float] | None = None
+    context_limit: int | None = None  # requests above this many tokens end the run (simulated window)
