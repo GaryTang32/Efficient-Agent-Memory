@@ -31,7 +31,8 @@ SMOKE = {family: specs[:3] for family, specs in INDIVIDUAL.items()}
 # because the Claude Code CLI route places cache breakpoints itself (it equals `full` there); add it on Bedrock.
 # turn_control limits come from `calibrate` on this suite's `full` rows.
 REAL_V1 = {
-    "chain_hunt": ["full", "obs_mask", "agentdiet", "folding", "resum:max_context_k=16"],
+    # turn_control limit = 75th percentile of the cc-haiku `full` turn counts (calibrate: p25=p50=p75=21)
+    "chain_hunt": ["full", "obs_mask", "agentdiet", "folding", "resum:max_context_k=16", "turn_control:limit=21"],
 }
 
 SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1}

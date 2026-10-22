@@ -24,6 +24,10 @@ DEFAULT_SYSTEM = (
 )
 
 
+NUDGE = ("Your last reply contained no tool call and no final answer. Continue the task: call a tool, or give "
+         "your final answer starting with '{marker}'.")
+
+
 @dataclass
 class RunResult:
     answer: str
@@ -67,6 +71,8 @@ def run_agent(
     store: ArtifactStore | None = None,
     tag: str = "main",
     initial_messages: list[Message] | None = None,
+    final_marker: str | None = "FINAL ANSWER:",
+    max_nudges: int = 2,
 ) -> RunResult:
     techniques = list(techniques)
     ctx = AgentContext(
@@ -96,7 +102,7 @@ def run_agent(
     else:
         ctx.messages.append({"role": "user", "content": [{"text": "\n\n".join([ctx.task_header(), *ctx.preamble])}]})
 
-    answer, finished, rewrites = "", False, 0
+    answer, finished, rewrites, nudges = "", False, 0, 0
     prev_snapshot: list[str] = []
     step = 0
     for step in range(1, max_steps + 1):
@@ -133,6 +139,13 @@ def run_agent(
 
         uses = resp.tool_uses
         if not uses:
+            # A reply with no tool call and no final-answer marker is malformed (degenerate or truncated output).
+            # Re-prompt a bounded number of times; this rule is identical for every technique and is counted.
+            if final_marker and final_marker not in resp.text and nudges < max_nudges and tag == "main":
+                nudges += 1
+                ctx.log("nudge")
+                ctx.messages.append({"role": "user", "content": [{"text": NUDGE.format(marker=final_marker)}]})
+                continue
             answer, finished = resp.text, True
             break
 

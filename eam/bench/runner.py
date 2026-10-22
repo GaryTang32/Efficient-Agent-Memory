@@ -37,7 +37,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     t0 = time.perf_counter()
     rewrites, events = 0, Counter()
     for session in inst.sessions:  # earlier sessions of multi-session tasks: costs count, answers don't
-        r = run_agent(session, max_steps=inst.max_steps, **common)
+        r = run_agent(session, max_steps=inst.max_steps, final_marker=None, **common)
         rewrites += r.history_rewrites
         events.update(e["kind"] for e in r.events)
     res = run_agent(inst.prompt, max_steps=inst.max_steps, **common)
@@ -66,6 +66,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "wall_s": round(time.perf_counter() - t0, 2),
         "peak_prompt_tokens": res.peak_prompt_tokens,
         "history_rewrites": rewrites + res.history_rewrites,
+        "nudges": sum(1 for e in res.events if e["kind"] == "nudge"),
         "events": dict(events),
         "answer": res.answer[:500],
         "gold": inst.gold,
