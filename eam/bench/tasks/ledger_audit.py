@@ -1,7 +1,7 @@
 """Multi-round audit whose data does not fit in the context window.
 
-Round 1 (session 1): total the payments to 5 vendors across 24 long monthly ledgers (~4K tokens each).
-Round 2 (new session): 10 refund files arrive; using round-1 totals, report every vendor's net spend and the
+Round 1 (session 1): total the payments to 5 vendors across 16 long monthly ledgers (~4K tokens each).
+Round 2 (new session): 8 refund files arrive; using round-1 totals, report every vendor's net spend and the
                         vendor with the highest net.
 Round 3 (new session): apply the discount schedule to the round-2 nets; report each payable and the sum.
 

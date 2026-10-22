@@ -63,11 +63,17 @@ The report (`python -m eam.bench report <rows>`) aggregates per (task, model, sp
 - **$/success** (total cost ÷ successes);
 - mean prompt tokens, peak context, cache hit rate, rewrites, steps and LLM seconds.
 
+`python -m eam.bench.analyze` adds:
+- per-round scores;
+- overflow counts;
+- the median split of cost into agent calls and technique side calls;
+- the list of runs that errored. These are reported, never dropped silently. A run that errored for an infrastructure reason, such as a CLI timeout, is rerun and the rerun counted.
+
 Results documents report **medians** next to success counts. LLM runs have heavy-tailed costs: single runs occasionally balloon about 7× through model variance.
 
 ## 4. Models and routes
 
-See `docs/backends.md`. Results so far use the Claude Code CLI route with the `haiku` alias for both the agent and the auxiliary model.
+See `docs/backends.md`. Results so far use the Claude Code CLI route with the `haiku`, `sonnet` and `opus` aliases (`config/models.example.json`: `cc-haiku`, `cc-sonnet`, `cc-opus`). The same model serves as the agent and the auxiliary model. `scripts/run_model_comparison.sh` runs one suite on one model, and `python -m eam.bench.analyze <rows>...` produces the cross-model tables.
 
 Route-specific facts that affect interpretation:
 - **Caching:** Claude Code places one cache breakpoint at the end of the conversation (our `cachePoint`s are not applied), and adds ~1.3K tokens of fixed overhead per call.

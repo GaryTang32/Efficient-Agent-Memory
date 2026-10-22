@@ -6,12 +6,18 @@ agents that call LLMs through **Amazon Bedrock** (no self-hosted models). Goal: 
 
 - `docs/literature_review.md` — verified list of papers (venue, lab, repo, licence, Bedrock fit) and the implementation shortlist.
 - `docs/papers/` — deep-reading notes for individual papers.
+- `docs/methodology.md` — tasks, environment rules, metric definitions, procedure.
+- `docs/results/` — measured results:
+  - `2026-10-22-ledger_audit-cross-model.md` — data larger than the window, three sessions, on Haiku/Sonnet/Opus. **Headline:** no single published method solves it; a persistent workspace plus ReSum resets solves 3/3 on Sonnet and Opus, and is the cheapest per success.
+  - `2026-10-22-chain_hunt-cross-model.md` and `2026-10-22-chain_hunt-haiku-cli.md` — a long sequential trajectory.
 - `docs/backends.md` — how to run: Claude Code CLI (no Bedrock), Bedrock Converse, LiteLLM, Bedrock OpenAI-compatible endpoints, and a local gateway for third-party repos.
 - `eam/` — harness: Bedrock Converse client, offline mock backend with a prompt-cache simulator, cost meter, agent loop with technique hooks, scored sample tasks.
 - `papers/` — local PDF copies (git-ignored).
 
-Status: the harness works (offline mock; `python -m pytest`), the technique modules in `eam/techniques/` are
-provisional and are being replaced by implementations that follow the official code/prompts listed in the review.
+Status:
+- Phase 1 (each method alone) has been measured on the Claude Code CLI route.
+- The first phase-2 combinations have been measured too (see `docs/results/`).
+- Each technique carries a provenance label: official prompt/algorithm, ported, baseline, or provisional (`eam/techniques/__init__.py`).
 
 Quick start with your Claude Code CLI (no Bedrock needed):
 
