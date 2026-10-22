@@ -98,3 +98,23 @@ def test_context_limit_ends_run_and_rounds_are_separate_sessions(models):
     row = run_instance(ws, "fs_workspace", backend="mock", model=models["mock-strong"],
                        aux_model=models["mock-cheap"], models=models)
     assert not row["overflow"] and row["round_scores"] == [1.0, 1.0, 1.0] and row["success"]
+
+
+def test_step_budget_offloads_overflowing_parallel_reads(models):
+    from eam.agent.loop import run_agent
+    from eam.llm.mock import assistant, tool_use
+
+    inst = FAMILIES["ledger_audit"](0)
+    calls = {"n": 0}
+
+    def greedy(req):  # reads every ledger in one step, then stops
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return assistant(*[tool_use("open_file", {"file_id": f"L-{m:02d}"}) for m in range(1, 17)])
+        return final("FINAL ANSWER: done")
+
+    res = run_agent(inst.rounds[0], llm=MockLLM(greedy), model=models["mock-strong"], env_tools=inst.tools,
+                    step_observation_budget=6000, max_steps=3)
+    results = [b["toolResult"]["content"][0]["text"] for m in res.messages for b in m["content"] if "toolResult" in b]
+    assert sum("exceeded the per-step budget" in r for r in results) >= 14
+    assert any(e["kind"] == "step_budget_offload" for e in res.events)

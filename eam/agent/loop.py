@@ -46,6 +46,31 @@ def _fingerprint(msg: Message) -> str:
     return hashlib.sha1(json.dumps(msg, sort_keys=True, default=str).encode()).hexdigest()
 
 
+OFFLOADED = ("{preview}\n…[This step's tool output exceeded the per-step budget of {budget:,} tokens. The full output "
+             "({tokens:,} tokens) is stored at {pointer}; read it with read_artifact (use offset/length to page), "
+             "preferably one item per step.]")
+
+
+def _apply_step_budget(ctx: AgentContext, outcomes: list[ToolOutcome], budget: int) -> None:
+    """Recoverable offload at the harness level (Manus "file system as context"; production harnesses such as
+    Trae Agent cap tool output too): within one step, outputs are kept in full until `budget` tokens; any further
+    output is stored in the artifact store and replaced by a short preview plus a pointer. Same rule for every
+    technique; it runs after the techniques' own on_tool_result hooks."""
+    from eam.tokens import estimate_tokens, truncate_to_tokens
+
+    used = 0
+    for o in outcomes:
+        n = estimate_tokens(o.text)
+        if used + n <= budget:
+            used += n
+            continue
+        aid = ctx.store.put(o.text, label=f"{o.name} {o.input}")
+        o.text = OFFLOADED.format(preview=truncate_to_tokens(o.text, 150), budget=budget, tokens=n,
+                                  pointer=ctx.store.pointer(aid))
+        used += estimate_tokens(o.text)
+        ctx.log("step_budget_offload", artifact=aid, tokens=n)
+
+
 def collect_tools(env_tools: Iterable[Tool], techniques: Iterable[Any], ctx: AgentContext) -> list[Tool]:
     tools: dict[str, Tool] = {}
     for tool in env_tools:
@@ -77,6 +102,7 @@ def run_agent(
     max_nudges: int = 2,
     context_limit: int | None = None,
     context_gauge: bool = True,
+    step_observation_budget: int | None = None,
 ) -> RunResult:
     techniques = list(techniques)
     ctx = AgentContext(
@@ -93,6 +119,10 @@ def run_agent(
         tag=tag,
     )
     ctx.context_limit = context_limit
+    if step_observation_budget:  # harness-level offload needs a way back to the stored output
+        from eam.techniques.common import read_artifact_tool
+
+        env_tools = [*env_tools, read_artifact_tool()]
     tools = collect_tools(env_tools, techniques, ctx)
     tool_map = {t.spec.name: t for t in tools}
     # Static instructions only: the system prompt must not change between calls.
@@ -191,6 +221,8 @@ def run_agent(
             for tech in techniques:
                 outcome = tech.on_tool_result(ctx, outcome)
             outcomes.append(outcome)
+        if step_observation_budget:
+            _apply_step_budget(ctx, outcomes, step_observation_budget)
         ctx.last_tool_error = any(o.is_error for o in outcomes)
         ctx.messages.append({"role": "user", "content": [o.to_block() for o in outcomes]})
         if ctx.stop_reason:

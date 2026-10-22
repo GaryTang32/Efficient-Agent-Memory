@@ -39,6 +39,8 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     if inst.context_limit:
         common["context_limit"] = inst.context_limit
         common["context_gauge"] = inst.disclose_limit
+    if inst.step_observation_budget:
+        common["step_observation_budget"] = inst.step_observation_budget
         if inst.disclose_limit:
             common["system_prompt"] = (common["system_prompt"] + f"\n\nContext window: your conversation can hold at "
                                        f"most {inst.context_limit:,} tokens in total. If it grows beyond that, the task fails.")
