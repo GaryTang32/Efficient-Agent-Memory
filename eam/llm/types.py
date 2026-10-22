@@ -101,6 +101,7 @@ class Response:
     latency_ms: float
     model_key: str
     reported_cost_usd: float | None = None  # set when the backend reports its own cost (Claude Code CLI)
+    raw_text: str | None = None  # unparsed model output, for debugging text-protocol backends
 
     @property
     def text(self) -> str:

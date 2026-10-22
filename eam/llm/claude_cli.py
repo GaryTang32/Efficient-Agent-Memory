@@ -31,7 +31,7 @@ class ClaudeCLIError(RuntimeError):
 class ClaudeCLIClient:
     route = "claude-cli"
 
-    def __init__(self, binary: str | None = None, *, timeout_s: float = 600, retries: int = 2,
+    def __init__(self, binary: str | None = None, *, timeout_s: float = 240, retries: int = 2,
                  extra_args: list[str] | None = None, env: dict[str, str] | None = None):
         self.binary = binary or os.environ.get("EAM_CLAUDE_BIN", "claude")
         self.timeout_s = timeout_s
@@ -90,20 +90,40 @@ class ClaudeCLIClient:
         cmd, stdin = self.build_command(req)
         t0 = time.perf_counter()
         result = self._run(cmd, stdin)
-        wall_ms = (time.perf_counter() - t0) * 1000
         text = result.get("result") or ""
+        visible, uses = self._parse(req, text)
+        usage = self._usage(result)
+        cost = result.get("total_cost_usd") or 0.0
+        if req.tools and not uses and not visible:
+            # Empty or unparseable reply (rare): ask once more instead of ending the run with no answer.
+            cmd2 = list(cmd)
+            i = cmd2.index("--system-prompt") + 1
+            cmd2[i] += ("\n\nYour previous reply could not be parsed. Reply with either <tool_call> blocks "
+                        "in the exact format above, or your final answer as plain text.")
+            result = self._run(cmd2, stdin)
+            text = result.get("result") or ""
+            visible, uses = self._parse(req, text)
+            usage = usage + self._usage(result)
+            cost += result.get("total_cost_usd") or 0.0
+        wall_ms = (time.perf_counter() - t0) * 1000
+        content: list[dict[str, Any]] = ([{"text": visible}] if visible else []) + uses
+        if not content:
+            content = [{"text": ""}]
+        stop = "tool_use" if uses else ("max_tokens" if result.get("stop_reason") == "max_tokens" else "end_turn")
+        return Response({"role": "assistant", "content": content}, stop, usage,
+                        float(result.get("duration_api_ms") or wall_ms), req.model.key,
+                        reported_cost_usd=cost, raw_text=text)
+
+    @staticmethod
+    def _parse(req: Request, text: str) -> tuple[str, list[dict[str, Any]]]:
         if req.prefill and text.startswith(req.prefill):
             text = text[len(req.prefill):]
         for s in req.stop:  # emulate stop sequences
             text = text.split(s, 1)[0]
-        visible, uses = parse_tool_calls(text) if req.tools else (text, [])
-        content: list[dict[str, Any]] = ([{"text": visible}] if visible else []) + uses
-        if not content:
-            content = [{"text": ""}]
+        return parse_tool_calls(text) if req.tools else (text.strip(), [])
+
+    @staticmethod
+    def _usage(result: dict[str, Any]) -> Usage:
         u = result.get("usage") or {}
-        usage = Usage(int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0),
-                      int(u.get("cache_read_input_tokens") or 0), int(u.get("cache_creation_input_tokens") or 0))
-        stop = "tool_use" if uses else ("max_tokens" if result.get("stop_reason") == "max_tokens" else "end_turn")
-        return Response({"role": "assistant", "content": content}, stop, usage,
-                        float(result.get("duration_api_ms") or wall_ms), req.model.key,
-                        reported_cost_usd=result.get("total_cost_usd"))
+        return Usage(int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0),
+                     int(u.get("cache_read_input_tokens") or 0), int(u.get("cache_creation_input_tokens") or 0))

@@ -175,3 +175,13 @@ def test_gateway_runs_a_full_task_through_openai_format(models):
         assert client.embed(["hello", "world"], model="local")[0]
     finally:
         srv.shutdown()
+
+
+def test_text_protocol_accepts_fallback_formats():
+    _, uses = parse_tool_calls('<function_calls>\n<invoke name="open_file">\n<parameter name="file_id">F-101</parameter>\n'
+                               '</invoke>\n</function_calls>')
+    assert uses[0]["toolUse"]["name"] == "open_file" and uses[0]["toolUse"]["input"] == {"file_id": "F-101"}
+    _, uses = parse_tool_calls("<function=return>\n<parameter=message>\nall done\n</parameter>\n</function>")
+    assert uses[0]["toolUse"]["name"] == "return" and uses[0]["toolUse"]["input"] == {"message": "all done"}
+    visible, _ = parse_tool_calls("<reasoning_effort>8</reasoning_effort>\nok")
+    assert visible == "ok"

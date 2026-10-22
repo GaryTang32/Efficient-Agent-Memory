@@ -18,6 +18,20 @@ from eam.llm.types import Message, ToolSpec
 
 _ids = itertools.count(1)
 TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.S)
+# Formats models fall back to when tools are described in text:
+INVOKE_RE = re.compile(r'<invoke name="([^"]+)">(.*?)</invoke>', re.S)            # Anthropic-style XML
+INVOKE_PARAM_RE = re.compile(r'<parameter name="([^"]+)">(.*?)</parameter>', re.S)
+FUNCTION_RE = re.compile(r"<function=([\w.-]+)>(.*?)</function>", re.S)          # FoldAgent / Qwen-coder style
+FUNCTION_PARAM_RE = re.compile(r"<parameter=([\w.-]+)>\s*(.*?)\s*</parameter>", re.S)
+STRAY_TAGS_RE = re.compile(r"</?(function_calls|reasoning_effort)[^>]*>.*?(?=\n|$)", re.S)
+
+
+def _param_value(raw: str):
+    raw = raw.strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
 
 
 def tool_instructions(tools: list[ToolSpec]) -> str:
@@ -87,7 +101,15 @@ def parse_tool_calls(text: str) -> tuple[str, list[dict[str, Any]]]:
             except json.JSONDecodeError:
                 args = {"input": args}
         uses.append({"toolUse": {"toolUseId": f"tc_{next(_ids):06d}", "name": name, "input": args or {}}})
-    visible = TOOL_CALL_RE.sub("", text)
+    if not uses:
+        for name, body in INVOKE_RE.findall(text):
+            args = {k: _param_value(v) for k, v in INVOKE_PARAM_RE.findall(body)}
+            uses.append({"toolUse": {"toolUseId": f"tc_{next(_ids):06d}", "name": name, "input": args}})
+        for name, body in FUNCTION_RE.findall(text):
+            args = {k: _param_value(v) for k, v in FUNCTION_PARAM_RE.findall(body)}
+            uses.append({"toolUse": {"toolUseId": f"tc_{next(_ids):06d}", "name": name, "input": args}})
+    visible = FUNCTION_RE.sub("", INVOKE_RE.sub("", TOOL_CALL_RE.sub("", text)))
+    visible = STRAY_TAGS_RE.sub("", visible)
     # models sometimes keep writing a fake result after the call: drop anything from a <tool_result> on
     visible = visible.split("<tool_result", 1)[0].strip()
     return visible, uses
