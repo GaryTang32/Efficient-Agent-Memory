@@ -19,7 +19,7 @@ from eam.techniques.cache_layout import CacheLayout
 from eam.techniques.compression import PromptCompression
 from eam.techniques.folding import ContextFolding
 from eam.techniques.iter_research import IterResearch
-from eam.techniques.masking import KeepLastN
+from eam.techniques.obs_mask import ObservationMasking
 from eam.techniques.offload import ToolResultOffload
 from eam.techniques.todo import TodoRecitation
 
@@ -50,8 +50,8 @@ def lean() -> Pipeline:
 
 
 def cache_first_masked() -> Pipeline:
-    """cache_first plus batched observation masking, to measure masking inside a combination."""
-    return Pipeline(cache_first(), KeepLastN(keep=8, batch=8), name="cache_first_masked")
+    """cache_first plus observation masking, to measure masking inside a combination."""
+    return Pipeline(cache_first(), ObservationMasking(), name="cache_first_masked")
 
 
 class AutoMemory(Technique):

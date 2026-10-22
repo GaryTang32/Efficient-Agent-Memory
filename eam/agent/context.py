@@ -56,6 +56,9 @@ class AgentContext:
     last_prompt_tokens: int = 0
     peak_prompt_tokens: int = 0
     last_tool_error: bool = False
+    system_text: str = ""  # the run's full system prompt (FoldAgent branches reuse it)
+    stop_reason: str | None = None  # a technique sets this to end the run (turn limit, branch return)
+    final_answer: str | None = None  # answer to report when a technique ends the run
 
     def task_header(self) -> str:
         """First line of every rebuilt context; keeps the task statement stable."""
@@ -65,14 +68,18 @@ class AgentContext:
         self.events.append({"step": self.step, "kind": kind, **data})
 
     def call_aux(self, prompt: str, *, purpose: str, max_tokens: int = 1024,
-                 system: str = "You are a precise assistant. Follow the instructions exactly.") -> str:
+                 system: str = "You are a precise assistant. Follow the instructions exactly.",
+                 temperature: float | None = 0.0, prefill: str | None = None, stop: list[str] | None = None) -> str:
         """Side call on the (usually cheaper) auxiliary model, e.g. for summaries."""
         req = Request(
             model=self.aux_model,
-            system=[{"text": system}],
+            system=[{"text": system}] if system else [],
             messages=[{"role": "user", "content": [{"text": prompt}]}],
             max_tokens=max_tokens,
+            temperature=temperature,
             tag=f"aux:{purpose}",
+            prefill=prefill,
+            stop=list(stop or []),
         )
         resp = self.llm.converse(req)
         self.meter.record(req.tag, self.aux_model, resp.usage, resp.latency_ms, resp.reported_cost_usd)

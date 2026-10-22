@@ -17,6 +17,7 @@ from eam.techniques.common import last_results_text
 class IterResearch(Technique):
     name = "iter_research"
     source = "IterResearch / WebResearcher (Alibaba Tongyi DeepResearch)"
+    provenance = "ported from the paper description (no official code released)"
     cache_safe = False
 
     def __init__(self, round_steps: int = 4, observation_chars: int = 4000):

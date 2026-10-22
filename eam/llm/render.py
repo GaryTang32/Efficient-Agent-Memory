@@ -18,12 +18,16 @@ def render_converse(req: Request) -> dict[str, Any]:
     messages = copy.deepcopy(req.messages)
     for idx in req.cache.message_indices:
         messages[idx]["content"].append(dict(CACHE_POINT))
+    if req.prefill:
+        messages.append({"role": "assistant", "content": [{"text": req.prefill}]})
 
     kwargs: dict[str, Any] = {"modelId": req.model.model_id, "messages": messages}
 
     inference: dict[str, Any] = {"maxTokens": req.max_tokens}
     if req.temperature is not None:
         inference["temperature"] = req.temperature
+    if req.stop:
+        inference["stopSequences"] = list(req.stop)
     kwargs["inferenceConfig"] = inference
 
     if req.system:

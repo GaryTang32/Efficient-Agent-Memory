@@ -44,6 +44,8 @@ class ClaudeCLIClient:
         parts = [system, transcript_preamble()]
         if req.tools:
             parts.append(tool_instructions(req.tools))
+        if req.prefill:  # no assistant prefill on this route: ask for the same opening instead
+            parts.append(f"Begin your reply exactly with: {req.prefill}")
         system_prompt = "\n\n".join(p for p in parts if p)
         blocks = render_message_blocks(req.messages)
         payload = {"type": "user", "message": {"role": "user",
@@ -90,6 +92,10 @@ class ClaudeCLIClient:
         result = self._run(cmd, stdin)
         wall_ms = (time.perf_counter() - t0) * 1000
         text = result.get("result") or ""
+        if req.prefill and text.startswith(req.prefill):
+            text = text[len(req.prefill):]
+        for s in req.stop:  # emulate stop sequences
+            text = text.split(s, 1)[0]
         visible, uses = parse_tool_calls(text) if req.tools else (text, [])
         content: list[dict[str, Any]] = ([{"text": visible}] if visible else []) + uses
         if not content:

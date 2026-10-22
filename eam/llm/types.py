@@ -61,6 +61,8 @@ class Request:
     cache: CachePlan = field(default_factory=CachePlan)
     extra: dict[str, Any] = field(default_factory=dict)  # additionalModelRequestFields
     tag: str = "main"  # metering label: main | aux:<purpose> | subagent
+    prefill: str | None = None  # start of the assistant reply (sent as a trailing assistant message where supported)
+    stop: list[str] = field(default_factory=list)  # stop sequences
 
 
 @dataclass

@@ -66,7 +66,11 @@ def to_openai_payload(req: Request, model_id: str, *, cache_control: bool = Fals
             text = "\n".join(texts)
             msgs.append({"role": "user", "content": [_text_part(text, True)] if mark else text})
 
+    if req.prefill:
+        msgs.append({"role": "assistant", "content": req.prefill})
     body: dict[str, Any] = {"model": model_id, "messages": msgs, max_tokens_field: req.max_tokens}
+    if req.stop:
+        body["stop"] = list(req.stop)
     if req.temperature is not None:
         body["temperature"] = req.temperature
     if req.tools:

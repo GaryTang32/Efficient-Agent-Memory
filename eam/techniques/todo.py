@@ -15,6 +15,7 @@ from eam.techniques.base import Technique
 class TodoRecitation(Technique):
     name = "todo"
     source = "Manus todo.md recitation"
+    provenance = "engineering rules from the Manus blog (no paper)"
 
     def tools(self, ctx):
         def handler(args, ctx):

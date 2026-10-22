@@ -37,11 +37,16 @@ class _State:
     entities: dict[str, str] = field(default_factory=dict)
     read: list[str] = field(default_factory=list)
     recovered: set[str] = field(default_factory=set)
+    no_branch: bool = False
 
 
 def _header(req: Request) -> str:
     first = req.messages[0]["content"][0].get("text", "")
-    return first.split("\n", 1)[0]
+    line = first.split("\n", 1)[0]
+    for prefix in ("Task: ", "Question: "):
+        if line.startswith(prefix):
+            return line[len(prefix):]
+    return line
 
 
 class EntityOracle:
@@ -60,8 +65,14 @@ class EntityOracle:
         def complete(key: str) -> bool:
             return all(f in facts.get(key, {}) for f in spec.fields)
 
-        # Sub-agent spawned through `branch`: read one entity and report its facts.
-        sub = spec.subtask_re.search(header)
+        # FoldAgent branch: it inherits MAIN's history; its assignment is the prompt of the last `branch` call.
+        sub = None
+        if req.tag == "subagent":
+            prompts = [b["toolUse"]["input"].get("prompt", "") for m in req.messages for b in m["content"]
+                       if "toolUse" in b and b["toolUse"]["name"] == "branch"]
+            if prompts:
+                st = self.states.setdefault(("subagent", prompts[-1]), _State())
+                sub = spec.subtask_re.search(prompts[-1])
         if sub:
             eid, key = sub.group(1), sub.group(2)
             st.entities[eid] = key
@@ -72,6 +83,8 @@ class EntityOracle:
             if recover:
                 return recover
             lines = [l for l in spec.fact_lines(text) if key in l]
+            if "return" in tools:
+                return assistant(tool_use("return", {"message": " ".join(lines)}))
             return final("FINAL ANSWER: " + " ".join(lines))
 
         if not st.listed:
@@ -88,12 +101,20 @@ class EntityOracle:
         if recover:
             return recover
 
+        # FoldAgent caps branches (MAX_SESSION); after the cap, read the rest directly.
+        exchanges = list(tool_exchanges(req.messages))
+        if exchanges and exchanges[-1][0] == "branch" and "already reached the limit" in exchanges[-1][2]:
+            st.no_branch = True
+            missing = str(exchanges[-1][1].get("description", "")).removeprefix("Read ")
+            if missing in st.read:
+                st.read.remove(missing)
         unread = [e for e in st.entities if e not in st.read]
         if unread:
             eid = unread[0]
             st.read.append(eid)
-            if "branch" in tools:
-                blocks = [tool_use("branch", {"subtask": spec.subtask(eid, st.entities[eid])})]
+            if "branch" in tools and not st.no_branch:
+                blocks = [tool_use("branch", {"description": f"Read {eid}",
+                                              "prompt": spec.subtask(eid, st.entities[eid])})]
             else:
                 blocks = [tool_use(spec.read_tool, {spec.read_arg: eid})]
             if "update_report" in tools:

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 class Technique:
     name = "base"
     source = ""  # paper / lab the idea comes from
+    provenance = "provisional (our implementation, not yet checked against an official source)"
     cache_safe = True
 
     def tools(self, ctx: "AgentContext") -> list["Tool"]:

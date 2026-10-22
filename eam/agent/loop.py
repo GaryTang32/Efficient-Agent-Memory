@@ -66,6 +66,7 @@ def run_agent(
     meter: CostMeter | None = None,
     store: ArtifactStore | None = None,
     tag: str = "main",
+    initial_messages: list[Message] | None = None,
 ) -> RunResult:
     techniques = list(techniques)
     ctx = AgentContext(
@@ -86,10 +87,14 @@ def run_agent(
     # Static instructions only: the system prompt must not change between calls.
     addenda = [a for a in (t.system_addendum() for t in techniques) if a]
     system_text = "\n\n".join([system_prompt, *addenda])
+    ctx.system_text = system_text
 
     for tech in techniques:
         tech.on_session_start(ctx)
-    ctx.messages.append({"role": "user", "content": [{"text": "\n\n".join([ctx.task_header(), *ctx.preamble])}]})
+    if initial_messages:  # continue from an existing history (e.g. a FoldAgent branch inherits MAIN's context)
+        ctx.messages.extend(initial_messages)
+    else:
+        ctx.messages.append({"role": "user", "content": [{"text": "\n\n".join([ctx.task_header(), *ctx.preamble])}]})
 
     answer, finished, rewrites = "", False, 0
     prev_snapshot: list[str] = []
@@ -98,6 +103,8 @@ def run_agent(
         ctx.step = step
         for tech in techniques:
             tech.before_call(ctx)
+        if ctx.stop_reason:
+            break
 
         snapshot = [_fingerprint(m) for m in ctx.messages]
         if prev_snapshot and snapshot[: len(prev_snapshot)] != prev_snapshot:
@@ -146,9 +153,15 @@ def run_agent(
             outcomes.append(outcome)
         ctx.last_tool_error = any(o.is_error for o in outcomes)
         ctx.messages.append({"role": "user", "content": [o.to_block() for o in outcomes]})
+        if ctx.stop_reason:
+            if ctx.final_answer is not None:
+                answer, finished = ctx.final_answer, True
+            break
 
     for tech in techniques:
         tech.on_session_end(ctx, answer)
+    if ctx.stop_reason:
+        ctx.log("stopped", reason=ctx.stop_reason)
 
     return RunResult(
         answer=answer,

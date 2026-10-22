@@ -57,18 +57,24 @@ def test_keep_last_n_rewrites_history_in_batches(models):
 
 def test_resum_bounds_context(models):
     _, full = run(models, "inventory_ops", "full")
-    inst, res = run(models, "inventory_ops", "resum:trigger_tokens=4000")
+    inst, res = run(models, "inventory_ops", "resum:max_context_k=4")
     assert res.peak_prompt_tokens < full.peak_prompt_tokens
     assert any(e["kind"] == "resum_rebuild" for e in res.events)
     assert "aux" in res.meter.by_tag()
+    assert res.messages[0]["content"][0]["text"].startswith("Question: ")  # official reset message
 
 
-def test_folding_keeps_main_context_small(models):
+def test_folding_follows_foldagent_protocol(models):
     _, full = run(models, "needle_research", "full")
     inst, res = run(models, "needle_research", "folding")
     assert inst.check(res.answer)
+    folds = [e for e in res.events if e["kind"] == "folded"]
+    assert len(folds) == 5 and all(e["returned"] for e in folds)  # MAX_SESSION = 5 branches, each ends with return
+    results = [b["toolResult"]["content"][0]["text"] for m in res.messages for b in m["content"] if "toolResult" in b]
+    assert sum(r.startswith("Branch has finished its task, the returned message is:") for r in results) == 5
+    assert any("already reached the limit of 5 branch calls" in r for r in results)
     main_peak = max(r.usage.prompt_tokens for r in res.meter.records if r.tag == "main")
-    assert main_peak < full.peak_prompt_tokens / 3
+    assert main_peak < full.peak_prompt_tokens
 
 
 def test_memagent_reads_document_in_one_tool_call(models):

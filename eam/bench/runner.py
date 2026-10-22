@@ -48,6 +48,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "instance": inst.instance_id,
         "spec": spec,
         "techniques": [t.describe() for t in techniques],
+        "provenance": [getattr(t, "provenance", "") for t in techniques],
         "backend": backend,
         "model": model.key,
         "aux_model": aux_model.key,

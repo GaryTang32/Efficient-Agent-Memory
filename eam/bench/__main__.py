@@ -18,7 +18,7 @@ import argparse
 import time
 
 from eam.bench.experiments import SUITES
-from eam.bench.report import markdown_table
+from eam.bench.report import calibrate, markdown_table
 from eam.bench.runner import load_rows, run_suite
 from eam.llm.routes import ROUTES
 
@@ -51,9 +51,16 @@ def main(argv: list[str] | None = None) -> None:
     p_rep = sub.add_parser("report", help="print the comparison table for result files")
     p_rep.add_argument("files", nargs="+")
 
+    p_cal = sub.add_parser("calibrate", help="turn-control limits from baseline turn percentiles (ICSE'26 protocol)")
+    p_cal.add_argument("files", nargs="+")
+    p_cal.add_argument("--spec", default="full", help="baseline spec whose turn counts are used")
+
     args = ap.parse_args(argv)
     if args.cmd == "report":
         print(markdown_table(load_rows(args.files)))
+        return
+    if args.cmd == "calibrate":
+        print(calibrate(load_rows(args.files), args.spec))
         return
 
     if args.cmd == "run":

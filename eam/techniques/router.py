@@ -18,6 +18,7 @@ from eam.techniques.base import Technique
 class ThinkingRouter(Technique):
     name = "router"
     source = "Qwen3 / DeepSeek hybrid thinking; MiniMax M2 interleaved thinking"
+    provenance = "provisional (ours)"
 
     def __init__(self, strong: str | None = None, cheap: str | None = None, on: str = "plan,error",
                  thinking: bool = False):

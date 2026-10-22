@@ -19,6 +19,7 @@ from eam.techniques.base import Technique
 class CacheLayout(Technique):
     name = "cache_layout"
     source = "Manus context engineering (KV-cache hit rate first)"
+    provenance = "engineering rules from the Manus blog (no paper)"
 
     def __init__(self, rolling: bool = True, cache_tools: bool = True, cache_system: bool = True):
         self.rolling = rolling

@@ -6,3 +6,4 @@ class FullContext(Technique):
 
     name = "full"
     source = "baseline"
+    provenance = "baseline"

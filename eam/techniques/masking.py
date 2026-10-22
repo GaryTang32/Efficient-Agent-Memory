@@ -18,6 +18,7 @@ CLEARED_PREFIX = "[cleared to save context"
 class KeepLastN(Technique):
     name = "keep_last_n"
     source = "Less Context, Better Agents (2026); Claude context editing"
+    provenance = "provisional (ours)"
     cache_safe = False
 
     def __init__(self, keep: int = 5, batch: int = 5, exclude: tuple[str, ...] = ("todo_write",)):

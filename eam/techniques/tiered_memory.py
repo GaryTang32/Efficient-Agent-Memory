@@ -37,6 +37,7 @@ def _bullets(records) -> str:
 class TieredMemory(Technique):
     name = "tiered_memory"
     source = "MemoryOS (BUPT) tiers/heat + MemOS (MemTensor, SJTU) retrieval scheduling"
+    provenance = "provisional re-implementation; to be replaced by the official MemoryOS package"
 
     def __init__(self, path: str | None = None, retrieval: str = "session_start", top_k: int = 5,
                  promote_hits: int = 2, store: TieredMemoryStore | None = None):
@@ -103,6 +104,7 @@ class TieredMemory(Technique):
 class FullCarryover(Technique):
     name = "carryover"
     source = "baseline: paste every previous session transcript"
+    provenance = "baseline"
 
     def __init__(self):
         self._transcripts: list[str] = []

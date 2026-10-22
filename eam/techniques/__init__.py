@@ -9,6 +9,7 @@ A spec string selects techniques for a run::
 
 from __future__ import annotations
 
+from eam.techniques.agentdiet import AgentDiet
 from eam.techniques.base import Pipeline, Technique
 from eam.techniques.baseline import FullContext
 from eam.techniques.cache_layout import CacheLayout
@@ -17,25 +18,33 @@ from eam.techniques.folding import ContextFolding
 from eam.techniques.iter_research import IterResearch
 from eam.techniques.masking import KeepLastN
 from eam.techniques.memagent import MemAgentReader
+from eam.techniques.obs_mask import ObservationMasking
 from eam.techniques.offload import ToolResultOffload
 from eam.techniques.resum import ReSum
 from eam.techniques.router import ThinkingRouter
 from eam.techniques.tiered_memory import FullCarryover, TieredMemory
 from eam.techniques.todo import TodoRecitation
+from eam.techniques.turn_control import TurnControl
 
 REGISTRY: dict[str, type[Technique]] = {
+    # paper-faithful (official prompts / algorithms)
+    "agentdiet": AgentDiet,
+    "turn_control": TurnControl,
+    "folding": ContextFolding,
+    "memagent": MemAgentReader,
+    "resum": ReSum,
+    # baselines and engineering rules
     "full": FullContext,
+    "obs_mask": ObservationMasking,
     "cache_layout": CacheLayout,
     "todo": TodoRecitation,
     "offload": ToolResultOffload,
-    "keep_last_n": KeepLastN,
     "compression": PromptCompression,
-    "resum": ReSum,
     "iter_research": IterResearch,
-    "folding": ContextFolding,
-    "memagent": MemAgentReader,
-    "tiered_memory": TieredMemory,
     "carryover": FullCarryover,
+    # provisional (ours, not yet backed by an official source)
+    "tiered_memory": TieredMemory,
+    "keep_last_n": KeepLastN,
     "router": ThinkingRouter,
 }
 

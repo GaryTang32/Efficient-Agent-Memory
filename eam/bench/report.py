@@ -47,3 +47,26 @@ def markdown_table(rows: list[dict[str, Any]]) -> str:
             f"{rel} | {cps} | {a['mean_prompt_tokens']:,.0f} | {a['mean_peak_ctx']:,.0f} | {a['cache_hit']:.0%} | "
             f"{a['rewrites']:.1f} | {a['steps']:.1f} | {a['latency_s']:.1f} |")
     return "\n".join(lines)
+
+
+def _percentile(values: list[float], q: float) -> float:
+    xs = sorted(values)
+    pos = (len(xs) - 1) * q
+    lo, hi = int(pos), min(int(pos) + 1, len(xs) - 1)
+    return xs[lo] + (xs[hi] - xs[lo]) * (pos - lo)
+
+
+def calibrate(rows: list[dict[str, Any]], spec: str = "full") -> str:
+    """Turn limits per (task, model) from the baseline's own turn distribution, as in Gao & Peng (ICSE'26):
+    fixed limit at the 75th percentile; dynamic 25th→50th and 50th→75th."""
+    groups: dict[tuple, list[float]] = defaultdict(list)
+    for r in rows:
+        if r["spec"] == spec:
+            groups[(r["family"], r["model"])].append(r["steps"])
+    lines = ["| task | model | n | p25 | p50 | p75 | suggested specs |", "|---|---|---|---|---|---|---|"]
+    for (family, model), steps in sorted(groups.items()):
+        p25, p50, p75 = (max(1, round(_percentile(steps, q))) for q in (0.25, 0.5, 0.75))
+        specs = (f"`turn_control:limit={p75}` · `turn_control:mode=dynamic,limit={p25},extension={max(1, p50 - p25)}` · "
+                 f"`turn_control:mode=dynamic,limit={p50},extension={max(1, p75 - p50)}`")
+        lines.append(f"| {family} | {model} | {len(steps)} | {p25} | {p50} | {p75} | {specs} |")
+    return "\n".join(lines)

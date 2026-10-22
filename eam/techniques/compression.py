@@ -47,6 +47,7 @@ def heuristic_compress(text: str, rate: float) -> str:
 class PromptCompression(Technique):
     name = "compression"
     source = "LLMLingua-2 (Microsoft Research Asia)"
+    provenance = "official llmlingua library if installed (Findings ACL'24); the fallback heuristic is ours"
 
     def __init__(self, min_tokens: int = 600, rate: float = 0.4, backend: str = "auto"):
         self.min_tokens = int(min_tokens)

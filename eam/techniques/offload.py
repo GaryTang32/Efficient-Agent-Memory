@@ -15,6 +15,7 @@ from eam.tokens import estimate_tokens, truncate_to_tokens
 class ToolResultOffload(Technique):
     name = "offload"
     source = "Manus recoverable compression (file system as context)"
+    provenance = "engineering rules from the Manus blog (no paper)"
 
     def __init__(self, max_tokens: int = 800, preview_tokens: int = 200):
         self.max_tokens = int(max_tokens)
