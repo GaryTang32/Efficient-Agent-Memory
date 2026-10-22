@@ -81,6 +81,17 @@
         "claude-cli": "haiku",
         "gateway": "cc-haiku"
       }
+    },
+    "cc-opus": {
+      "model_id": "opus",
+      "price_in": 0.0,
+      "price_out": 0.0,
+      "price_cache_write": 0.0,
+      "price_cache_read": 0.0,
+      "route_ids": {
+        "claude-cli": "opus",
+        "gateway": "cc-opus"
+      }
     }
   }
 }
