@@ -8,3 +8,4 @@ config/models.json
 
 # Downloaded papers (local reading copies; not redistributed)
 papers/**/*.pdf
+.venv-memory/
