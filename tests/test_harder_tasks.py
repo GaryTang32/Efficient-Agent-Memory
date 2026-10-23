@@ -117,3 +117,31 @@ def test_a_retried_call_is_billed_twice_but_not_counted_twice_as_context():
     assert not any(e["kind"] == "context_overflow" for e in res.events)  # ~20K real, billed ~40K
     assert sum(e["kind"] == "llm_retry" for e in res.events) >= 4
     assert res.peak_prompt_tokens < 30_000 and res.meter.usage.prompt_tokens > 2 * res.peak_prompt_tokens
+
+
+def test_repo_debug_scoring_uses_pristine_tests_and_penalises_regressions():
+    from types import SimpleNamespace
+
+    from eam.bench.tasks import repo_debug as rd
+
+    inst = FAMILIES["repo_debug"](0)
+    tools = {t.spec.name: t.handler for t in inst.tools}
+    ctx = SimpleNamespace(meter=object(), task=inst.rounds[0])
+    session1 = inst.gold.split(" | ")[0].removeprefix("session 1: ").split(", ")
+    bug_ids = [b.split(" ")[0] for b in session1]
+    # "fix" by editing the tests: does not count
+    for b in bug_ids:
+        test_file, test_name = rd.BUGS[b][3].split("::")
+        tools["replace_in_file"]({"path": f"tests/{test_file}", "old": f"def {test_name}():",
+                                  "new": f"def {test_name}():\n    return"}, ctx)
+    assert inst.round_score(0, "") == 0.0
+    # a real fix of both bugs: full score
+    for b in bug_ids:
+        path, good, bad, _, _ = rd.BUGS[b]
+        tools["replace_in_file"]({"path": path, "old": bad, "new": good}, ctx)
+    assert inst.round_score(0, "") == 1.0
+    # breaking something that worked halves it
+    tools["replace_in_file"]({"path": "ledgerkit/pagination.py", "old": "start = (number - 1) * per_page",
+                              "new": "start = number * per_page"}, ctx)
+    assert inst.round_score(0, "") == 0.5
+    assert "FAILED" in tools["run_tests"]({}, ctx)
