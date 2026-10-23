@@ -1,5 +1,8 @@
 # `ledger_audit` across models: data larger than the window, three rounds (Claude Code CLI)
 
+> **Note (2026-10-24):** the Haiku rows here were recorded before a harness bug was fixed: a retried empty reply had its prompt tokens summed into the context size, which can cause false overflows. The output-cap continuation bug did not exist yet. Haiku `ledger_audit` was rerun on the corrected harness; see `docs/results/2026-10-24-automem-evaluation.md`. Sonnet and Opus rows are unaffected (short replies, no empty-reply retries observed).
+
+
 **Phase 1 (each method alone) plus the first phase-2 combinations, on Haiku, Sonnet and Opus.** Date 2026-10-22.
 
 Raw rows (git-ignored, under `results/`): `real_v2-cli-haiku.jsonl`, `real_v2-cli-sonnet.jsonl`, `real_v2-cli-opus.jsonl`.
