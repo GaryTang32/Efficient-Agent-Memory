@@ -1,7 +1,7 @@
 """Result tables for the documentation: `python -m eam.bench.analyze [--robust] <rows.jsonl>...`.
 
 `--robust` prints the model-normalised comparison (see `robustness`); `--metrics` prints every measured quantity
-per task, model and method (see `metrics`).
+per task, model and method (see `metrics`); `--summary` prints the compact headline table (see `summary`).
 
 Groups runs by (task, model, spec) and reports, besides success counts, *medians* (LLM costs are
 heavy-tailed: a single run can cost ~7x the usual), per-round scores for multi-round tasks, overflow counts,
@@ -252,6 +252,51 @@ def metrics(rows: list[dict[str, Any]], errors: list[dict[str, Any]] | None = No
     return "\n".join(out)
 
 
+def summary(rows: list[dict[str, Any]]) -> str:
+    """One compact table per task: methods × models, with success, accuracy, recovery (vs that model's own
+    floor/ceiling), median cost relative to `naive@native`, median agentic rounds and wall-clock minutes."""
+    by: dict[tuple, list] = defaultdict(list)
+    for r in rows:
+        by[(r["family"], r["model"], r["spec"])].append(r)
+    out = []
+    for family in sorted({k[0] for k in by}):
+        models = sorted({k[1] for k in by if k[0] == family}, key=lambda m: ("haiku" not in m, "opus" in m, m))
+        idx = {(r["model"], r["instance"], r["spec"]): r for r in rows if r["family"] == family}
+        specs = sorted({k[2] for k in by if k[0] == family},
+                       key=lambda s: (s not in ("naive", "full", "naive@native", "full@native"),
+                                      ["naive", "full", "naive@native", "full@native"].index(s)
+                                      if s in ("naive", "full", "naive@native", "full@native") else 0, s))
+        out.append(f"\n**{family}** — success · accuracy · recovery · cost vs `naive@native` · rounds · minutes "
+                   "(medians; recovery defined only for methods)\n")
+        out.append("| method | " + " | ".join(models) + " |")
+        out.append("|" + "---|" * (len(models) + 1))
+        for spec in specs:
+            cells = []
+            for m in models:
+                rs = by.get((family, m, spec))
+                if not rs:
+                    cells.append("—")
+                    continue
+                rec, ratio = [], []
+                for r in rs:
+                    f = idx.get((m, r["instance"], "naive"))
+                    cs = [idx[(m, r["instance"], c)] for c in CEILING if (m, r["instance"], c) in idx]
+                    nn = idx.get((m, r["instance"], "naive@native"))
+                    if nn and nn["cost_usd"]:
+                        ratio.append(r["cost_usd"] / nn["cost_usd"])
+                    if f and cs and spec not in FLOOR + CEILING:
+                        c = st.mean(x["score"] for x in cs)
+                        if c - f["score"] >= HEADROOM_MIN:
+                            rec.append((r["score"] - f["score"]) / (c - f["score"]))
+                n = len(rs)
+                cells.append(f"{sum(r['success'] for r in rs)}/{n} · {st.mean(r['score'] for r in rs):.2f} · "
+                             f"{(f'{st.mean(rec):.2f}' if rec else '—')} · "
+                             f"{(f'{_med(ratio):.0%}' if ratio else '—')} · {_med(r['steps'] for r in rs):.0f} · "
+                             f"{_med(r['wall_s'] for r in rs) / 60:.1f}")
+            out.append(f"| `{spec}` | " + " | ".join(cells) + " |")
+    return "\n".join(out)
+
+
 def totals(rows: list[dict[str, Any]]) -> str:
     by_model = defaultdict(float)
     for r in rows:
@@ -261,11 +306,12 @@ def totals(rows: list[dict[str, Any]]) -> str:
 
 def main(argv: list[str] | None = None) -> None:
     paths = list(argv if argv is not None else sys.argv[1:])
-    mode = next((p for p in paths if p in ("--robust", "--metrics")), None)
-    paths = [p for p in paths if p not in ("--robust", "--metrics")]
+    modes = ("--robust", "--metrics", "--summary")
+    mode = next((p for p in paths if p in modes), None)
+    paths = [p for p in paths if p not in modes]
     rows, errors = load(paths)
-    print(robustness(rows) if mode == "--robust" else metrics(rows, errors) if mode == "--metrics"
-          else table(rows, errors))
+    print({"--robust": robustness, "--summary": summary}[mode](rows) if mode in ("--robust", "--summary")
+          else metrics(rows, errors) if mode == "--metrics" else table(rows, errors))
     print("\nSpend:", totals(rows))
 
 
