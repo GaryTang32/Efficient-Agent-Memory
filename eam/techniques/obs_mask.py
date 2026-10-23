@@ -7,7 +7,7 @@ artifact) when the step has at least 300 tokens. Not a Chinese-lab method; it is
 from __future__ import annotations
 
 from eam.techniques.base import Technique
-from eam.techniques.steps import completed_steps, count_tokens, serialize_step, step_indices
+from eam.techniques.steps import completed_steps, count_tokens, serialize_step, stable_prefix_len, step_indices
 
 PLACEHOLDER = "Environment Observation Ommited"
 
@@ -36,3 +36,6 @@ class ObservationMasking(Technique):
                     b["toolResult"]["content"] = [{"text": self.placeholder}]
             masked.add(k)
             ctx.log("obs_masked", step=k)
+        # steps older than the window are final (masked, or too short to mask): publish the stable boundary so a
+        # cache point can sit there (cache_layout:edit_boundary=true on Bedrock)
+        ctx.state["stable_upto"] = stable_prefix_len(ctx.messages, done - self.window - 1)

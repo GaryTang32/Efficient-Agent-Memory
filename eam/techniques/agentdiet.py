@@ -14,7 +14,7 @@ replaced by a short user note instead of being dropped.
 from __future__ import annotations
 
 from eam.techniques.base import Technique
-from eam.techniques.steps import completed_steps, count_tokens, serialize_step, step_indices
+from eam.techniques.steps import completed_steps, count_tokens, serialize_step, stable_prefix_len, step_indices
 from eam.techniques.third_party import agentdiet as P
 
 RESULTS_FOLDED = "(Tool results of this step are included in the compressed content above.)"
@@ -35,6 +35,7 @@ class AgentDiet(Technique):
         if turn < self.b + self.a:
             return
         idx = turn - 1 - self.a
+        ctx.state["stable_upto"] = stable_prefix_len(ctx.messages, idx)  # steps ≤ idx are final after this call
         originals = ctx.state.setdefault("agentdiet_originals", {})
         if idx in originals or idx < 0:
             return

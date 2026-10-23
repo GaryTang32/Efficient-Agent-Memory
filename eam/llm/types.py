@@ -102,6 +102,15 @@ class Response:
     model_key: str
     reported_cost_usd: float | None = None  # set when the backend reports its own cost (Claude Code CLI)
     raw_text: str | None = None  # unparsed model output, for debugging text-protocol backends
+    # Size of the prompt the final reply was generated from. `usage` sums every attempt (that is what is billed);
+    # when a backend retried a call, usage.prompt_tokens counts the same prompt twice and must not be used as the
+    # context size.
+    context_tokens: int | None = None
+    retries: int = 0
+
+    @property
+    def prompt_size(self) -> int:
+        return self.context_tokens if self.context_tokens is not None else self.usage.prompt_tokens
 
     @property
     def text(self) -> str:

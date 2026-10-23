@@ -98,8 +98,9 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         tdir = Path(os.environ["EAM_TRANSCRIPTS"])
         tdir.mkdir(parents=True, exist_ok=True)
         name = re.sub(r"[^\w.+=@-]", "_", f"{inst.instance_id}__{model.key}__{spec}") + ".json"
-        (tdir / name).write_text(json.dumps({"messages": res.messages, "events": all_events or res.events},
-                                            default=str)[:20_000_000])
+        calls = [{"tag": c.tag, "prompt_tokens": c.usage.prompt_tokens, "cost": c.cost} for c in meter.records]
+        (tdir / name).write_text(json.dumps({"messages": res.messages, "events": all_events or res.events,
+                                             "calls": calls}, default=str)[:20_000_000])
     return {
         "family": inst.family,
         "instance": inst.instance_id,

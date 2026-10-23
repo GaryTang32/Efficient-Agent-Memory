@@ -94,6 +94,10 @@ def table(rows: list[dict[str, Any]], errors: list[dict[str, Any]]) -> str:
 # reported total_cost_usd of every recorded run (Sonnet/Opus: zero residual) and checked with single calls under
 # DISABLE_PROMPT_CACHING=1, 2026-10-23. Used only for the "same run without caching" counterfactual below.
 CLI_INPUT_RATES = {"cc-haiku": (0.10, 0.01, 0.20), "cc-sonnet": (2.0, 0.10, 4.0), "cc-opus": (4.0, 0.20, 8.0)}
+# Haiku has a long-context tier on this route: a request above 100K tokens is billed at 5× (measured 2026-10-23:
+# 97,265 tokens → $0.10/M, 100,775 → $0.50/M; Sonnet flat at 101,858). Per-call sizes are not stored, so the
+# counterfactuals below use the base rate and understate Haiku runs whose prompts crossed 100K (flagged †).
+LONG_CONTEXT_TIER = {"cc-haiku": 100_000}
 
 FLOOR = ("naive",)  # no memory, no caching, no offload, same window as the methods
 CEILING = ("full@native", "naive@native")  # everything kept, no window pressure: the model's own capability
@@ -252,6 +256,55 @@ def metrics(rows: list[dict[str, Any]], errors: list[dict[str, Any]] | None = No
     return "\n".join(out)
 
 
+# Bedrock-style cache multipliers (Anthropic models on Bedrock / the Anthropic API, 5-minute TTL): a cache read
+# costs 0.1× the input price and a cache write 1.25×; output 5× input. The Claude Code CLI writes with the 1-hour
+# TTL (2×) and, for Sonnet/Opus, reads at 0.05×.
+BEDROCK_MULT = {"read": 0.10, "write": 1.25, "out": 5.0}
+
+
+def bedrock_cost(r: dict[str, Any]) -> float | None:
+    """The same run's tokens re-priced with Bedrock's cache multipliers (input price of the CLI model). Assumes
+    the same cache behaviour as the CLI's end-of-conversation breakpoint, i.e. `cache_layout` with one rolling
+    cache point; it isolates the effect of the write price, not Bedrock's own prices or explicit cache points."""
+    rates = CLI_INPUT_RATES.get(r["model"])
+    if not rates:
+        return None
+    p_in = rates[0]
+    u = r["usage"]
+    return (u["input_tokens"] + BEDROCK_MULT["read"] * u["cache_read_tokens"]
+            + BEDROCK_MULT["write"] * u["cache_write_tokens"] + BEDROCK_MULT["out"] * u["output_tokens"]) * p_in / 1e6
+
+
+def reprice(rows: list[dict[str, Any]]) -> str:
+    """Per task and model: each method's median cost as billed (CLI) and re-priced with Bedrock multipliers, both
+    relative to `naive@native` under the same pricing, to show whether the cost ranking depends on the 2× write."""
+    by: dict[tuple, list] = defaultdict(list)
+    for r in rows:
+        by[(r["family"], r["model"], r["spec"])].append(r)
+    out = []
+    for family in sorted({k[0] for k in by}):
+        for model in sorted({k[1] for k in by if k[0] == family}):
+            ref = by.get((family, model, "naive@native"))
+            if not ref:
+                continue
+            ref_cli, ref_bed = _med(r["cost_usd"] for r in ref), _med(bedrock_cost(r) for r in ref)
+            note = (" — † prompts crossed Haiku's 100K long-context tier: the Bedrock column understates them"
+                    if LONG_CONTEXT_TIER.get(model) else "")
+            out.append(f"\n**{family} · {model}** (cost relative to `naive@native` under the same pricing{note})\n")
+            out.append("| method | accuracy | $ CLI (2× write) | vs naive@native | $ Bedrock multipliers (1.25× write) "
+                       "| vs naive@native |")
+            out.append("|---|---|---|---|---|---|")
+            rows_ = sorted(((s, rs) for (f, m, s), rs in by.items() if f == family and m == model),
+                           key=lambda kv: _med(bedrock_cost(r) for r in kv[1]))
+            tier = LONG_CONTEXT_TIER.get(model)
+            for spec, rs in rows_:
+                c, b = _med(r["cost_usd"] for r in rs), _med(bedrock_cost(r) for r in rs)
+                dag = " †" if tier and any(r["peak_prompt_tokens"] > tier for r in rs) else ""
+                out.append(f"| `{spec}`{dag} | {st.mean(r['score'] for r in rs):.2f} | {c:.3f} | {c / ref_cli:.0%} | "
+                           f"{b:.3f} | {b / ref_bed:.0%} |")
+    return "\n".join(out)
+
+
 def summary(rows: list[dict[str, Any]]) -> str:
     """One compact table per task: methods × models, with success, accuracy, recovery (vs that model's own
     floor/ceiling), median cost relative to `naive@native`, median agentic rounds and wall-clock minutes."""
@@ -306,11 +359,12 @@ def totals(rows: list[dict[str, Any]]) -> str:
 
 def main(argv: list[str] | None = None) -> None:
     paths = list(argv if argv is not None else sys.argv[1:])
-    modes = ("--robust", "--metrics", "--summary")
+    modes = ("--robust", "--metrics", "--summary", "--reprice")
     mode = next((p for p in paths if p in modes), None)
     paths = [p for p in paths if p not in modes]
     rows, errors = load(paths)
-    print({"--robust": robustness, "--summary": summary}[mode](rows) if mode in ("--robust", "--summary")
+    print({"--robust": robustness, "--summary": summary, "--reprice": reprice}[mode](rows)
+          if mode in ("--robust", "--summary", "--reprice")
           else metrics(rows, errors) if mode == "--metrics" else table(rows, errors))
     print("\nSpend:", totals(rows))
 

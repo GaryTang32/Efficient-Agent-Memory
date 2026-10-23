@@ -4,7 +4,9 @@
   loop; this technique warns if it is violated);
 * append-only history (any rewrite is counted by the loop as a cache break);
 * cachePoints on tools, system, and a rolling one on the newest message so
-  each call reads the whole previous conversation from cache.
+  each call reads the whole previous conversation from cache;
+* ``edit_boundary=True``: with a history-editing technique (masking, AgentDiet), one cache point at the
+  boundary of the part it will never edit again plus one at the end, so edits only cost the tail.
 """
 
 from __future__ import annotations
@@ -21,8 +23,10 @@ class CacheLayout(Technique):
     source = "Manus context engineering (KV-cache hit rate first)"
     provenance = "engineering rules from the Manus blog (no paper)"
 
-    def __init__(self, rolling: bool = True, cache_tools: bool = True, cache_system: bool = True):
+    def __init__(self, rolling: bool = True, cache_tools: bool = True, cache_system: bool = True,
+                 edit_boundary: bool = False):
         self.rolling = rolling
+        self.edit_boundary = edit_boundary
         self.cache_tools = cache_tools
         self.cache_system = cache_system
         self._prefix_hash: str | None = None
@@ -36,6 +40,16 @@ class CacheLayout(Technique):
         self._prefix_hash = prefix
 
         plan = CachePlan(tools=self.cache_tools and bool(req.tools), system=self.cache_system)
+        if self.edit_boundary and req.messages:
+            # A history-editing technique (masking, AgentDiet) publishes how many leading messages it will not
+            # edit again; a cache point at that boundary keeps the stable part readable from cache after each
+            # edit, where a point only at the end of the conversation would be invalidated by every edit.
+            n = int(ctx.state.get("stable_upto", 0))
+            if 1 <= n < len(req.messages):
+                plan.message_indices.append(n - 1)
+                plan.message_indices.append(len(req.messages) - 1)
+                req.cache = plan
+                return req
         if self.rolling and req.messages:
             # Keep the previous rolling point too, so a hit survives one extra appended turn.
             idx = [len(req.messages) - 1]

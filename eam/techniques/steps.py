@@ -44,6 +44,15 @@ def step_indices(messages: list[Message]) -> list[tuple[int, int | None]]:
     return out
 
 
+def stable_prefix_len(messages: list[Message], last_final_step: int) -> int:
+    """Number of leading messages that no technique will edit again, when steps 0..last_final_step are final."""
+    steps = step_indices(messages)
+    if last_final_step < 0 or not steps:
+        return 1  # the task message
+    a, u = steps[min(last_final_step, len(steps) - 1)]
+    return (u if u is not None else a) + 1
+
+
 def completed_steps(messages: list[Message]) -> int:
     """Number of steps whose tool results are already in the history."""
     return sum(1 for _, u in step_indices(messages) if u is not None)

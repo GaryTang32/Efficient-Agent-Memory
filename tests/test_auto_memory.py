@@ -72,3 +72,12 @@ def test_solves_both_long_tasks_under_their_windows():
     # fails the same way); with a large window, recall + autosave alone must carry the three rounds.
     led = run(FAMILIES["ledger_audit"](0, context_limit=10**7), "automem")
     assert led["success"] and led["events"].get("automem_recall") == 2
+
+
+def test_edit_boundary_cache_point_keeps_agentdiet_cacheable():
+    inst = FAMILIES["chain_hunt"](0)
+    plain = run(inst, "cache_layout+agentdiet")
+    boundary = run(FAMILIES["chain_hunt"](0), "cache_layout:edit_boundary=true+agentdiet")
+    assert boundary["score"] == plain["score"] == 1.0
+    assert boundary["cache_hit_rate"] > plain["cache_hit_rate"] + 0.1
+    assert boundary["by_tag"]["main"]["cost"] < 0.8 * plain["by_tag"]["main"]["cost"]

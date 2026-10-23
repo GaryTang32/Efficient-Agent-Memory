@@ -96,3 +96,24 @@ def test_prompt_sizer_treats_fixed_overhead_as_overhead():
     s.observe(14000, 1400 + int(1.4 * 14000))
     s.observe(20000, 1400 + int(1.4 * 20000))
     assert abs(s.predict(30000) - (1400 + 1.4 * 30000)) < 1500  # dense-text undercount is still corrected
+
+
+def test_a_retried_call_is_billed_twice_but_not_counted_twice_as_context():
+    from eam.agent.loop import run_agent
+    from eam.llm.mock import MockLLM, final, tool_use, assistant
+    from eam.llm.types import Response, Usage
+
+    class Retrying(MockLLM):  # like the CLI client after an empty reply: usage of two attempts, one prompt
+        def converse(self, req):
+            r = super().converse(req)
+            size = r.usage.prompt_tokens
+            return Response(r.message, r.stop_reason, r.usage + r.usage, r.latency_ms, r.model_key,
+                            context_tokens=size, retries=1)
+
+    inst = FAMILIES["ledger_audit"](0)
+    steps = iter([assistant(tool_use("open_file", {"file_id": f"L-0{i}"})) for i in range(1, 5)])
+    res = run_agent(inst.rounds[0], llm=Retrying(lambda req: next(steps, final("FINAL ANSWER: x"))), model=M,
+                    env_tools=inst.tools, context_limit=30_000, max_steps=8)
+    assert not any(e["kind"] == "context_overflow" for e in res.events)  # ~20K real, billed ~40K
+    assert sum(e["kind"] == "llm_retry" for e in res.events) >= 4
+    assert res.peak_prompt_tokens < 30_000 and res.meter.usage.prompt_tokens > 2 * res.peak_prompt_tokens

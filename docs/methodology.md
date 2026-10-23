@@ -95,7 +95,7 @@ CLI list rates per 1M tokens: uncached input / cache read / cache write. These w
 | Sonnet | $2.00 | $0.10 | $4.00 |
 | Opus | $4.00 | $0.20 | $8.00 |
 
-Output costs 5× input. Claude Code writes the cache with the 1-hour TTL, so a write costs 2× input. Each history rewrite therefore costs more on this route than at the 5-minute rate of 1.25×.
+Output costs 5× input. **Haiku has a long-context tier**: a request above 100K tokens is billed at 5× its base rates (97,265 tokens → $0.10/M; 100,775 → $0.50/M). Sonnet stays flat at 101,858 tokens. Reported costs include the tier. The flat-rate counterfactuals (`uncached_cost`, `bedrock_cost`) do not, so they understate Haiku runs that crossed 100K. Claude Code writes the cache with the 1-hour TTL, so a write costs 2× input. Each history rewrite therefore costs more on this route than at the 5-minute rate of 1.25×.
 
 Route-specific facts that affect interpretation:
 - **Caching:** Claude Code places one cache breakpoint at the end of the conversation (our `cachePoint`s are not applied), and adds ~1.3K tokens of fixed overhead per call.

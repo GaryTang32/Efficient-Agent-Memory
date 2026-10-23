@@ -99,6 +99,8 @@ class ClaudeCLIClient:
         text = result.get("result") or ""
         visible, uses = self._parse(req, text)
         usage = self._usage(result)
+        context_tokens = usage.prompt_tokens
+        retries = 0
         cost = result.get("total_cost_usd") or 0.0
         if req.tools and not uses and not visible:
             # Empty or unparseable reply (rare): ask once more instead of ending the run with no answer.
@@ -109,6 +111,8 @@ class ClaudeCLIClient:
             result = self._run(cmd2, stdin, req.max_tokens)
             text = result.get("result") or ""
             visible, uses = self._parse(req, text)
+            context_tokens = self._usage(result).prompt_tokens
+            retries = 1
             usage = usage + self._usage(result)
             cost += result.get("total_cost_usd") or 0.0
         wall_ms = (time.perf_counter() - t0) * 1000
@@ -118,7 +122,7 @@ class ClaudeCLIClient:
         stop = "tool_use" if uses else ("max_tokens" if result.get("stop_reason") == "max_tokens" else "end_turn")
         return Response({"role": "assistant", "content": content}, stop, usage,
                         float(result.get("duration_api_ms") or wall_ms), req.model.key,
-                        reported_cost_usd=cost, raw_text=text)
+                        reported_cost_usd=cost, raw_text=text, context_tokens=context_tokens, retries=retries)
 
     @staticmethod
     def _parse(req: Request, text: str) -> tuple[str, list[dict[str, Any]]]:
