@@ -80,9 +80,17 @@ REAL_V4_SONNET = {
                    "fs_workspace+resum:max_context_k=26", "automem", "automem#aux=cc-haiku"],
 }
 
+# Official long-term memory systems (item 4b) on the multi-session tasks, each with the same ReSum compaction as
+# `fs_workspace+resum`, so the memory system is the only difference. One suite per backend.
+def _ext(backend: str) -> dict[str, list[str]]:
+    k = {"ops_stream": 26, "ledger_audit": 40, "repo_debug": 26}
+    return {task: [f"ext_memory:backend={backend}+resum:max_context_k={kk}"] for task, kk in k.items()}
+
+
 SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1, "real_v2": REAL_V2,
           "real_v2_aware": REAL_V2,
-          "real_v3": REAL_V3, "real_v4_haiku": REAL_V4_HAIKU, "real_v4_sonnet": REAL_V4_SONNET}
+          "real_v3": REAL_V3, "real_v4_haiku": REAL_V4_HAIKU, "real_v4_sonnet": REAL_V4_SONNET,
+          "extmem_memoryos": _ext("memoryos"), "extmem_lightmem": _ext("lightmem"), "extmem_nemori": _ext("nemori")}
 
 # Task settings per suite. real_v2 = "unaware" (the papers' setting: the harness silently enforces the window);
 # real_v2_aware = the agent is told the limit and sees a context gauge each step.

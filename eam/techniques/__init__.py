@@ -17,6 +17,7 @@ from eam.techniques.base import Pipeline, Technique
 from eam.techniques.baseline import FullContext
 from eam.techniques.cache_layout import CacheLayout
 from eam.techniques.compression import PromptCompression
+from eam.techniques.ext_memory import ExternalMemory
 from eam.techniques.folding import ContextFolding
 from eam.techniques.iter_research import IterResearch
 from eam.techniques.masking import KeepLastN
@@ -51,6 +52,8 @@ REGISTRY: dict[str, type[Technique]] = {
     "fs_workspace": NoteWorkspace,
     # this project's combined skill (phase 2), built from the phase-1 measurements
     "automem": AutoMemory,
+    # official long-term memory packages (MemoryOS / LightMem / Nemori) through a sidecar
+    "ext_memory": ExternalMemory,
     # provisional (ours, not yet backed by an official source)
     "tiered_memory": TieredMemory,
     "keep_last_n": KeepLastN,
