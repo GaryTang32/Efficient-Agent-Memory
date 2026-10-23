@@ -116,7 +116,8 @@ def robustness(rows: list[dict[str, Any]]) -> str:
       ceiling C = score with everything kept and no window pressure (`full@native` / `naive@native`)
       recovery  = (S − F) / (C − F): the share of the loss caused by the window that the method wins back.
                   0 = no better than doing nothing, 1 = as good as unlimited context; defined only if C − F ≥ 0.15.
-      cost ratio = method $ / $ of the ceiling run without caching (what an unoptimised long-context agent pays).
+      cost ratio = method $ / $ of `naive@native` (what an unoptimised long-context agent pays; if it was not run,
+                   the `full@native` run's cost recomputed without caching).
     A method is *model-robust* if it recovers ≥ 0.5 on every model where recovery is defined (at least two).
     """
     out = []
@@ -129,7 +130,7 @@ def robustness(rows: list[dict[str, Any]]) -> str:
         specs = sorted({r["spec"] for r in rs} - set(FLOOR) - set(CEILING))
         out.append(f"\n### {family}: anchors per model (means over instances)\n")
         out.append("| model | instances | floor score (`naive`) | ceiling score (unlimited context) | headroom | "
-                   "floor $ | ceiling $ cached | ceiling $ uncached |")
+                   "floor $ | `full@native` $ | `naive@native` $ (cost reference) |")
         out.append("|---|---|---|---|---|---|---|---|")
         anchors: dict[str, dict[str, tuple]] = {}
         for m in models:
@@ -140,7 +141,9 @@ def robustness(rows: list[dict[str, Any]]) -> str:
                 cs = [idx[(m, i, c)] for c in CEILING if (m, i, c) in idx]
                 if f and cs:
                     c_score = st.mean(c["score"] for c in cs)
-                    c_unc = st.mean(uncached_cost(c) for c in cs)
+                    # what an unoptimised long-context agent pays: the real `naive@native` run when there is one
+                    nn = idx.get((m, i, "naive@native"))
+                    c_unc = nn["cost_usd"] if nn else st.mean(uncached_cost(c) for c in cs)
                     c_cached = st.mean(c["cost_usd"] for c in cs if c.get("prompt_cache", True)) if any(
                         c.get("prompt_cache", True) for c in cs) else float("nan")
                     a[i] = (f["score"], c_score, f["cost_usd"], c_cached, c_unc)

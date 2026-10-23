@@ -123,7 +123,7 @@ Comparing raw scores across models mixes two effects: a stronger model scores hi
 - **Floor F:** score of `naive` on the task's window. This is what the model achieves with no memory management.
 - **Ceiling C:** score of `full@native` (or `naive@native`). This is what the same model achieves when nothing is ever lost: the model's capability on the task.
 - **Recovery** = (S − F) / (C − F). This is the share of the window-induced loss that the method wins back. 0 = no better than doing nothing; 1 = as good as unlimited context; it can exceed 1 when the method also helps reasoning. It is defined only when the model has headroom (C − F ≥ 0.15). A task too hard even with unlimited context, or one the floor already solves, says nothing about a memory method on that model.
-- **Cost ratio** = method $ ÷ $ of the ceiling run without caching. This is what an unoptimised long-context agent would pay for the same model. It also normalises away the ~40× price difference between Haiku and Opus.
+- **Cost ratio** = method $ ÷ $ of `naive@native`. This is what an unoptimised long-context agent (no caching, no offload, no memory) actually pays for the same model and instance. It also normalises away the ~40× price difference between Haiku and Opus. Where `naive@native` was not run, the `full@native` run's cost is recomputed without caching. That is a weaker reference, because harness offload changes how many steps an agent takes: on the Haiku pilot of `ops_stream`, `naive@native` took 29 steps and `full@native` 108.
 
 **Verdicts** (`python -m eam.bench.analyze --robust <rows>`):
 
