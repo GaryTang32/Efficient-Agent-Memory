@@ -40,19 +40,22 @@ def table(rows: list[dict[str, Any]], errors: list[dict[str, Any]]) -> str:
         errs[(e["family"], e["model"], e["spec"])] += 1
     out = []
     for family in sorted({k[0] for k in groups}):
-        multi = any(r.get("round_scores") for (f, _, _), rs in groups.items() if f == family for r in rs)
+        n_rounds = max((len(r.get("round_scores") or []) for (f, _, _), rs in groups.items() if f == family
+                        for r in rs), default=0)
+        multi = n_rounds > 0
         out.append(f"\n### {family}\n")
         head = "| model | method | runs | success | mean score |"
         if multi:
-            head += " round 1 / 2 / 3 | overflow |"
+            head += f" score per round (1–{n_rounds}) | overflow |"
         head += (" median $/run | $/success | median prompt tok | median peak ctx | median cache hit | "
                  "median steps | agent $ / side-call $ (median) |")
         out.append(head)
         out.append("|" + "---|" * (head.count("|") - 1))
-        base = {}
-        for (f, m, s), rs in groups.items():
-            if f == family and s == "full":
-                base[m] = _med(r["cost_usd"] for r in rs)
+        base: dict[str, float] = {}  # cost reference per model: `full`, else `naive`
+        for ref in ("naive", "full"):
+            for (f, m, s), rs in groups.items():
+                if f == family and s == ref:
+                    base[m] = (_med(r["cost_usd"] for r in rs), ref)
         for (f, m, s), rs in sorted(groups.items(), key=lambda kv: (kv[0][1], -st.mean(r["score"] for r in kv[1]),
                                                                     _med(r["cost_usd"] for r in kv[1]))):
             if f != family:
@@ -62,12 +65,14 @@ def table(rows: list[dict[str, Any]], errors: list[dict[str, Any]]) -> str:
             e = errs.get((f, m, s), 0)
             line = f"| {m} | `{s}` | {n}{f' (+{e} errored)' if e else ''} | {succ}/{n} | {st.mean(r['score'] for r in rs):.2f} |"
             if multi:
-                rounds = [st.mean(r["round_scores"][k] for r in rs) for k in range(3)]
-                line += f" {rounds[0]:.2f} / {rounds[1]:.2f} / {rounds[2]:.2f} | {sum(r['overflow'] for r in rs)}/{n} |"
+                rounds = [st.mean(r["round_scores"][k] for r in rs if len(r["round_scores"]) > k) for k in range(n_rounds)]
+                line += f" {' / '.join(f'{x:.2f}' for x in rounds)} | {sum(r['overflow'] for r in rs)}/{n} |"
+            elif any("overflow" in r for r in rs):
+                line = line[:-1] + f" (overflow {sum(r.get('overflow', False) for r in rs)}/{n}) |"
             main = _med(r["by_tag"].get("main", {}).get("cost", 0) for r in rs)
             side = _med(sum(v["cost"] for t, v in r["by_tag"].items() if t != "main") for r in rs)
             med_cost = _med(r["cost_usd"] for r in rs)
-            rel = f" ({med_cost / base[m] * 100:.0f}% of full)" if base.get(m) else ""
+            rel = f" ({med_cost / base[m][0] * 100:.0f}% of {base[m][1]})" if base.get(m) and base[m][0] else ""
             line += (f" {med_cost:.3f}{rel} | {cost / succ:.3f} |" if succ else f" {med_cost:.3f}{rel} | ∞ |")
             line += (f" {_med(r['prompt_tokens'] for r in rs):,.0f} | {_med(r['peak_prompt_tokens'] for r in rs):,.0f} | "
                      f"{_med(r['cache_hit_rate'] for r in rs):.0%} | {_med(r['steps'] for r in rs):.0f} | "
