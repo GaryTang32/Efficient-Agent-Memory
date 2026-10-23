@@ -83,6 +83,10 @@ class ClaudeCLIClient:
                     result = obj
             if result and not result.get("is_error"):
                 return result
+            if result and "output token maximum" in str(result.get("result", "")):
+                # A runaway reply hit the output cap. Hand back an empty, truncated reply (its usage is still
+                # billed) so the agent loop handles it like any other malformed turn instead of failing the run.
+                return {**result, "result": "", "is_error": False, "stop_reason": "max_tokens"}
             last = (result or {}).get("result") or proc.stderr[-500:] or proc.stdout[-500:]
             if attempt < self.retries:
                 time.sleep(2 * (attempt + 1))
