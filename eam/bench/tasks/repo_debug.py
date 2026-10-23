@@ -1,12 +1,13 @@
 """Repository debugging with real test execution (SWE-style; AgentDiet's and Trae Agent's setting is SWE-bench).
 
-A generated but real Python library (`ledgerkit`: ~30 modules, ≈60K tokens with its tests) with planted bugs.
-The agent reads code, greps, edits files and runs the real test suite (pytest in an isolated temporary copy;
-failure output with tracebacks is long). Two sessions, each a fresh conversation with its own issue report and
-two bugs: knowledge of the codebase from the first session (where things are, how the tests are organised)
-saves work in the second.
+A generated but real Python library (`ledgerkit`: ~30 modules, ≈50K tokens with its tests) with planted bugs.
+The agent reads code, greps, edits files and runs the real test suite (pytest in an isolated temporary copy).
+Bug behaviour is only covered by end-to-end scenarios (`tests/test_pipeline.py::test_scenario_NN`, docstrings in
+business terms), so a failing test does not name the faulty module: the agent has to trace the flow through the
+pipeline into the library. Three sessions, each a fresh conversation with its own issue report and two bugs:
+knowledge of the codebase from earlier sessions (the pipeline's structure, where things live) saves work later.
 
-Scoring per session: the fraction of that session's bug tests that pass when the *pristine* test suite is run
+Scoring per session: the fraction of that session's scenarios that pass when the *pristine* test suite is run
 against the agent's code at the end of the session (editing tests does not help), halved if a test that passed
 before the session now fails (a regression). `success` = every session 1.0.
 """
@@ -31,29 +32,29 @@ BUGS = {
     "rounding": ("ledgerkit/money.py",
                  "return (value * 100 + Decimal('0.5')).to_integral_value(rounding=ROUND_FLOOR) / 100",
                  "return (value * 100).to_integral_value(rounding=ROUND_FLOOR) / 100",
-                 "test_money.py::test_round_half_up",
+                 "test_pipeline.py::test_scenario_01",
                  "Invoice totals are sometimes one cent too low, e.g. 10.005 is shown as 10.00 instead of 10.01."),
     "tax_basis": ("ledgerkit/config.py", "TAX_RATE_BASIS_POINTS = 750", "TAX_RATE_BASIS_POINTS = 75",
-                  "test_tax.py::test_standard_tax",
+                  "test_pipeline.py::test_scenario_02",
                   "Tax on orders is ten times too small: a 100.00 order shows 0.75 tax instead of 7.50."),
     "pages": ("ledgerkit/pagination.py", "return (total + per_page - 1) // per_page", "return total // per_page",
-              "test_pagination.py::test_page_count_partial",
+              "test_pipeline.py::test_scenario_04",
               "The report viewer drops the last page when the item count is not a multiple of the page size."),
     "weekend": ("ledgerkit/dates.py", "if day.weekday() >= 5:", "if day.weekday() > 5:",
-                "test_dates.py::test_skips_saturday",
+                "test_pipeline.py::test_scenario_06",
                 "Due dates computed in business days sometimes land on a Saturday."),
     "negative": ("ledgerkit/parsing.py", "sign = -1 if text.startswith('-') else 1", "sign = 1",
-                 "test_parsing.py::test_negative_amount",
+                 "test_pipeline.py::test_scenario_07",
                  "Credit notes imported from CSV show positive amounts: '-12.50' is parsed as 12.50."),
     "reserve": ("ledgerkit/inventory.py", "if qty > self.available(sku):", "if qty > self.on_hand.get(sku, 0):",
-                "test_inventory.py::test_reserve_respects_reservations",
+                "test_pipeline.py::test_scenario_08",
                 "Two orders could reserve the same last unit of stock; reservations are not taken into account."),
     "top_n": ("ledgerkit/reports.py", "return sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))[:n]",
               "return sorted(totals.items(), key=lambda kv: (kv[1], kv[0]))[:n]",
-              "test_reports.py::test_top_customers",
+              "test_pipeline.py::test_scenario_05",
               "The 'top customers' report lists the smallest customers instead of the largest."),
     "discount_cap": ("ledgerkit/pricing.py", "return min(rate, MAX_DISCOUNT)", "return max(rate, MAX_DISCOUNT)",
-                     "test_pricing.py::test_discount_is_capped",
+                     "test_pipeline.py::test_scenario_03",
                      "Every customer gets the maximum discount, even when they qualify for a small one."),
 }
 
@@ -237,16 +238,69 @@ def top_customers(rows, n: int = 3):
     totals = totals_by_customer(rows)
     return sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))[:n]
 ''',
+"ledgerkit/pipeline.py": '''"""End-to-end flows used by the order service: import, invoice, report, due dates and fulfilment."""
+
+import datetime as dt
+import importlib
+
+from ledgerkit.dates import add_business_days
+from ledgerkit.inventory import Inventory
+from ledgerkit.money import add
+from ledgerkit.pagination import page_count
+from ledgerkit.pricing import apply_discount, discount_rate
+from ledgerkit.reports import top_customers
+from ledgerkit.tax import tax_amount
+
+
+def load_rows(records, connector: str = "abacus"):
+    """Import third-party records through one of the connectors."""
+    mod = importlib.import_module(f"ledgerkit.connectors.{connector}")
+    return getattr(mod, f"{connector}_batch")(records)
+
+
+def invoice(net, category: str = "general", years_as_customer: int = 0, annual_volume=0) -> dict:
+    """Discounted net, tax and total of one invoice."""
+    rate = discount_rate(years_as_customer, annual_volume)
+    discounted = apply_discount(net, rate)
+    tax = tax_amount(discounted, category)
+    return {"discount_percent": rate, "net": discounted, "tax": tax, "total": add(discounted, tax)}
+
+
+def report_summary(rows, per_page: int = 25, top: int = 3) -> dict:
+    return {"pages": page_count(len(rows), per_page), "top": top_customers(rows, top)}
+
+
+def due_date(invoice_date: dt.date, terms_business_days: int) -> dt.date:
+    return add_business_days(invoice_date, terms_business_days)
+
+
+def fulfil(stock: dict, orders: list) -> list:
+    """Reserve stock for each (order_id, sku, qty) in turn; returns the ids of the orders that could be reserved."""
+    inv = Inventory()
+    for sku, qty in stock.items():
+        inv.receive(sku, qty)
+    accepted = []
+    for order_id, sku, qty in orders:
+        try:
+            inv.reserve(sku, qty)
+            accepted.append(order_id)
+        except ValueError:
+            pass
+    return accepted
+''',
 }
 
 TESTS = {
-"tests/test_money.py": '''from decimal import Decimal
-from ledgerkit.money import add, format_amount, round_half_up
-
-
-def test_round_half_up():
-    assert round_half_up("10.005") == Decimal("10.01")
-    assert round_half_up("10.004") == Decimal("10.00")
+"tests/test_units.py": """from decimal import Decimal
+import datetime as dt
+from ledgerkit.dates import is_business_day
+from ledgerkit.inventory import Inventory
+from ledgerkit.money import add, format_amount
+from ledgerkit.pagination import page, page_count
+from ledgerkit.parsing import parse_amount, parse_row
+from ledgerkit.pricing import apply_discount
+from ledgerkit.reports import totals_by_customer
+from ledgerkit.tax import rate_for
 
 
 def test_add():
@@ -255,62 +309,26 @@ def test_add():
 
 def test_format():
     assert format_amount("3.5") == "3.50 EUR"
-''',
-"tests/test_tax.py": '''from decimal import Decimal
-from ledgerkit.tax import rate_for, tax_amount
-
-
-def test_standard_tax():
-    assert tax_amount("100.00") == Decimal("7.50")
 
 
 def test_reduced_tax():
     assert rate_for("books") == 250
-''',
-"tests/test_pricing.py": '''from decimal import Decimal
-from ledgerkit.pricing import apply_discount, discount_rate
-
-
-def test_discount_is_capped():
-    assert discount_rate(1, 5000) == 2
-    assert discount_rate(20, 900000) == 30
 
 
 def test_apply_discount():
     assert apply_discount("200.00", 10) == Decimal("180.00")
-''',
-"tests/test_pagination.py": '''from ledgerkit.pagination import page, page_count
 
 
 def test_page_count_exact():
     assert page_count(50, 25) == 2
 
 
-def test_page_count_partial():
-    assert page_count(51, 25) == 3
-
-
 def test_page_slice():
     assert page(range(10), 2, 4) == [4, 5, 6, 7]
-''',
-"tests/test_dates.py": '''import datetime as dt
-from ledgerkit.dates import add_business_days, is_business_day
-
-
-def test_skips_saturday():
-    friday = dt.date(2025, 3, 7)
-    assert add_business_days(friday, 1) == dt.date(2025, 3, 10)
 
 
 def test_weekday():
     assert is_business_day(dt.date(2025, 3, 5))
-''',
-"tests/test_parsing.py": '''from decimal import Decimal
-from ledgerkit.parsing import parse_amount, parse_row
-
-
-def test_negative_amount():
-    assert parse_amount("-12.50") == Decimal("-12.50")
 
 
 def test_european_format():
@@ -319,17 +337,6 @@ def test_european_format():
 
 def test_row():
     assert parse_row("acme; 10,00 ; food") == ("acme", Decimal("10.00"), "food")
-''',
-"tests/test_inventory.py": '''import pytest
-from ledgerkit.inventory import Inventory
-
-
-def test_reserve_respects_reservations():
-    inv = Inventory()
-    inv.receive("A1", 1)
-    inv.reserve("A1", 1)
-    with pytest.raises(ValueError):
-        inv.reserve("A1", 1)
 
 
 def test_ship():
@@ -338,21 +345,65 @@ def test_ship():
     inv.reserve("A1", 2)
     inv.ship("A1", 2)
     assert inv.on_hand["A1"] == 3 and inv.available("A1") == 3
-''',
-"tests/test_reports.py": '''from decimal import Decimal
-from ledgerkit.reports import top_customers, totals_by_customer
+
+
+def test_totals():
+    rows = [("acme", Decimal("10"), "x"), ("acme", Decimal("5"), "y")]
+    assert totals_by_customer(rows)["acme"] == Decimal("15")
+""",
+"tests/test_pipeline.py": """\"\"\"End-to-end scenarios from the order service's acceptance suite.\"\"\"
+from decimal import Decimal
+import datetime as dt
+from ledgerkit import pipeline
 
 ROWS = [("acme", Decimal("10"), "x"), ("bolt", Decimal("50"), "x"), ("acme", Decimal("5"), "y"),
         ("cord", Decimal("1"), "x")]
 
 
-def test_totals():
-    assert totals_by_customer(ROWS)["acme"] == Decimal("15")
+def test_scenario_01():
+    \"\"\"Loyal customer buys books: invoice total.\"\"\"
+    assert pipeline.invoice("28.86", "books", 15, 0) == {
+        "discount_percent": 30, "net": Decimal("20.20"), "tax": Decimal("0.51"), "total": Decimal("20.71")}
 
 
-def test_top_customers():
-    assert top_customers(ROWS, 2) == [("bolt", Decimal("50")), ("acme", Decimal("15"))]
-''',
+def test_scenario_02():
+    \"\"\"Loyal customer buys standard goods: invoice total.\"\"\"
+    assert pipeline.invoice("100.00", "general", 15, 0) == {
+        "discount_percent": 30, "net": Decimal("70.00"), "tax": Decimal("5.25"), "total": Decimal("75.25")}
+
+
+def test_scenario_03():
+    \"\"\"New small customer buys books: invoice total.\"\"\"
+    assert pipeline.invoice("200.00", "books", 1, 5000) == {
+        "discount_percent": 2, "net": Decimal("196.00"), "tax": Decimal("4.90"), "total": Decimal("200.90")}
+
+
+def test_scenario_04():
+    \"\"\"Monthly report over 51 rows.\"\"\"
+    rows = [(f"c{i}", Decimal("1"), "x") for i in range(51)]
+    assert pipeline.report_summary(rows, per_page=25)["pages"] == 3
+
+
+def test_scenario_05():
+    \"\"\"Top customers in the monthly report.\"\"\"
+    assert pipeline.report_summary(ROWS, top=2)["top"] == [("bolt", Decimal("50")), ("acme", Decimal("15"))]
+
+
+def test_scenario_06():
+    \"\"\"Invoice issued on a Friday with one business day of payment terms.\"\"\"
+    assert pipeline.due_date(dt.date(2025, 3, 7), 1) == dt.date(2025, 3, 10)
+
+
+def test_scenario_07():
+    \"\"\"Credit note imported from an Abacus export.\"\"\"
+    rows = pipeline.load_rows([{"abacus_customer": "acme", "abacus_amount": "-12.50", "abacus_category": "x"}])
+    assert rows == [("acme", Decimal("-12.50"), "x")]
+
+
+def test_scenario_08():
+    \"\"\"Two orders for the last unit in stock.\"\"\"
+    assert pipeline.fulfil({"A1": 1}, [("o1", "A1", 1), ("o2", "A1", 1)]) == ["o1"]
+""",
 }
 
 PLUGIN_TEMPLATE = '''"""Connector for the {name} export format ({kind}).
@@ -458,13 +509,13 @@ def _run_pytest(root: Path, selector: str = "", timeout: int = 90) -> tuple[str,
     return out, results
 
 
-def generate(seed: int, context_limit: int = 32_000, step_observation_budget: int | None = 6000,
-             disclose_limit: bool = False) -> TaskInstance:
+def generate(seed: int, n_sessions: int = 3, context_limit: int = 32_000,
+             step_observation_budget: int | None = 6000, disclose_limit: bool = False) -> TaskInstance:
     import random
 
     rng = random.Random(seed)
-    chosen = rng.sample(sorted(BUGS), 4)
-    sessions = [chosen[:2], chosen[2:]]
+    chosen = rng.sample(sorted(BUGS), 2 * n_sessions)
+    sessions = [chosen[2 * k: 2 * k + 2] for k in range(n_sessions)]
     files = _build(seed, chosen)
     state: dict = {"root": None, "owner": None}
 
