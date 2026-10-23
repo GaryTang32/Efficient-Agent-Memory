@@ -43,8 +43,20 @@ REAL_V2 = {
                      "fs_workspace+obs_mask", "fs_workspace+resum:max_context_k=40"],
 }
 
+# Long-horizon tasks, every model, model-normalised (docs/methodology.md §6). Anchors: `naive` (floor: no memory,
+# no caching, no offload), `full` (B1), `full@native` (ceiling: nothing lost, model's own window; its uncached
+# cost is computed from its tokens). ReSum's trigger sits just below each task's window
+# (0.9 × (K·1024 − 1000) ≈ 0.8 × window). AgentDiet is run where the provider accepts its reflection calls.
+REAL_V3 = {
+    "research_corpus": ["naive", "full", "full@native", "obs_mask", "resum:max_context_k=33", "fs_workspace",
+                        "fs_workspace+resum:max_context_k=33", "folding"],
+    "ops_stream": ["naive", "full", "full@native", "obs_mask", "resum:max_context_k=26", "fs_workspace",
+                   "fs_workspace+resum:max_context_k=26", "folding"],
+}
+
 SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1, "real_v2": REAL_V2,
-          "real_v2_aware": REAL_V2}
+          "real_v2_aware": REAL_V2,
+          "real_v3": REAL_V3}
 
 # Task settings per suite. real_v2 = "unaware" (the papers' setting: the harness silently enforces the window);
 # real_v2_aware = the agent is told the limit and sees a context gauge each step.
