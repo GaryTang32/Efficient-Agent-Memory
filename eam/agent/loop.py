@@ -40,6 +40,7 @@ class RunResult:
     history_rewrites: int
     events: list[dict[str, Any]] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
+    tool_calls: int = 0  # tool calls issued by this agent (not by sub-agents), counted as they happen
 
 
 def _fingerprint(msg: Message) -> str:
@@ -167,6 +168,7 @@ def run_agent(
         ctx.messages.append({"role": "user", "content": [{"text": "\n\n".join([ctx.task_header(), *ctx.preamble])}]})
 
     answer, finished, rewrites, nudges = "", False, 0, 0
+    n_tool_calls = 0
     sizer = _PromptSizer()
     prev_snapshot: list[str] = []
     step = 0
@@ -224,6 +226,7 @@ def run_agent(
             tech.after_call(ctx, resp)
 
         uses = resp.tool_uses
+        n_tool_calls += len(uses)
         if not uses:
             # A reply with no tool call and no final-answer marker is malformed (degenerate or truncated output).
             # Re-prompt a bounded number of times; this rule is identical for every technique and is counted.
@@ -273,4 +276,5 @@ def run_agent(
         history_rewrites=rewrites,
         events=ctx.events,
         messages=ctx.messages,
+        tool_calls=n_tool_calls,
     )

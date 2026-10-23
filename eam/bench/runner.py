@@ -55,6 +55,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
                   resources=inst.resources, meter=meter, store=store)
     t0 = time.perf_counter()
     rewrites, events = 0, Counter()
+    tool_calls = 0
     if context_limit:
         common["context_limit"] = context_limit
         common["context_gauge"] = inst.disclose_limit
@@ -73,6 +74,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         steps, peak, finished = 0, 0, True
         for k, prompt in enumerate(inst.rounds):
             r = run_agent(prompt, max_steps=inst.max_steps, **common)
+            tool_calls += r.tool_calls
             round_scores.append(inst.round_score(k, r.answer) if r.finished else 0.0)
             round_answers.append(r.answer[:1500])
             rewrites += r.history_rewrites
@@ -85,6 +87,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         rewrites -= res.history_rewrites  # counted in the loop above
     else:
         res = run_agent(inst.prompt, max_steps=inst.max_steps, **common)
+        tool_calls += res.tool_calls
         events.update(e["kind"] for e in res.events)
     summary = meter.summary()
     return {
@@ -108,6 +111,8 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "offload": bool(inst.step_observation_budget and offload),
         "finished": res.finished,
         "steps": res.steps,
+        "tool_calls": tool_calls,
+        "sessions": len(inst.rounds) or 1,
         "cost_usd": summary["cost_usd"],
         "usage": summary["usage"],
         "prompt_tokens": meter.usage.prompt_tokens,

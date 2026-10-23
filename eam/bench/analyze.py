@@ -1,6 +1,7 @@
 """Result tables for the documentation: `python -m eam.bench.analyze [--robust] <rows.jsonl>...`.
 
-`--robust` prints the model-normalised comparison (see `robustness`).
+`--robust` prints the model-normalised comparison (see `robustness`); `--metrics` prints every measured quantity
+per task, model and method (see `metrics`).
 
 Groups runs by (task, model, spec) and reports, besides success counts, *medians* (LLM costs are
 heavy-tailed: a single run can cost ~7x the usual), per-round scores for multi-round tasks, overflow counts,
@@ -187,6 +188,62 @@ def robustness(rows: list[dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
+def _fmt_tokens(x: float) -> str:
+    return "—" if x != x else f"{x / 1e6:.2f}M" if x >= 1e6 else f"{x / 1e3:.0f}K"
+
+
+def metrics(rows: list[dict[str, Any]], errors: list[dict[str, Any]] | None = None) -> str:
+    """Every measured quantity per (task, model, method), as two tables per task.
+
+    Accuracy & effort: success, accuracy (mean score), agentic rounds = LLM calls made by the agent (summed over
+    sessions), tool calls, sessions, all LLM calls including technique side calls and sub-agents, overflows,
+    wall-clock and model time. Tokens & cost: prompt tokens split into uncached input / cache read / cache write,
+    output tokens, peak context, cache hit rate, cost as billed, the same run's cost without caching, and $ per
+    success. Medians over runs unless stated (LLM costs and step counts are heavy-tailed)."""
+    errs: dict[tuple, int] = defaultdict(int)
+    for e in errors or []:
+        errs[(e["family"], e["model"], e["spec"])] += 1
+    groups: dict[tuple, list] = defaultdict(list)
+    for r in rows:
+        groups[(r["family"], r["model"], r["spec"])].append(r)
+    order = lambda m: ("haiku" not in m, "opus" in m, m)  # noqa: E731 — cheap → strong
+    out = []
+    for family in sorted({k[0] for k in groups}):
+        keys = sorted((k for k in groups if k[0] == family),
+                      key=lambda k: (order(k[1]), -st.mean(r["score"] for r in groups[k]),
+                                     _med(r["cost_usd"] for r in groups[k])))
+        out.append(f"\n### {family} — accuracy and effort\n")
+        out.append("| model | method | runs | success | accuracy (mean score) | agentic rounds | tool calls | sessions | "
+                   "LLM calls incl. side calls | overflowed runs | wall-clock (min) | model time (min) |")
+        out.append("|" + "---|" * 12)
+        for k in keys:
+            rs = groups[k]
+            n, e = len(rs), errs.get(k, 0)
+            tc = [r["tool_calls"] for r in rs if "tool_calls" in r]
+            out.append(
+                f"| {k[1]} | `{k[2]}` | {n}{f' (+{e} errored)' if e else ''} | {sum(r['success'] for r in rs)}/{n} | "
+                f"{st.mean(r['score'] for r in rs):.2f} | {_med(r['steps'] for r in rs):.0f} | "
+                f"{(f'{_med(tc):.0f}' if tc else '—')} | {rs[0].get('sessions') or len(rs[0].get('round_scores') or []) or 1} | "
+                f"{_med(r['calls'] for r in rs):.0f} | {sum(r.get('overflow', False) for r in rs)}/{n} | "
+                f"{_med(r['wall_s'] for r in rs) / 60:.1f} | {_med(r['llm_latency_ms'] for r in rs) / 60000:.1f} |")
+        out.append(f"\n### {family} — tokens and cost\n")
+        out.append("| model | method | prompt tokens | uncached input | cache read | cache write | output | peak context "
+                   "| cache hit | $ per run | $ per run if uncached | $ per success |")
+        out.append("|" + "---|" * 12)
+        for k in keys:
+            rs = groups[k]
+            u = lambda f: _med(r["usage"][f] for r in rs)  # noqa: E731
+            succ = sum(r["success"] for r in rs)
+            per_success = f"{sum(r['cost_usd'] for r in rs) / succ:.3f}" if succ else "∞"
+            out.append(
+                f"| {k[1]} | `{k[2]}` | {_fmt_tokens(_med(r['prompt_tokens'] for r in rs))} | "
+                f"{_fmt_tokens(u('input_tokens'))} | {_fmt_tokens(u('cache_read_tokens'))} | "
+                f"{_fmt_tokens(u('cache_write_tokens'))} | {_fmt_tokens(u('output_tokens'))} | "
+                f"{_fmt_tokens(_med(r['peak_prompt_tokens'] for r in rs))} | {_med(r['cache_hit_rate'] for r in rs):.0%} | "
+                f"{_med(r['cost_usd'] for r in rs):.3f} | {_med(uncached_cost(r) for r in rs):.3f} | {per_success} |")
+    return "\n".join(out)
+
+
 def totals(rows: list[dict[str, Any]]) -> str:
     by_model = defaultdict(float)
     for r in rows:
@@ -196,10 +253,11 @@ def totals(rows: list[dict[str, Any]]) -> str:
 
 def main(argv: list[str] | None = None) -> None:
     paths = list(argv if argv is not None else sys.argv[1:])
-    robust = "--robust" in paths
-    paths = [p for p in paths if p != "--robust"]
+    mode = next((p for p in paths if p in ("--robust", "--metrics")), None)
+    paths = [p for p in paths if p not in ("--robust", "--metrics")]
     rows, errors = load(paths)
-    print(robustness(rows) if robust else table(rows, errors))
+    print(robustness(rows) if mode == "--robust" else metrics(rows, errors) if mode == "--metrics"
+          else table(rows, errors))
     print("\nSpend:", totals(rows))
 
 
