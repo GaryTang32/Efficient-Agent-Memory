@@ -1,4 +1,6 @@
-"""Result tables for the documentation: `python -m eam.bench.analyze <rows.jsonl>...`.
+"""Result tables for the documentation: `python -m eam.bench.analyze [--robust] <rows.jsonl>...`.
+
+`--robust` prints the model-normalised comparison (see `robustness`).
 
 Groups runs by (task, model, spec) and reports, besides success counts, *medians* (LLM costs are
 heavy-tailed: a single run can cost ~7x the usual), per-round scores for multi-round tasks, overflow counts,
@@ -85,6 +87,106 @@ def table(rows: list[dict[str, Any]], errors: list[dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
+# Claude Code CLI list rates, USD per 1M tokens: (uncached input, cache read, cache write). Fitted exactly to the
+# reported total_cost_usd of every recorded run (Sonnet/Opus: zero residual) and checked with single calls under
+# DISABLE_PROMPT_CACHING=1, 2026-10-23. Used only for the "same run without caching" counterfactual below.
+CLI_INPUT_RATES = {"cc-haiku": (0.10, 0.01, 0.20), "cc-sonnet": (2.0, 0.10, 4.0), "cc-opus": (4.0, 0.20, 8.0)}
+
+FLOOR = ("naive",)  # no memory, no caching, no offload, same window as the methods
+CEILING = ("full@native", "naive@native")  # everything kept, no window pressure: the model's own capability
+HEADROOM_MIN = 0.15  # below this the model has nothing to recover on this task: recovery is not defined
+
+
+def uncached_cost(r: dict[str, Any]) -> float:
+    """What the same run would have cost with prompt caching off (caching does not change the model's output)."""
+    rates = CLI_INPUT_RATES.get(r["model"])
+    if not rates or r.get("prompt_cache") is False:
+        return r["cost_usd"]
+    p_in, p_read, p_write = rates
+    u = r["usage"]
+    return r["cost_usd"] + (u["cache_read_tokens"] * (p_in - p_read) + u["cache_write_tokens"] * (p_in - p_write)) / 1e6
+
+
+def robustness(rows: list[dict[str, Any]]) -> str:
+    """Method effect measured against each model's own floor and ceiling, so model strength is factored out.
+
+    For each instance (paired: same seed for every method and model):
+      floor F   = score of `naive` (no memory / no optimisation, same window)
+      ceiling C = score with everything kept and no window pressure (`full@native` / `naive@native`)
+      recovery  = (S − F) / (C − F): the share of the loss caused by the window that the method wins back.
+                  0 = no better than doing nothing, 1 = as good as unlimited context; defined only if C − F ≥ 0.15.
+      cost ratio = method $ / $ of the ceiling run without caching (what an unoptimised long-context agent pays).
+    A method is *model-robust* if it recovers ≥ 0.5 on every model where recovery is defined (at least two).
+    """
+    out = []
+    by_fam: dict[str, list] = defaultdict(list)
+    for r in rows:
+        by_fam[r["family"]].append(r)
+    for family, rs in sorted(by_fam.items()):
+        models = sorted({r["model"] for r in rs}, key=lambda m: ("haiku" not in m, "opus" in m, m))
+        idx = {(r["model"], r["instance"], r["spec"]): r for r in rs}
+        specs = sorted({r["spec"] for r in rs} - set(FLOOR) - set(CEILING))
+        out.append(f"\n### {family}: anchors per model (means over instances)\n")
+        out.append("| model | instances | floor score (`naive`) | ceiling score (unlimited context) | headroom | "
+                   "floor $ | ceiling $ cached | ceiling $ uncached |")
+        out.append("|---|---|---|---|---|---|---|---|")
+        anchors: dict[str, dict[str, tuple]] = {}
+        for m in models:
+            insts = sorted({i for (mm, i, _) in idx if mm == m})
+            a = {}
+            for i in insts:
+                f = idx.get((m, i, "naive"))
+                cs = [idx[(m, i, c)] for c in CEILING if (m, i, c) in idx]
+                if f and cs:
+                    c_score = st.mean(c["score"] for c in cs)
+                    c_unc = st.mean(uncached_cost(c) for c in cs)
+                    c_cached = st.mean(c["cost_usd"] for c in cs if c.get("prompt_cache", True)) if any(
+                        c.get("prompt_cache", True) for c in cs) else float("nan")
+                    a[i] = (f["score"], c_score, f["cost_usd"], c_cached, c_unc)
+            anchors[m] = a
+            if a:
+                v = list(a.values())
+                out.append(f"| {m} | {len(v)} | {st.mean(x[0] for x in v):.2f} | {st.mean(x[1] for x in v):.2f} | "
+                           f"{st.mean(x[1] - x[0] for x in v):.2f} | {st.mean(x[2] for x in v):.3f} | "
+                           f"{st.mean(x[3] for x in v):.3f} | {st.mean(x[4] for x in v):.3f} |")
+        out.append(f"\n### {family}: method effect relative to each model's own floor and ceiling\n")
+        head = "| method | " + " | ".join(f"{m}: recovery (Δscore) · success · $ vs uncached ceiling" for m in models)
+        out.append(head + " | verdict |")
+        out.append("|" + "---|" * (len(models) + 2))
+        for spec in specs:
+            cells, recs = [], []
+            for m in models:
+                rec, dlt, succ, ratio, n = [], [], 0, [], 0
+                for i, (fs, cs, _, _, cu) in anchors.get(m, {}).items():
+                    r = idx.get((m, i, spec))
+                    if not r:
+                        continue
+                    n += 1
+                    dlt.append(r["score"] - fs)
+                    succ += r["success"]
+                    ratio.append(r["cost_usd"] / cu if cu else float("nan"))
+                    if cs - fs >= HEADROOM_MIN:
+                        rec.append((r["score"] - fs) / (cs - fs))
+                if not n:
+                    cells.append("—")
+                    continue
+                rtxt = (f"{st.mean(rec):.2f} [{min(rec):.2f}…{max(rec):.2f}]" if len(rec) > 1 else
+                        f"{rec[0]:.2f}" if rec else "n/a (no headroom)")
+                cells.append(f"{rtxt} ({st.mean(dlt):+.2f}) · {succ}/{n} · {_med(ratio):.0%}")
+                if rec:
+                    recs.append(st.mean(rec))
+            if len(recs) >= 2 and all(x >= 0.5 for x in recs):
+                verdict = "model-robust"
+            elif any(x >= 0.5 for x in recs):
+                verdict = "model-dependent"
+            elif recs:
+                verdict = "not effective"
+            else:
+                verdict = "not measurable"
+            out.append(f"| `{spec}` | " + " | ".join(cells) + f" | {verdict} |")
+    return "\n".join(out)
+
+
 def totals(rows: list[dict[str, Any]]) -> str:
     by_model = defaultdict(float)
     for r in rows:
@@ -93,9 +195,11 @@ def totals(rows: list[dict[str, Any]]) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
-    paths = argv if argv is not None else sys.argv[1:]
+    paths = list(argv if argv is not None else sys.argv[1:])
+    robust = "--robust" in paths
+    paths = [p for p in paths if p != "--robust"]
     rows, errors = load(paths)
-    print(table(rows, errors))
+    print(robustness(rows) if robust else table(rows, errors))
     print("\nSpend:", totals(rows))
 
 

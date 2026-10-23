@@ -9,7 +9,7 @@ snippet never reveals them: every hop needs a search and an open. Names are buil
 so most entities have namesakes (same surname / root) with different facts — opening the wrong profile gives a
 wrong chain, as in BrowseComp's confusable entities.
 
-Task (one long session): 8 questions, each a chain of 3–4 hops over functional relations (designer, maker,
+Task (one long session): 8 questions, revealed one at a time via `submit_answer`, each a chain of 3–4 hops over functional relations (designer, maker,
 founder, headquarters, birthplace, twin city) ending in an attribute (a year or a river), plus Q9 = the sum of the
 year answers, which needs every earlier answer to survive until the end. ~8 × (search + open) × 3.5 hops ≈ 60+
 steps; the documents read add up to ≈2× the window. Scoring: `score` = fraction of the 9 answers right.
@@ -24,7 +24,7 @@ from collections import Counter
 
 from eam.agent.context import Tool
 from eam.bench.tasks.common import TaskInstance, filler_paragraphs
-from eam.llm.mock import assistant, context_text, final, tool_use
+from eam.llm.mock import assistant, context_text, final, tool_exchanges, tool_use
 from eam.llm.types import ToolSpec
 
 GIVEN = ["Ilka", "Oren", "Mavi", "Tasso", "Edda", "Rune", "Sefa", "Calix", "Nadia", "Bruno", "Yara", "Ivo", "Lene",
@@ -152,7 +152,11 @@ class BM25:
 
 
 def generate(seed: int, n_questions: int = 8, doc_tokens: int = 2000, context_limit: int = 40_000,
-             step_observation_budget: int | None = 6000, disclose_limit: bool = False) -> TaskInstance:
+             step_observation_budget: int | None = 6000, disclose_limit: bool = False,
+             incremental: bool = True) -> TaskInstance:
+    """``incremental=True`` (default) reveals one question at a time through `submit_answer`, so the questions
+    cannot be researched in parallel and the session is long (≥ ~65 sequential steps); the final answer must
+    list every answer again, so all of them have to survive until the end."""
     rng = random.Random(seed)
     names, rel = _world(rng)
     all_names = [(k, n) for k in names for n in names[k]]
@@ -197,13 +201,31 @@ def generate(seed: int, n_questions: int = 8, doc_tokens: int = 2000, context_li
     year_qs = [i for i, a in enumerate(answers) if isinstance(a, int)]
     total = sum(answers[i] for i in year_qs)
     q_labels = ", ".join(f"Q{i + 1}" for i in year_qs)
-    prompt = ("You are a research assistant with a search engine over a private document collection "
-              f"({len(docs)} long documents about people, companies, cities and products). None of these entities "
-              "are known to you: rely only on the documents. Many names are similar, so make sure each document is "
-              "about exactly the entity you need. Answer every question:\n\n"
-              + "\n".join(f"Q{i + 1}. {q}" for i, q in enumerate(questions))
-              + f"\nQ{len(questions) + 1}. What is the sum of your answers to {q_labels}?\n\n"
-              "Report one line per question as 'Q<n>: <answer>'.")
+    all_qs = [f"Q{i + 1}. {q}" for i, q in enumerate(questions)] + [
+        f"Q{len(questions) + 1}. What is the sum of your answers to {q_labels}?"]
+    intro = ("You are a research assistant with a search engine over a private document collection "
+             f"({len(docs)} long documents about people, companies, cities and products). None of these entities "
+             "are known to you: rely only on the documents. Many names are similar, so make sure each document is "
+             "about exactly the entity you need.")
+    if incremental:
+        prompt = (f"{intro}\n\nThere are {len(all_qs)} questions, revealed one at a time. When you have the "
+                  "answer to the current question, call submit_answer with it; the tool replies with the next "
+                  "question. Submitted answers are not graded until the end. After the last question, give your "
+                  f"final answer listing every answer again, one line per question as 'Q<n>: <answer>' for Q1 to "
+                  f"Q{len(all_qs)}.\n\n{all_qs[0]}")
+    else:
+        prompt = (f"{intro} Answer every question:\n\n" + "\n".join(all_qs)
+                  + "\n\nReport one line per question as 'Q<n>: <answer>'.")
+    progress: dict[int, int] = {}  # questions submitted, per run (keyed by the run's cost meter, which the
+    #                                main agent and its sub-agents share)
+
+    def submit_answer(args, ctx):
+        k = progress.get(id(ctx.meter), 0) + 1
+        progress[id(ctx.meter)] = k
+        if k < len(all_qs):
+            return f"Answer to Q{k} recorded. Next question:\n{all_qs[k]}"
+        return ("All questions have been revealed. Give your final answer now: one line per question, "
+                f"'Q<n>: <answer>' for Q1 to Q{len(all_qs)}.")
 
     def search(args, ctx):
         q = str(args.get("query", ""))
@@ -237,6 +259,10 @@ def generate(seed: int, n_questions: int = 8, doc_tokens: int = 2000, context_li
                       {"type": "object", "properties": {"expression": {"type": "string"}}, "required": ["expression"]}),
              calc),
     ]
+    if incremental:
+        tools.append(Tool(ToolSpec("submit_answer", "Submit your answer to the current question; returns the next "
+                                   "question.", {"type": "object", "properties": {"answer": {"type": "string"}},
+                                                 "required": ["answer"]}), submit_answer))
     gold_answers = [str(a) for a in answers] + [str(total)]
 
     def line_for(answer: str, k: int) -> str:
@@ -281,7 +307,11 @@ def generate(seed: int, n_questions: int = 8, doc_tokens: int = 2000, context_li
         def policy(req):
             text = context_text(req)
             got: list[str] = []
-            for (start, path, attr, _), chain in zip(templates, chains):
+            submitted = [inp.get("answer", "") for n, inp, _ in tool_exchanges(req.messages) if n == "submit_answer"]
+            for q, ((start, path, attr, _), chain) in enumerate(zip(templates, chains)):
+                if incremental and q < len(submitted):
+                    got.append(submitted[q])
+                    continue
                 kind, name = start, chain[0]
                 for step in path + [attr]:
                     val = fact(text, name, step)
@@ -291,10 +321,14 @@ def generate(seed: int, n_questions: int = 8, doc_tokens: int = 2000, context_li
                             return assistant(tool_use("search", {"query": name}))
                         return assistant(tool_use("open_doc", {"doc_id": did}))
                     if step == attr:
+                        if incremental:
+                            return assistant(tool_use("submit_answer", {"answer": str(val)}))
                         got.append(str(val))
                     else:
                         kind, name = kind_after[step], val
-            years = [int(g) for i, g in enumerate(got) if i in year_qs]
+            years = [int(g) for i, g in enumerate(got) if i in year_qs and g.isdigit()]
+            if incremental and len(submitted) == len(questions):
+                return assistant(tool_use("submit_answer", {"answer": str(sum(years))}))
             return final("FINAL ANSWER:\n" + "\n".join(f"Q{i + 1}: {g}" for i, g in enumerate(got))
                          + f"\nQ{len(got) + 1}: {sum(years)}")
 

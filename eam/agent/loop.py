@@ -81,6 +81,35 @@ def collect_tools(env_tools: Iterable[Tool], techniques: Iterable[Any], ctx: Age
     return list(tools.values())
 
 
+class _PromptSizer:
+    """Predicts a request's real prompt size from the character-based estimate: real ≈ a + b · estimate.
+
+    `b` corrects the estimator's undercount of dense text (~1.4× for numeric tables); `a` is fixed per-call
+    overhead the estimate does not see (Claude Code adds ~1.3K tokens per call). Fitted by least squares on this
+    session's (estimate, real) pairs. With a single pair the whole gap is treated as overhead (b = 1): scaling a
+    small first call's gap multiplicatively would wrongly reject the next, larger request.
+    """
+
+    def __init__(self):
+        self.pairs: list[tuple[int, int]] = []
+
+    def observe(self, estimate: int, real: int) -> None:
+        self.pairs.append((estimate, real))
+
+    def predict(self, estimate: int) -> int:
+        if not self.pairs:
+            return estimate
+        xs = [e for e, _ in self.pairs[-20:]]
+        ys = [r for _, r in self.pairs[-20:]]
+        b = 1.0
+        if len(xs) >= 2 and max(xs) - min(xs) >= 2000:
+            mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+            b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+            b = min(2.0, max(1.0, b))
+        a = max(0.0, sum(y - b * x for x, y in zip(xs, ys)) / len(xs))
+        return int(a + b * estimate)
+
+
 def run_agent(
     task: str,
     *,
@@ -138,7 +167,7 @@ def run_agent(
         ctx.messages.append({"role": "user", "content": [{"text": "\n\n".join([ctx.task_header(), *ctx.preamble])}]})
 
     answer, finished, rewrites, nudges = "", False, 0, 0
-    token_ratio = 1.0
+    sizer = _PromptSizer()
     prev_snapshot: list[str] = []
     step = 0
     for step in range(1, max_steps + 1):
@@ -163,16 +192,16 @@ def run_agent(
         if context_limit and context_gauge:
             # Environment feedback, like the context meter real harnesses show: how full the window is right now.
             # Appended to the newest message only, so it never rewrites cached history; identical for every technique.
-            used = int(estimate * token_ratio)
+            used = sizer.predict(estimate)
             ctx.messages[-1]["content"].append({"text": GAUGE.format(used=used, limit=context_limit)})
             estimate = estimate_request_tokens(req)
         snapshot = [_fingerprint(m) for m in ctx.messages]
         if prev_snapshot and snapshot[: len(prev_snapshot)] != prev_snapshot:
             rewrites += 1  # earlier context changed => any cached prefix past that point is lost
             ctx.log("history_rewrite")
-        if context_limit and estimate * token_ratio > context_limit:
+        if context_limit and sizer.predict(estimate) > context_limit:
             ctx.stop_reason = "context_overflow"  # what a real API does when the window is exceeded
-            ctx.log("context_overflow", tokens=int(estimate * token_ratio), limit=context_limit, when="before_call")
+            ctx.log("context_overflow", tokens=sizer.predict(estimate), limit=context_limit, when="before_call")
             break
 
         resp = llm.converse(req)
@@ -180,7 +209,7 @@ def run_agent(
             # The character-based estimate undercounts dense text (numbers, ids); calibrate it with the real count,
             # and treat a request whose real size exceeded the window as rejected.
             if estimate:
-                token_ratio = max(1.0, resp.usage.prompt_tokens / estimate)
+                sizer.observe(estimate, resp.usage.prompt_tokens)
             if resp.usage.prompt_tokens > context_limit:
                 ctx.meter.record(tag, req.model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
                 ctx.stop_reason = "context_overflow"

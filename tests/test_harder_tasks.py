@@ -62,3 +62,37 @@ def test_window_suffix():
     assert split_window("full") == ("full", None)
     inst = FAMILIES["ledger_audit"](0)
     assert run(inst, "full@200k")["context_limit"] == 200_000
+
+
+def test_uncached_counterfactual_and_robust_verdict():
+    from eam.bench.analyze import robustness, uncached_cost
+
+    u = {"input_tokens": 1_000_000, "output_tokens": 0, "cache_read_tokens": 1_000_000, "cache_write_tokens": 0}
+    r = {"model": "cc-sonnet", "cost_usd": 2.0 + 0.1, "usage": u, "prompt_cache": True}
+    assert abs(uncached_cost(r) - 4.0) < 1e-9  # the cached megatoken is re-billed at the input rate
+
+    def row(model, inst, spec, score, cost=1.0):
+        return {"family": "t", "model": model, "instance": inst, "spec": spec, "score": score, "success": score == 1,
+                "cost_usd": cost, "usage": dict(u, cache_read_tokens=0), "prompt_cache": spec != "naive"}
+
+    rows = []
+    for m in ("cc-haiku", "cc-sonnet"):
+        rows += [row(m, "i0", "naive", 0.2), row(m, "i0", "full@native", 1.0), row(m, "i0", "good", 0.9),
+                 row(m, "i0", "weak", 0.3)]
+    rows += [row("cc-opus", "i0", "naive", 0.9), row("cc-opus", "i0", "full@native", 1.0),
+             row("cc-opus", "i0", "good", 1.0)]  # no headroom on opus: recovery undefined there
+    text = robustness(rows)
+    assert "| `good` |" in text and "model-robust" in text.split("| `good` |")[1].splitlines()[0]
+    assert "not effective" in text.split("| `weak` |")[1].splitlines()[0]
+    assert "n/a (no headroom)" in text
+
+
+def test_prompt_sizer_treats_fixed_overhead_as_overhead():
+    from eam.agent.loop import _PromptSizer
+
+    s = _PromptSizer()
+    s.observe(1000, 2400)  # tiny first call; the CLI adds ~1.3K tokens of its own
+    assert s.predict(13000) < 16000  # not 13000 × 2.4 = 31K
+    s.observe(14000, 1400 + int(1.4 * 14000))
+    s.observe(20000, 1400 + int(1.4 * 20000))
+    assert abs(s.predict(30000) - (1400 + 1.4 * 30000)) < 1500  # dense-text undercount is still corrected
