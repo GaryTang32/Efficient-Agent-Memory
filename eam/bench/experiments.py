@@ -66,8 +66,8 @@ REAL_V4_HAIKU = {
                    "fs_workspace+resum:max_context_k=26", *AUTOMEM_ABLATIONS],
     "ledger_audit": ["naive", "naive@native", "full", "resum:max_context_k=40", "fs_workspace",
                      "fs_workspace+resum:max_context_k=40", *AUTOMEM_ABLATIONS],
-    "repo_debug": ["naive", "naive@native", "full", "obs_mask", "resum:max_context_k=26",
-                   "fs_workspace+resum:max_context_k=26", *AUTOMEM_ABLATIONS],
+    "repo_debug": ["naive", "naive@native", "full", "obs_mask", "resum:max_context_k=13",
+                   "fs_workspace+resum:max_context_k=13", *AUTOMEM_ABLATIONS],
 }
 # Sonnet: its earlier rows are unaffected by the corrected bugs (its replies are a few hundred tokens), so only the
 # new cells: AutoMemory on every task (also with Haiku as the summariser: `#aux=cc-haiku`), and the new repo_debug
@@ -76,14 +76,14 @@ REAL_V4_SONNET = {
     "research_corpus": ["automem", "automem#aux=cc-haiku"],
     "ops_stream": ["automem", "automem#aux=cc-haiku"],
     "ledger_audit": ["automem", "automem#aux=cc-haiku", "naive", "naive@native"],
-    "repo_debug": ["naive", "naive@native", "full", "obs_mask", "resum:max_context_k=26",
-                   "fs_workspace+resum:max_context_k=26", "automem", "automem#aux=cc-haiku"],
+    "repo_debug": ["naive", "naive@native", "full", "obs_mask", "resum:max_context_k=13",
+                   "fs_workspace+resum:max_context_k=13", "automem", "automem#aux=cc-haiku"],
 }
 
 # Official long-term memory systems (item 4b) on the multi-session tasks, each with the same ReSum compaction as
 # `fs_workspace+resum`, so the memory system is the only difference. One suite per backend.
 def _ext(backend: str) -> dict[str, list[str]]:
-    k = {"ops_stream": 26, "ledger_audit": 40, "repo_debug": 26}
+    k = {"ops_stream": 26, "ledger_audit": 40, "repo_debug": 13}
     return {task: [f"ext_memory:backend={backend}+resum:max_context_k={kk}"] for task, kk in k.items()}
 
 
