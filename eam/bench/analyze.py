@@ -154,7 +154,7 @@ def robustness(rows: list[dict[str, Any]]) -> str:
                            f"{st.mean(x[1] - x[0] for x in v):.2f} | {st.mean(x[2] for x in v):.3f} | "
                            f"{st.mean(x[3] for x in v):.3f} | {st.mean(x[4] for x in v):.3f} |")
         out.append(f"\n### {family}: method effect relative to each model's own floor and ceiling\n")
-        head = "| method | " + " | ".join(f"{m}: recovery (Δscore) · success · $ vs uncached ceiling" for m in models)
+        head = "| method | " + " | ".join(f"{m}: recovery (Δscore) · success · $ vs `naive@native`" for m in models)
         out.append(head + " | verdict |")
         out.append("|" + "---|" * (len(models) + 2))
         for spec in specs:
@@ -179,7 +179,10 @@ def robustness(rows: list[dict[str, Any]]) -> str:
                 cells.append(f"{rtxt} ({st.mean(dlt):+.2f}) · {succ}/{n} · {_med(ratio):.0%}")
                 if rec:
                     recs.append(st.mean(rec))
-            if len(recs) >= 2 and all(x >= 0.5 for x in recs):
+            if len(recs) < 2:
+                verdict = (("recovers" if recs[0] >= 0.5 else "does not recover") + " (one model only)") if recs \
+                    else "not measurable"
+            elif all(x >= 0.5 for x in recs):
                 verdict = "model-robust"
             elif any(x >= 0.5 for x in recs):
                 verdict = "model-dependent"
