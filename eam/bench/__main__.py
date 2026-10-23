@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--region", default=None)
         p.add_argument("--out", default=None)
         p.add_argument("--workers", type=int, default=1, help="concurrent runs (useful for slow backends)")
+        p.add_argument("--resume", action="store_true", help="skip runs already recorded (without error) in --out")
 
     p_run = sub.add_parser("run", help="run technique specs on one task family")
     p_run.add_argument("--task", required=True)
@@ -73,7 +74,7 @@ def main(argv: list[str] | None = None) -> None:
     rows = run_suite(plan, backend=args.backend, model_key=args.model, aux_key=args.aux_model, n=args.n,
                      task_kwargs=task_kwargs,
                      seed=args.seed, out=out, models_path=args.models_config, region=args.region,
-                     workers=args.workers)
+                     workers=args.workers, resume=args.resume)
     print()
     print(markdown_table(rows))
     print(f"\nrows written to {out}")

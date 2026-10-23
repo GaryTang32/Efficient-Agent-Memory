@@ -26,6 +26,8 @@ def load(paths: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
             if line.strip():
                 r = json.loads(line)
                 (errors if "error" in r else rows).append(r)
+    ok = {(r["family"], r["model"], r["instance"], r["spec"]) for r in rows}
+    errors = [e for e in errors if (e["family"], e["model"], e["instance"], e["spec"]) not in ok]  # rerun since
     return rows, errors
 
 

@@ -133,7 +133,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
 def run_suite(families_specs: dict[str, list[str]], *, backend: str, model_key: str, aux_key: str | None,
               n: int, seed: int, out: str | Path, models_path: str | None = None, region: str | None = None,
               task_kwargs: dict[str, dict[str, Any]] | None = None, echo: bool = True,
-              workers: int = 1) -> list[dict[str, Any]]:
+              workers: int = 1, resume: bool = False) -> list[dict[str, Any]]:
     """Run every (task instance × spec). With workers > 1, runs execute concurrently (each run is independent:
     own client, meter and technique instances), which matters for slow backends such as the Claude Code CLI."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -144,12 +144,18 @@ def run_suite(families_specs: dict[str, list[str]], *, backend: str, model_key: 
     aux = models[aux_key] if aux_key else model
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    done: set[tuple] = set()
+    if resume and out.exists():  # skip runs already recorded without error
+        for row in load_rows([out]):
+            done.add((row["family"], row["instance"], row["spec"]))
     jobs = []
     for family, specs in families_specs.items():
         gen = FAMILIES[family]
         for i in range(n):
             for spec in specs:
-                jobs.append((family, seed + i, spec))
+                if (family, FAMILIES[family](seed + i, **(task_kwargs or {}).get(family, {})).instance_id,
+                        spec) not in done:
+                    jobs.append((family, seed + i, spec))
     lock = threading.Lock()
     rows: list[dict[str, Any]] = []
 

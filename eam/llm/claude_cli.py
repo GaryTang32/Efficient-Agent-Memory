@@ -61,8 +61,10 @@ class ClaudeCLIClient:
         ]
         return cmd, json.dumps(payload) + "\n"
 
-    def _run(self, cmd: list[str], stdin: str) -> dict[str, Any]:
-        env = {**os.environ, **(self.env or {})}
+    def _run(self, cmd: list[str], stdin: str, max_tokens: int = 8192) -> dict[str, Any]:
+        # Cap the reply length: without it a degenerate (repeating) reply can run to the model's 128K-token
+        # maximum and time out. Generous floor so that normal replies are never cut.
+        env = {**os.environ, "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(max(8192, max_tokens)), **(self.env or {})}
         last = ""
         for attempt in range(self.retries + 1):
             try:
@@ -89,7 +91,7 @@ class ClaudeCLIClient:
     def converse(self, req: Request) -> Response:
         cmd, stdin = self.build_command(req)
         t0 = time.perf_counter()
-        result = self._run(cmd, stdin)
+        result = self._run(cmd, stdin, req.max_tokens)
         text = result.get("result") or ""
         visible, uses = self._parse(req, text)
         usage = self._usage(result)
@@ -100,7 +102,7 @@ class ClaudeCLIClient:
             i = cmd2.index("--system-prompt") + 1
             cmd2[i] += ("\n\nYour previous reply could not be parsed. Reply with either <tool_call> blocks "
                         "in the exact format above, or your final answer as plain text.")
-            result = self._run(cmd2, stdin)
+            result = self._run(cmd2, stdin, req.max_tokens)
             text = result.get("result") or ""
             visible, uses = self._parse(req, text)
             usage = usage + self._usage(result)
