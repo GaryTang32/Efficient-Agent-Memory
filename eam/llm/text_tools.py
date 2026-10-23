@@ -23,6 +23,8 @@ INVOKE_RE = re.compile(r'<invoke name="([^"]+)">(.*?)</invoke>', re.S)          
 INVOKE_PARAM_RE = re.compile(r'<parameter name="([^"]+)">(.*?)</parameter>', re.S)
 FUNCTION_RE = re.compile(r"<function=([\w.-]+)>(.*?)</function>", re.S)          # FoldAgent / Qwen-coder style
 FUNCTION_PARAM_RE = re.compile(r"<parameter=([\w.-]+)>\s*(.*?)\s*</parameter>", re.S)
+# Degenerate XML with the tool name missing: <invoke:parameter name="query">…</parameter></invoke>
+NAMELESS_PARAM_RE = re.compile(r'<(?:invoke:)?parameter name="([^"]+)">(.*?)</parameter>', re.S)
 STRAY_TAGS_RE = re.compile(r"</?(function_calls|reasoning_effort)[^>]*>.*?(?=\n|$)", re.S)
 
 
@@ -77,8 +79,20 @@ def render_message_blocks(messages: list[Message]) -> list[str]:
     return blocks
 
 
-def parse_tool_calls(text: str) -> tuple[str, list[dict[str, Any]]]:
-    """Split model output into (visible text, Converse toolUse blocks)."""
+def _infer_tool(params: dict[str, Any], tools) -> str | None:
+    """The one tool whose schema accepts exactly these parameters (all required present, none unknown)."""
+    fits = []
+    for t in tools or []:
+        props = set((t.input_schema or {}).get("properties", {}))
+        required = set((t.input_schema or {}).get("required", []))
+        if params and required <= set(params) <= props:
+            fits.append(t.name)
+    return fits[0] if len(fits) == 1 else None
+
+
+def parse_tool_calls(text: str, tools=None) -> tuple[str, list[dict[str, Any]]]:
+    """Split model output into (visible text, Converse toolUse blocks). With `tools` (ToolSpecs), a call whose
+    tool name is missing is recovered when its parameters fit exactly one tool."""
     uses = []
     for m in TOOL_CALL_RE.finditer(text):
         raw = m.group(1)
@@ -108,6 +122,14 @@ def parse_tool_calls(text: str) -> tuple[str, list[dict[str, Any]]]:
         for name, body in FUNCTION_RE.findall(text):
             args = {k: _param_value(v) for k, v in FUNCTION_PARAM_RE.findall(body)}
             uses.append({"toolUse": {"toolUseId": f"tc_{next(_ids):06d}", "name": name, "input": args}})
+    if not uses and tools:
+        for chunk in text.split("</invoke>"):
+            args = {k: _param_value(v) for k, v in NAMELESS_PARAM_RE.findall(chunk)}
+            name = _infer_tool(args, tools)
+            if name:
+                uses.append({"toolUse": {"toolUseId": f"tc_{next(_ids):06d}", "name": name, "input": args}})
+        if uses:
+            text = NAMELESS_PARAM_RE.sub("", text).replace("</invoke>", "")
     visible = FUNCTION_RE.sub("", INVOKE_RE.sub("", TOOL_CALL_RE.sub("", text)))
     visible = STRAY_TAGS_RE.sub("", visible)
     # models sometimes keep writing a fake result after the call: drop anything from a <tool_result> on

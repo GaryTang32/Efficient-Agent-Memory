@@ -185,3 +185,18 @@ def test_text_protocol_accepts_fallback_formats():
     assert uses[0]["toolUse"]["name"] == "return" and uses[0]["toolUse"]["input"] == {"message": "all done"}
     visible, _ = parse_tool_calls("<reasoning_effort>8</reasoning_effort>\nok")
     assert visible == "ok"
+
+
+def test_nameless_invoke_is_recovered_from_the_parameters():
+    from eam.llm.types import ToolSpec
+
+    tools = [ToolSpec("search", "s", {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}),
+             ToolSpec("open_doc", "o", {"type": "object", "properties": {"doc_id": {"type": "string"}},
+                                        "required": ["doc_id"]})]
+    text = ('<invoke:parameter name="query">Varnholm city guide</parameter>\n</invoke>\n\n'
+            '<invoke:parameter name="query">Varnholm</parameter>\n</invoke>')
+    visible, uses = parse_tool_calls(text, tools)
+    assert [u["toolUse"]["name"] for u in uses] == ["search", "search"] and visible == ""
+    assert uses[1]["toolUse"]["input"] == {"query": "Varnholm"}
+    _, none = parse_tool_calls('<invoke:parameter name="nope">x</parameter></invoke>', tools)
+    assert none == []

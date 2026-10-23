@@ -120,7 +120,7 @@ class ClaudeCLIClient:
             text = text[len(req.prefill):]
         for s in req.stop:  # emulate stop sequences
             text = text.split(s, 1)[0]
-        return parse_tool_calls(text) if req.tools else (text.strip(), [])
+        return parse_tool_calls(text, req.tools) if req.tools else (text.strip(), [])
 
     @staticmethod
     def _usage(result: dict[str, Any]) -> Usage:
