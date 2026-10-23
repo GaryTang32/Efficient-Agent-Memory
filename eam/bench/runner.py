@@ -45,7 +45,10 @@ def _window_limit(window: str | None, default: int | None) -> int | None:
 
 def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelProfile, aux_model: ModelProfile,
                  models: dict[str, ModelProfile], region: str | None = None) -> dict[str, Any]:
-    tech_spec, window = split_window(spec)
+    base_spec, _, aux_override = spec.partition("#aux=")  # e.g. "automem#aux=cc-haiku": cheaper summariser
+    if aux_override:
+        aux_model = models[aux_override.strip()]
+    tech_spec, window = split_window(base_spec)
     techniques = build(tech_spec)
     prompt_cache = not any(getattr(t, "disable_prompt_cache", False) for t in techniques)
     offload = not any(getattr(t, "disable_offload", False) for t in techniques)

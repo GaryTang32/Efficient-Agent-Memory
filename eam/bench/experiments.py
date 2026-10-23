@@ -70,14 +70,14 @@ REAL_V4_HAIKU = {
                    "fs_workspace+resum:max_context_k=26", *AUTOMEM_ABLATIONS],
 }
 # Sonnet: its earlier rows are unaffected by the corrected bugs (its replies are a few hundred tokens), so only the
-# new cells: AutoMemory on every task, and the new repo_debug task. Run once with --aux-model cc-sonnet and once
-# with --aux-model cc-haiku (cheaper summariser).
+# new cells: AutoMemory on every task (also with Haiku as the summariser: `#aux=cc-haiku`), and the new repo_debug
+# task.
 REAL_V4_SONNET = {
-    "research_corpus": ["automem"],
-    "ops_stream": ["automem"],
-    "ledger_audit": ["automem", "naive", "naive@native"],
+    "research_corpus": ["automem", "automem#aux=cc-haiku"],
+    "ops_stream": ["automem", "automem#aux=cc-haiku"],
+    "ledger_audit": ["automem", "automem#aux=cc-haiku", "naive", "naive@native"],
     "repo_debug": ["naive", "naive@native", "full", "obs_mask", "resum:max_context_k=26",
-                   "fs_workspace+resum:max_context_k=26", "automem"],
+                   "fs_workspace+resum:max_context_k=26", "automem", "automem#aux=cc-haiku"],
 }
 
 SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1, "real_v2": REAL_V2,
