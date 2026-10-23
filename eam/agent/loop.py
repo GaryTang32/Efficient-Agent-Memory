@@ -207,6 +207,9 @@ def run_agent(
             break
 
         resp = llm.converse(req)
+        if resp.retries:  # backend retries / internal continuation turns: billed more than one prompt
+            ctx.log("llm_retry", retries=resp.retries, billed_prompt_tokens=resp.usage.prompt_tokens,
+                    prompt_size=resp.prompt_size)
         if context_limit:
             # The character-based estimate undercounts dense text (numbers, ids); calibrate it with the real count,
             # and treat a request whose real size exceeded the window as rejected.
@@ -218,8 +221,6 @@ def run_agent(
                 ctx.log("context_overflow", tokens=resp.prompt_size, limit=context_limit, when="actual")
                 break
         ctx.meter.record(tag, req.model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
-        if resp.retries:
-            ctx.log("llm_retry", retries=resp.retries, billed_prompt_tokens=resp.usage.prompt_tokens)
         ctx.last_prompt_tokens = resp.prompt_size
         ctx.peak_prompt_tokens = max(ctx.peak_prompt_tokens, ctx.last_prompt_tokens)
         prev_snapshot = snapshot + [_fingerprint(resp.message)]

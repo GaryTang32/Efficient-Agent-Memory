@@ -17,6 +17,7 @@ Environment variables (all optional):
   EAM_GATEWAY_URL                   gateway URL (default http://localhost:4100/v1)
   EAM_CLAUDE_BIN                    path to the `claude` binary
   EAM_CLAUDE_TIMEOUT                seconds per `claude -p` call (default 240)
+  EAM_CLAUDE_MAX_OUTPUT             reply cap passed as CLAUDE_CODE_MAX_OUTPUT_TOKENS (default 32000)
 """
 
 from __future__ import annotations

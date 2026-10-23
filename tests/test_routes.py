@@ -200,3 +200,13 @@ def test_nameless_invoke_is_recovered_from_the_parameters():
     assert uses[1]["toolUse"]["input"] == {"query": "Varnholm"}
     _, none = parse_tool_calls('<invoke:parameter name="nope">x</parameter></invoke>', tools)
     assert none == []
+
+
+def test_cli_context_size_undoes_internal_continuation_turns():
+    from eam.llm.claude_cli import ClaudeCLIClient
+
+    one = {"num_turns": 1, "usage": {"input_tokens": 2, "cache_read_input_tokens": 5000, "output_tokens": 100}}
+    two = {"num_turns": 2, "usage": {"input_tokens": 6, "cache_read_input_tokens": 5192,
+                                     "cache_creation_input_tokens": 7731, "output_tokens": 8346}}
+    assert ClaudeCLIClient._context_size(one) == 5002
+    assert ClaudeCLIClient._context_size(two) == (6 + 5192 + 7731 - 8346) // 2  # ≈ 2.3K, the real request

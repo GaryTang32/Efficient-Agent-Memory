@@ -63,8 +63,12 @@ class ClaudeCLIClient:
 
     def _run(self, cmd: list[str], stdin: str, max_tokens: int = 8192) -> dict[str, Any]:
         # Cap the reply length: without it a degenerate (repeating) reply can run to the model's 128K-token
-        # maximum and time out. Generous floor so that normal replies are never cut.
-        env = {**os.environ, "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(max(8192, max_tokens)), **(self.env or {})}
+        # maximum and time out. The cap must stay far above normal replies: when a reply reaches it, Claude Code
+        # continues in a second internal turn and reports the summed usage (measured: a 2.6K-token request
+        # reported as 12.9K prompt tokens), so an 8K cap made Haiku's occasional long replies look like
+        # oversized prompts.
+        cap = max(int(os.environ.get("EAM_CLAUDE_MAX_OUTPUT", 32000)), max_tokens)
+        env = {**os.environ, "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(cap), **(self.env or {})}
         last = ""
         for attempt in range(self.retries + 1):
             try:
@@ -99,8 +103,8 @@ class ClaudeCLIClient:
         text = result.get("result") or ""
         visible, uses = self._parse(req, text)
         usage = self._usage(result)
-        context_tokens = usage.prompt_tokens
-        retries = 0
+        context_tokens = self._context_size(result)
+        retries = int(result.get("num_turns") or 1) - 1  # internal continuation turns count as retries
         cost = result.get("total_cost_usd") or 0.0
         if req.tools and not uses and not visible:
             # Empty or unparseable reply (rare): ask once more instead of ending the run with no answer.
@@ -111,8 +115,8 @@ class ClaudeCLIClient:
             result = self._run(cmd2, stdin, req.max_tokens)
             text = result.get("result") or ""
             visible, uses = self._parse(req, text)
-            context_tokens = self._usage(result).prompt_tokens
-            retries = 1
+            context_tokens = self._context_size(result)
+            retries += int(result.get("num_turns") or 1)
             usage = usage + self._usage(result)
             cost += result.get("total_cost_usd") or 0.0
         wall_ms = (time.perf_counter() - t0) * 1000
@@ -131,6 +135,16 @@ class ClaudeCLIClient:
         for s in req.stop:  # emulate stop sequences
             text = text.split(s, 1)[0]
         return parse_tool_calls(text, req.tools) if req.tools else (text.strip(), [])
+
+    @classmethod
+    def _context_size(cls, result: dict[str, Any]) -> int:
+        """Prompt size of the request itself. With T internal turns Claude Code reports
+        T·P + (earlier turns' output) prompt tokens, so P ≈ (prompt − output) / T."""
+        u = cls._usage(result)
+        turns = max(1, int(result.get("num_turns") or 1))
+        if turns == 1:
+            return u.prompt_tokens
+        return max(0, u.prompt_tokens - u.output_tokens) // turns
 
     @staticmethod
     def _usage(result: dict[str, Any]) -> Usage:
