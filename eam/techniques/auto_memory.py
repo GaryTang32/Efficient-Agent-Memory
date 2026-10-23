@@ -14,6 +14,8 @@ Components and the evidence behind them:
   prompt past ``guard`` × window is offloaded to the artifact store at once (a pointer stays; `read_artifact`
   pages it back). ReSum checks its trigger only between calls, so a step of many parallel calls (Haiku: one step
   added 13–18K tokens) overflowed the window before it could act, whatever the trigger margin.
+* ``keep_recent`` — after a compaction the last steps are kept verbatim after the summary (as Claude Code's own
+  compaction does): with only the reset message left, Haiku's tool-call replies degenerated.
 * ``compact`` — compaction when the window binds: ``resum`` (official ReSum prompts; rare resets keep the prompt
   cache alive), ``mask`` (observation masking: the only single-session method that recovered on Haiku) or
   ``none``. The trigger is a fraction of the actual window (``trigger`` × window) rather than a fixed K. Until
@@ -48,7 +50,7 @@ class AutoMemory(Technique):
 
     def __init__(self, workspace: bool = True, recall: bool = True, autosave: bool = True, guard: float = 0.9,
                  compact: str = "resum", trigger: float = 0.75, default_window: int = 200_000,
-                 token_ratio: float = 1.5):
+                 token_ratio: float = 1.5, keep_recent: int = 2):
         self.workspace = bool(workspace)
         self.recall = bool(recall) and self.workspace
         self.autosave = bool(autosave) and self.workspace
@@ -57,6 +59,7 @@ class AutoMemory(Technique):
         self.trigger = float(trigger)
         self.default_window = int(default_window)
         self.token_ratio = float(token_ratio)  # real tokens per estimated token, conservative for dense text
+        self.keep_recent = int(keep_recent)  # complete steps kept verbatim after a compaction
         self._ws = NoteWorkspace() if self.workspace else None
         self._compactor = None
         self._sessions = 0
@@ -101,6 +104,7 @@ class AutoMemory(Technique):
         if self._compactor is None:
             return
         if isinstance(self._compactor, ReSum):
+            tail = self._recent_tail(ctx)
             # the guard's prediction of the coming prompt (real tokens), if it is larger than the last real size
             predicted = ctx.state.get("automem_predicted", 0)
             if predicted > ctx.last_prompt_tokens:
@@ -117,8 +121,30 @@ class AutoMemory(Technique):
                 ctx.state["automem_predicted"] = 0
                 if self.recall and self._notes_text():  # the reset message replaced the session's first message
                     ctx.messages[0]["content"].append({"text": RECALL.format(notes=self._notes_text())})
+                if tail:  # the model keeps seeing its own latest calls (Haiku's replies degenerated without them)
+                    ctx.messages.extend(tail)
+                    ctx.log("automem_kept_recent", messages=len(tail))
         else:
             self._compactor.before_call(ctx)
+
+    def _recent_tail(self, ctx) -> list:
+        """The last `keep_recent` complete steps (assistant call + its results), within 15% of the window."""
+        import copy
+
+        from eam.techniques.steps import step_indices
+
+        if self.keep_recent <= 0:
+            return []
+        steps = [(a, u) for a, u in step_indices(ctx.messages) if u is not None][-self.keep_recent:]
+        tail: list = []
+        for a, u in reversed(steps):
+            chunk = copy.deepcopy(ctx.messages[a: u + 1])
+            size = sum(estimate_tokens(str(b)) for m in chunk for b in m["content"]) * self.token_ratio
+            if size + sum(estimate_tokens(str(b)) for m in tail for b in m["content"]) * self.token_ratio \
+                    > 0.15 * self._window(ctx):
+                break
+            tail = chunk + tail
+        return tail
 
     def on_tool_result(self, ctx, outcome):
         if not self.guard:
@@ -148,4 +174,4 @@ class AutoMemory(Technique):
 
     def describe(self) -> str:
         return (f"automem(workspace={self.workspace}, recall={self.recall}, autosave={self.autosave}, "
-                f"guard={self.guard}, compact={self.compact}, trigger={self.trigger})")
+                f"guard={self.guard}, compact={self.compact}, trigger={self.trigger}, keep_recent={self.keep_recent})")
