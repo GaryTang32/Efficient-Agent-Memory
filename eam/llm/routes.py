@@ -16,6 +16,7 @@ Environment variables (all optional):
   EAM_LITELLM_URL, LITELLM_API_KEY  LiteLLM proxy URL (default http://localhost:4000/v1) and key
   EAM_GATEWAY_URL                   gateway URL (default http://localhost:4100/v1)
   EAM_CLAUDE_BIN                    path to the `claude` binary
+  EAM_CLAUDE_TIMEOUT                seconds per `claude -p` call (default 240)
 """
 
 from __future__ import annotations

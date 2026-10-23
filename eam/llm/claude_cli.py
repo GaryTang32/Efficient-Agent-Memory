@@ -31,10 +31,10 @@ class ClaudeCLIError(RuntimeError):
 class ClaudeCLIClient:
     route = "claude-cli"
 
-    def __init__(self, binary: str | None = None, *, timeout_s: float = 240, retries: int = 2,
+    def __init__(self, binary: str | None = None, *, timeout_s: float | None = None, retries: int = 2,
                  extra_args: list[str] | None = None, env: dict[str, str] | None = None):
         self.binary = binary or os.environ.get("EAM_CLAUDE_BIN", "claude")
-        self.timeout_s = timeout_s
+        self.timeout_s = timeout_s or float(os.environ.get("EAM_CLAUDE_TIMEOUT", 240))
         self.retries = retries
         self.extra_args = extra_args or []
         self.env = env
