@@ -54,9 +54,35 @@ REAL_V3 = {
                    "fs_workspace+resum:max_context_k=26", "folding"],
 }
 
+# Phase 2: AutoMemory v1 against the anchors and the best single method per task, plus ablations (one switch off
+# at a time). Corrected harness (2026-10-24: retried and continued CLI calls are no longer read as oversized
+# prompts), so every Haiku cell of the long tasks is rerun.
+AUTOMEM_ABLATIONS = ["automem", "automem:guard=0", "automem:recall=false,autosave=false", "automem:keep_recent=0",
+                     "automem:compact=mask", "automem:compact=none"]
+REAL_V4_HAIKU = {
+    "research_corpus": ["naive", "naive@native", "full", "obs_mask", "resum:max_context_k=33",
+                        "fs_workspace+resum:max_context_k=33", *AUTOMEM_ABLATIONS],
+    "ops_stream": ["naive", "naive@native", "full", "resum:max_context_k=26", "fs_workspace",
+                   "fs_workspace+resum:max_context_k=26", *AUTOMEM_ABLATIONS],
+    "ledger_audit": ["naive", "naive@native", "full", "resum:max_context_k=40", "fs_workspace",
+                     "fs_workspace+resum:max_context_k=40", *AUTOMEM_ABLATIONS],
+    "repo_debug": ["naive", "naive@native", "full", "obs_mask", "resum:max_context_k=26",
+                   "fs_workspace+resum:max_context_k=26", *AUTOMEM_ABLATIONS],
+}
+# Sonnet: its earlier rows are unaffected by the corrected bugs (its replies are a few hundred tokens), so only the
+# new cells: AutoMemory on every task, and the new repo_debug task. Run once with --aux-model cc-sonnet and once
+# with --aux-model cc-haiku (cheaper summariser).
+REAL_V4_SONNET = {
+    "research_corpus": ["automem"],
+    "ops_stream": ["automem"],
+    "ledger_audit": ["automem", "naive", "naive@native"],
+    "repo_debug": ["naive", "naive@native", "full", "obs_mask", "resum:max_context_k=26",
+                   "fs_workspace+resum:max_context_k=26", "automem"],
+}
+
 SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1, "real_v2": REAL_V2,
           "real_v2_aware": REAL_V2,
-          "real_v3": REAL_V3}
+          "real_v3": REAL_V3, "real_v4_haiku": REAL_V4_HAIKU, "real_v4_sonnet": REAL_V4_SONNET}
 
 # Task settings per suite. real_v2 = "unaware" (the papers' setting: the harness silently enforces the window);
 # real_v2_aware = the agent is told the limit and sees a context gauge each step.
