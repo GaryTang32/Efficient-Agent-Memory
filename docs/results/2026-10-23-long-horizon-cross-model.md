@@ -2,6 +2,17 @@
 
 **Date:** 2026-10-23.
 
+> **Erratum (2026-10-24): the Haiku overflow results in this report are not reliable.** Two harness bugs, found
+> while building AutoMemory, made some Haiku calls look far larger than the real context:
+> 1. When the CLI client retried an empty reply, it summed both attempts' prompt tokens into the context size.
+> 2. When a reply hit the 8K output cap set during this round, Claude Code continued in internal turns and reported the summed usage. A 2.6K-token request was reported as 12.9K.
+>
+> The inflated sizes caused false "actual" overflows. They also inflated the prompt-size predictor, which then rejected later requests.
+>
+> On the corrected harness, the same Haiku `research_corpus` instance scored 0.89 with ReSum (was 0.20, 4/5 overflow) and 1.00 with AutoMemory. The explanation of ReSum's Haiku failures in finding 3 ("13–18K per step") is withdrawn.
+>
+> **Sonnet rows are unaffected:** its replies are a few hundred tokens and cannot reach the cap. Corrected Haiku results for every cell: `docs/results/2026-10-24-automem-evaluation.md`.
+
 **Route:** Claude Code CLI (`claude-cli`). The same model serves as the agent, the summariser and the sub-agents.
 
 **Raw rows** (git-ignored, under `results/`):
@@ -118,11 +129,7 @@ Settings are the official defaults unless stated (`docs/literature_review.md`).
 3. **Model capability gates most methods.** On Sonnet, 4 of the 5 methods recovered ≥ 0.98 on `research_corpus`. The best Haiku result was 0.63. Prompt-only methods depend on the model *using* the mechanism:
    - **Context-Folding:** Haiku called `branch` once in 5 research runs and overflowed. Sonnet branched 5 times per run and solved 3/3.
    - **ReSum on Haiku:** the session overflowed before the summary trigger fired, in 4/5 runs on `research_corpus` and 5/5 on `ops_stream`. Workspace + ReSum overflowed in 4/5 on each task.
-     - **Cause** (verified with a transcript, `EAM_TRANSCRIPTS`): Haiku issues many tool calls per step (≈4.5 on average on `ops_stream`, more in bursts). The harness keeps a step's outputs in full only up to 6K tokens, but every further call still adds a short preview and pointer. So one Haiku step can add 13–18K tokens, more than any margin below the window.
-     - ReSum checks its trigger only *between* calls, so it cannot catch such a jump. In the inspected run, the prompt went from below the 23.1K trigger to a predicted 36–41K in a single step, and once to an actual 45.9K prompt.
-     - Moving the trigger earlier did not help: `research_corpus` K=28 scored 0.20 vs 0.20; `ops_stream` K=22 scored 0.35 vs 0.43, still overflowing 5/5, with more rounds and cost.
-     - Sonnet issues fewer calls per step and never overflowed with ReSum.
-     - Threshold-triggered compaction therefore needs either one call per step or a check *within* a step (before each tool result is appended). That is a harness change, not a parameter.
+     - ~~Cause: one Haiku step adding 13–18K tokens~~ — **withdrawn** (see the erratum). The overflows were mostly an artefact of inflated per-call sizes. Corrected numbers are in the 2026-10-24 report.
    - **Workspace alone on Haiku `ops_stream`:** Haiku re-read old files instead of trusting its notes (0.34), while Sonnet scored 0.99.
 
 4. **Caching is the largest cost lever, and on a cached route long context is hard to beat.**
