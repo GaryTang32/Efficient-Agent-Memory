@@ -51,7 +51,7 @@ Settings are the official defaults unless stated (`docs/literature_review.md`).
 | `full` | B1 | full history, Claude Code's caching, harness offload of tool output above 6K tokens per step |
 | `naive@native`, `full@native` | ceiling | as above, without the emulated window |
 | `obs_mask` | observation masking: window 2, ≥300 tokens (AttnCompress artefact settings; the baseline in AgentDiet and AttnCompress) | |
-| `resum:max_context_k=K` | ReSum (Tongyi Lab), official prompts | Trigger at 0.9·(K·1024 − 1000) tokens. K=33 for the 40K window (29.5K) and K=26 for the 32K window (23.1K). Sensitivity runs: K=28 and K=22. |
+| `resum:max_context_k=K` | ReSum (Tongyi Lab), official prompts | Trigger at 0.9·(K·1024 − 1000) tokens. K=33 for the 40K window (29.5K) and K=26 for the 32K window (23.1K), chosen before the runs. Sensitivity runs on Haiku: K=28 (`research_corpus`) and K=22 (`ops_stream`). |
 | `fs_workspace` | FS-Researcher (ACL'26, USTC) file-system workspace | our minimal port: notes that persist across sessions |
 | `fs_workspace+resum` | combination | recipe from `2026-10-22-ledger_audit-cross-model.md` |
 | `folding` | Context-Folding / FoldAgent (ICML'26, ByteDance Seed) | official protocol, ≤5 branches |
@@ -80,8 +80,10 @@ Settings are the official defaults unless stated (`docs/literature_review.md`).
 | `agentdiet` | 0/5 · 0.29 · 0.15 · 108% · 70 · 20.1 | — |
 | `folding` | 0/5 · 0.20 · 0.01 · 21% · 55 · 8.7 | 0/2 · 0.20 · 0.01 · 308% · 90 · 24.4 |
 | `fs_workspace` | 0/5 · 0.34 · 0.27 · 28% · 62 · 11.5 | 1/2 · 0.99 · 0.99 · 72% · 52 · 6.3 |
+| `fs_workspace+resum:max_context_k=22` | 0/5 · 0.54 · 0.50 · 98% · 103 · 29.9 | — |
 | `fs_workspace+resum:max_context_k=26` | 0/5 · 0.55 · 0.58 · 60% · 79 · 20.9 | 1/2 · 0.99 · 0.98 · 81% · 55 · 6.5 |
 | `obs_mask` | 0/5 · 0.12 · -0.12 · 118% · 122 · 16.2 | 0/2 · 0.38 · 0.23 · 1616% · 322 · 40.3 |
+| `resum:max_context_k=22` | 0/5 · 0.35 · 0.26 · 277% · 179 · 59.4 | — |
 | `resum:max_context_k=26` | 0/5 · 0.43 · 0.35 · 144% · 127 · 37.8 | 2/2 · 1.00 · 1.00 · 384% · 121 · 17.5 |
 
 **research_corpus** — success · accuracy · recovery · cost vs `naive@native` · rounds · minutes (medians; recovery defined only for methods)
@@ -115,7 +117,12 @@ Settings are the official defaults unless stated (`docs/literature_review.md`).
 
 3. **Model capability gates most methods.** On Sonnet, 4 of the 5 methods recovered ≥ 0.98 on `research_corpus`. The best Haiku result was 0.63. Prompt-only methods depend on the model *using* the mechanism:
    - **Context-Folding:** Haiku called `branch` once in 5 research runs and overflowed. Sonnet branched 5 times per run and solved 3/3.
-   - **ReSum on Haiku:** the session overflowed before the summary trigger fired, in 4/5 runs on `research_corpus` and 5/5 on `ops_stream`. Workspace + ReSum overflowed in 4/5 on each task. A single Haiku step can add more than the margin left below the window. Moving the trigger earlier did not help on `research_corpus` (K=28: 0.20). For `ops_stream`, see the sensitivity rows.
+   - **ReSum on Haiku:** the session overflowed before the summary trigger fired, in 4/5 runs on `research_corpus` and 5/5 on `ops_stream`. Workspace + ReSum overflowed in 4/5 on each task.
+     - **Cause** (verified with a transcript, `EAM_TRANSCRIPTS`): Haiku issues many tool calls per step (≈4.5 on average on `ops_stream`, more in bursts). The harness keeps a step's outputs in full only up to 6K tokens, but every further call still adds a short preview and pointer. So one Haiku step can add 13–18K tokens, more than any margin below the window.
+     - ReSum checks its trigger only *between* calls, so it cannot catch such a jump. In the inspected run, the prompt went from below the 23.1K trigger to a predicted 36–41K in a single step, and once to an actual 45.9K prompt.
+     - Moving the trigger earlier did not help: `research_corpus` K=28 scored 0.20 vs 0.20; `ops_stream` K=22 scored 0.35 vs 0.43, still overflowing 5/5, with more rounds and cost.
+     - Sonnet issues fewer calls per step and never overflowed with ReSum.
+     - Threshold-triggered compaction therefore needs either one call per step or a check *within* a step (before each tool result is appended). That is a harness change, not a parameter.
    - **Workspace alone on Haiku `ops_stream`:** Haiku re-read old files instead of trusting its notes (0.34), while Sonnet scored 0.99.
 
 4. **Caching is the largest cost lever, and on a cached route long context is hard to beat.**
@@ -171,8 +178,10 @@ All bugs below were fixed before the reported rows were recorded. Affected rows 
 ## Spend (list price, this round, reported rows only)
 
 <!-- SPEND -->
-cc-haiku: $34.46 · cc-sonnet: $127.07 · total $161.53
+cc-haiku: $42.11 · cc-sonnet: $127.07 · total $169.18
 <!-- /SPEND -->
+
+Not included above: pilots, debug runs and the rows discarded for the `submit_answer` bug (+$10.97 recorded), plus runs that errored before writing a row (usage-limit and timeout failures; their partial cost is not recorded).
 
 ## Full tables
 
@@ -193,9 +202,11 @@ cc-haiku: $34.46 · cc-sonnet: $127.07 · total $161.53
 | `agentdiet` | 0.15 [-0.02…0.28] (+0.09) · 0/5 · 108% | — | does not recover (one model only) |
 | `folding` | 0.01 [0.00…0.03] (+0.01) · 0/5 · 21% | 0.01 [-0.11…0.12] (+0.01) · 0/2 · 308% | not effective |
 | `fs_workspace` | 0.27 [-0.32…1.27] (+0.14) · 0/5 · 28% | 0.99 [0.98…1.00] (+0.80) · 1/2 · 72% | model-dependent |
+| `fs_workspace+resum:max_context_k=22` | 0.50 [0.07…0.88] (+0.34) · 0/5 · 98% | — | does not recover (one model only) |
 | `fs_workspace+resum:max_context_k=26` | 0.58 [0.00…1.06] (+0.35) · 0/5 · 60% | 0.98 [0.96…1.00] (+0.79) · 1/2 · 81% | model-robust |
 | `full` | 0.00 [0.00…0.02] (+0.00) · 0/5 · 21% | -0.03 [-0.07…0.02] (-0.02) · 0/2 · 80% | not effective |
 | `obs_mask` | -0.12 [-0.18…-0.09] (-0.08) · 0/5 · 118% | 0.23 [0.18…0.29] (+0.19) · 0/2 · 1616% | not effective |
+| `resum:max_context_k=22` | 0.26 [0.11…0.67] (+0.15) · 0/5 · 277% | — | does not recover (one model only) |
 | `resum:max_context_k=26` | 0.35 [0.21…0.58] (+0.24) · 0/5 · 144% | 1.00 [1.00…1.00] (+0.81) · 2/2 · 384% | model-dependent |
 
 ### research_corpus: anchors per model (means over instances)
@@ -230,7 +241,9 @@ cc-haiku: $34.46 · cc-sonnet: $127.07 · total $161.53
 | cc-haiku | `naive@native` | 5 | 1/5 | 0.89 | 31 | 185 | 10 | 31 | 0/5 | 22.7 | 9.4 |
 | cc-haiku | `full@native` | 5 | 0/5 | 0.81 | 115 | 568 | 10 | 115 | 0/5 | 37.8 | 23.6 |
 | cc-haiku | `fs_workspace+resum:max_context_k=26` | 5 | 0/5 | 0.55 | 79 | 165 | 10 | 86 | 4/5 | 20.9 | 16.2 |
+| cc-haiku | `fs_workspace+resum:max_context_k=22` | 5 | 0/5 | 0.54 | 103 | 235 | 10 | 121 | 5/5 | 29.9 | 23.6 |
 | cc-haiku | `resum:max_context_k=26` | 5 | 0/5 | 0.43 | 127 | 573 | 10 | 147 | 5/5 | 37.8 | 27.2 |
+| cc-haiku | `resum:max_context_k=22` | 5 | 0/5 | 0.35 | 179 | 833 | 10 | 217 | 5/5 | 59.4 | 50.2 |
 | cc-haiku | `fs_workspace` | 5 | 0/5 | 0.34 | 62 | 146 | 10 | 58 | 5/5 | 11.5 | 8.3 |
 | cc-haiku | `agentdiet` | 5 | 0/5 | 0.29 | 70 | 322 | 10 | 102 | 5/5 | 20.1 | 14.5 |
 | cc-haiku | `folding` | 5 | 0/5 | 0.20 | 55 | 290 | 10 | 49 | 5/5 | 8.7 | 3.5 |
@@ -253,7 +266,9 @@ cc-haiku: $34.46 · cc-sonnet: $127.07 · total $161.53
 | cc-haiku | `naive@native` | 859K | 859K | 0K | 0K | 173K | 119K | 0% | 0.422 | 0.422 | 6.577 |
 | cc-haiku | `full@native` | 8.80M | 0K | 6.50M | 2.30M | 516K | 824K | 78% | 1.707 | 2.062 | ∞ |
 | cc-haiku | `fs_workspace+resum:max_context_k=26` | 1.44M | 0K | 793K | 650K | 231K | 29K | 51% | 0.253 | 0.260 | ∞ |
+| cc-haiku | `fs_workspace+resum:max_context_k=22` | 2.21M | 0K | 893K | 1.31M | 349K | 31K | 40% | 0.446 | 0.395 | ∞ |
 | cc-haiku | `resum:max_context_k=26` | 3.02M | 0K | 887K | 2.13M | 403K | 31K | 33% | 0.637 | 0.503 | ∞ |
+| cc-haiku | `resum:max_context_k=22` | 5.19M | 1K | 1.64M | 3.47M | 740K | 30K | 30% | 1.085 | 0.894 | ∞ |
 | cc-haiku | `fs_workspace` | 870K | 0K | 535K | 320K | 116K | 31K | 63% | 0.128 | 0.145 | ∞ |
 | cc-haiku | `agentdiet` | 2.15M | 0K | 227K | 1.92M | 216K | 32K | 11% | 0.529 | 0.353 | ∞ |
 | cc-haiku | `folding` | 704K | 0K | 398K | 306K | 48K | 31K | 57% | 0.089 | 0.094 | ∞ |
