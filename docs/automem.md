@@ -79,4 +79,10 @@ Add it to `.mcp.json` (Claude Code) or to your client's MCP configuration:
 | `context_budget` | whether to compact now, and how much the next step may add |
 | `compact` | ReSum's summary prompt for your model; or a ready reset message, if `EAM_MEMORY_ROUTE` (e.g. `claude-cli`) and `EAM_MEMORY_MODEL` (e.g. `cc-haiku`) are set |
 
+**Verified with Claude Code (2026-10-24).** Two separate `claude -p --model haiku --mcp-config … --allowedTools mcp__automem__…` processes were run:
+- Session 1 called `recall`, `write_note` and `save_session`.
+- Session 2, a fresh process, called `recall` and answered with the value stored by session 1.
+
+The notes persisted in `EAM_MEMORY_DIR/notes.json`.
+
 An MCP server cannot rewrite its client's context. The client applies the reset, or uses its own compaction, and keeps the rest.
