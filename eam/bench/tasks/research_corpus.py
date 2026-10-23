@@ -220,6 +220,8 @@ def generate(seed: int, n_questions: int = 8, doc_tokens: int = 2000, context_li
     #                                main agent and its sub-agents share)
 
     def submit_answer(args, ctx):
+        if not str(args.get("answer", "")).strip():
+            raise ValueError("submit_answer needs a non-empty 'answer'; the current question is unchanged")
         k = progress.get(id(ctx.meter), 0) + 1
         progress[id(ctx.meter)] = k
         if k < len(all_qs):

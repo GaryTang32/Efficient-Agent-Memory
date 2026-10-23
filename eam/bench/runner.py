@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import time
 from collections import Counter
 from pathlib import Path
@@ -90,6 +92,11 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         tool_calls += res.tool_calls
         events.update(e["kind"] for e in res.events)
     summary = meter.summary()
+    if os.environ.get("EAM_TRANSCRIPTS"):  # opt-in: keep the last session's messages for failure analysis
+        tdir = Path(os.environ["EAM_TRANSCRIPTS"])
+        tdir.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^\w.+=@-]", "_", f"{inst.instance_id}__{model.key}__{spec}") + ".json"
+        (tdir / name).write_text(json.dumps({"messages": res.messages, "events": res.events}, default=str)[:20_000_000])
     return {
         "family": inst.family,
         "instance": inst.instance_id,
