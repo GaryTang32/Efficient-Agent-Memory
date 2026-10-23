@@ -100,8 +100,9 @@ def extractive_aux(req: Request) -> Message:
 
 class MockLLM:
     def __init__(self, policy: Policy, aux_policy: Policy = extractive_aux, ttl_s: float = 300.0,
-                 validate: bool = True):
+                 validate: bool = True, prompt_cache: bool = True):
         self.policy = policy
+        self.prompt_cache = prompt_cache
         self.aux_policy = aux_policy
         self.ttl_s = ttl_s
         self.validate = validate
@@ -113,7 +114,7 @@ class MockLLM:
             validate_messages(req.messages, bool(req.tools))
         policy = self.policy if req.tag in ("main", "subagent") else self.aux_policy
         msg = policy(req)
-        if req.model.supports_cache:
+        if req.model.supports_cache and self.prompt_cache:
             sim = self._caches.setdefault(req.model.key, PrefixCacheSimulator(req.model.min_cache_tokens, self.ttl_s))
             uncached, read, write = sim.account(kwargs)
         else:

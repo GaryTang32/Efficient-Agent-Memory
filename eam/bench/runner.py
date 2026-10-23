@@ -20,30 +20,49 @@ from eam.store import ArtifactStore
 from eam.techniques import build
 
 
-def make_llm(backend: str, inst: TaskInstance, region: str | None = None) -> LLMClient:
+def make_llm(backend: str, inst: TaskInstance, region: str | None = None, prompt_cache: bool = True) -> LLMClient:
     if backend == "mock":
-        return MockLLM(inst.oracle())
-    return make_client(backend, region=region)
+        return MockLLM(inst.oracle(), prompt_cache=prompt_cache)
+    return make_client(backend, region=region, prompt_cache=prompt_cache)
+
+
+def split_window(spec: str) -> tuple[str, str | None]:
+    """``"<techniques>@native"`` runs without the emulated context window (the model's own window applies);
+    ``"<techniques>@64k"`` overrides the task's window. Returns (technique spec, window override)."""
+    base, _, window = spec.partition("@")
+    return base, (window.strip().lower() or None)
+
+
+def _window_limit(window: str | None, default: int | None) -> int | None:
+    if window is None:
+        return default
+    if window == "native":
+        return None
+    return int(float(window.rstrip("k")) * 1000) if window.endswith("k") else int(window)
 
 
 def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelProfile, aux_model: ModelProfile,
                  models: dict[str, ModelProfile], region: str | None = None) -> dict[str, Any]:
-    techniques = build(spec)
-    llm = make_llm(backend, inst, region)
+    tech_spec, window = split_window(spec)
+    techniques = build(tech_spec)
+    prompt_cache = not any(getattr(t, "disable_prompt_cache", False) for t in techniques)
+    offload = not any(getattr(t, "disable_offload", False) for t in techniques)
+    context_limit = _window_limit(window, inst.context_limit)
+    llm = make_llm(backend, inst, region, prompt_cache=prompt_cache)
     meter, store = CostMeter(), ArtifactStore()
     common = dict(llm=llm, model=model, aux_model=aux_model, models=models, env_tools=inst.tools,
                   techniques=techniques, system_prompt=inst.system_prompt or DEFAULT_SYSTEM,
                   resources=inst.resources, meter=meter, store=store)
     t0 = time.perf_counter()
     rewrites, events = 0, Counter()
-    if inst.context_limit:
-        common["context_limit"] = inst.context_limit
+    if context_limit:
+        common["context_limit"] = context_limit
         common["context_gauge"] = inst.disclose_limit
-    if inst.step_observation_budget:
+    if inst.step_observation_budget and offload:
         common["step_observation_budget"] = inst.step_observation_budget
-        if inst.disclose_limit:
-            common["system_prompt"] = (common["system_prompt"] + f"\n\nContext window: your conversation can hold at "
-                                       f"most {inst.context_limit:,} tokens in total. If it grows beyond that, the task fails.")
+    if context_limit and inst.disclose_limit:
+        common["system_prompt"] = (common["system_prompt"] + f"\n\nContext window: your conversation can hold at "
+                                   f"most {context_limit:,} tokens in total. If it grows beyond that, the task fails.")
     for session in inst.sessions:  # earlier sessions of multi-session tasks: costs count, answers don't
         r = run_agent(session, max_steps=inst.max_steps, final_marker=None, **common)
         rewrites += r.history_rewrites
@@ -83,7 +102,10 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "round_scores": round_scores,
         "round_answers": round_answers,
         "overflow": events.get("context_overflow", 0) > 0,
-        "limit_disclosed": inst.disclose_limit if inst.context_limit else None,
+        "limit_disclosed": inst.disclose_limit if context_limit else None,
+        "context_limit": context_limit,
+        "prompt_cache": prompt_cache,
+        "offload": bool(inst.step_observation_budget and offload),
         "finished": res.finished,
         "steps": res.steps,
         "cost_usd": summary["cost_usd"],

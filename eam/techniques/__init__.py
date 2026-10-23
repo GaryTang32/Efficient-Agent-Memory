@@ -2,7 +2,9 @@
 
 A spec string selects techniques for a run::
 
-    "full"                                  baseline
+    "full"                                  baseline (full history, provider caching, harness offload)
+    "naive"                                 no memory, no caching, no offload
+    "naive@native"                          ... without the emulated context window (see bench/runner.py)
     "offload:max_tokens=600"                one technique with parameters
     "cache_layout+offload+keep_last_n:keep=3"  a combination
 """
@@ -18,6 +20,7 @@ from eam.techniques.folding import ContextFolding
 from eam.techniques.iter_research import IterResearch
 from eam.techniques.masking import KeepLastN
 from eam.techniques.memagent import MemAgentReader
+from eam.techniques.naive import NoOptimization
 from eam.techniques.obs_mask import ObservationMasking
 from eam.techniques.offload import ToolResultOffload
 from eam.techniques.resum import ReSum
@@ -36,6 +39,7 @@ REGISTRY: dict[str, type[Technique]] = {
     "resum": ReSum,
     # baselines and engineering rules
     "full": FullContext,
+    "naive": NoOptimization,
     "obs_mask": ObservationMasking,
     "cache_layout": CacheLayout,
     "todo": TodoRecitation,

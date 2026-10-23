@@ -41,13 +41,15 @@ def route_base_url(route: str, region: str | None = None) -> str:
     }[route]
 
 
-def make_client(route: str, *, region: str | None = None, policy=None) -> LLMClient:
+def make_client(route: str, *, region: str | None = None, policy=None, prompt_cache: bool = True) -> LLMClient:
+    """``prompt_cache=False`` switches provider-side caching off where the route caches on its own (Claude Code
+    CLI, mock simulator). Converse/OpenAI routes cache only at the cache points a technique adds."""
     if route == "mock":
         from eam.llm.mock import MockLLM
 
         if policy is None:
             raise ValueError("the mock route needs a scripted policy")
-        return MockLLM(policy)
+        return MockLLM(policy, prompt_cache=prompt_cache)
     if route in ("converse", "bedrock"):
         from eam.llm.bedrock import BedrockClient
 
@@ -55,7 +57,7 @@ def make_client(route: str, *, region: str | None = None, policy=None) -> LLMCli
     if route == "claude-cli":
         from eam.llm.claude_cli import ClaudeCLIClient
 
-        return ClaudeCLIClient()
+        return ClaudeCLIClient(env=None if prompt_cache else {"DISABLE_PROMPT_CACHING": "1"})
     if route in ("litellm", "mantle", "bedrock-openai", "gateway"):
         from eam.llm.openai_compat import OpenAICompatClient
 
