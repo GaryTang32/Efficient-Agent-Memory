@@ -1,10 +1,11 @@
 """Repository debugging with real test execution (SWE-style; AgentDiet's and Trae Agent's setting is SWE-bench).
 
-A generated but real Python library (`ledgerkit`: ~30 modules, ≈50K tokens with its tests) with planted bugs.
+A generated but real Python library (`ledgerkit`: ~30 modules, ≈50K tokens with its tests; 16K-token window) with
+planted bugs.
 The agent reads code, greps, edits files and runs the real test suite (pytest in an isolated temporary copy).
 Bug behaviour is only covered by end-to-end scenarios (`tests/test_pipeline.py::test_scenario_NN`, docstrings in
 business terms), so a failing test does not name the faulty module: the agent has to trace the flow through the
-pipeline into the library. Three sessions, each a fresh conversation with its own issue report and two bugs:
+pipeline into the library. Two sessions, each a fresh conversation with its own issue report and four bugs:
 knowledge of the codebase from earlier sessions (the pipeline's structure, where things live) saves work later.
 
 Scoring per session: the fraction of that session's scenarios that pass when the *pristine* test suite is run
@@ -509,13 +510,13 @@ def _run_pytest(root: Path, selector: str = "", timeout: int = 90) -> tuple[str,
     return out, results
 
 
-def generate(seed: int, n_sessions: int = 3, context_limit: int = 32_000,
+def generate(seed: int, n_sessions: int = 2, bugs_per_session: int = 4, context_limit: int = 16_000,
              step_observation_budget: int | None = 6000, disclose_limit: bool = False) -> TaskInstance:
     import random
 
     rng = random.Random(seed)
-    chosen = rng.sample(sorted(BUGS), 2 * n_sessions)
-    sessions = [chosen[2 * k: 2 * k + 2] for k in range(n_sessions)]
+    chosen = rng.sample(sorted(BUGS), bugs_per_session * n_sessions)
+    sessions = [chosen[bugs_per_session * k: bugs_per_session * (k + 1)] for k in range(n_sessions)]
     files = _build(seed, chosen)
     state: dict = {"root": None, "owner": None}
 
