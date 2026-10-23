@@ -58,6 +58,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     t0 = time.perf_counter()
     rewrites, events = 0, Counter()
     tool_calls = 0
+    all_events: list[dict[str, Any]] = []  # every session's events, for the optional transcript
     if context_limit:
         common["context_limit"] = context_limit
         common["context_gauge"] = inst.disclose_limit
@@ -77,6 +78,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         for k, prompt in enumerate(inst.rounds):
             r = run_agent(prompt, max_steps=inst.max_steps, **common)
             tool_calls += r.tool_calls
+            all_events += [dict(e, session=k) for e in r.events]
             round_scores.append(inst.round_score(k, r.answer) if r.finished else 0.0)
             round_answers.append(r.answer[:1500])
             rewrites += r.history_rewrites
@@ -96,7 +98,8 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         tdir = Path(os.environ["EAM_TRANSCRIPTS"])
         tdir.mkdir(parents=True, exist_ok=True)
         name = re.sub(r"[^\w.+=@-]", "_", f"{inst.instance_id}__{model.key}__{spec}") + ".json"
-        (tdir / name).write_text(json.dumps({"messages": res.messages, "events": res.events}, default=str)[:20_000_000])
+        (tdir / name).write_text(json.dumps({"messages": res.messages, "events": all_events or res.events},
+                                            default=str)[:20_000_000])
     return {
         "family": inst.family,
         "instance": inst.instance_id,
