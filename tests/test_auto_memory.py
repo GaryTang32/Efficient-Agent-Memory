@@ -81,3 +81,26 @@ def test_edit_boundary_cache_point_keeps_agentdiet_cacheable():
     assert boundary["score"] == plain["score"] == 1.0
     assert boundary["cache_hit_rate"] > plain["cache_hit_rate"] + 0.1
     assert boundary["by_tag"]["main"]["cost"] < 0.8 * plain["by_tag"]["main"]["cost"]
+
+
+def test_edit_boundary_renders_converse_cache_points():
+    """What Bedrock receives: cachePoints on tools, system, the stable boundary and the newest message (≤ 4)."""
+    from eam.agent.loop import run_agent
+    from eam.llm.render import render_converse
+
+    sent = []
+
+    class Capture(MockLLM):
+        def converse(self, req):
+            sent.append(render_converse(req))
+            return super().converse(req)
+
+    inst = FAMILIES["chain_hunt"](0)
+    run_agent(inst.prompt, llm=Capture(inst.oracle()), model=M, env_tools=inst.tools,
+              techniques=build("cache_layout:edit_boundary=true+obs_mask"), max_steps=8)
+    last = sent[-1]
+    n_points = (sum("cachePoint" in t for t in last["toolConfig"]["tools"]) + sum("cachePoint" in b for b in last["system"])
+                + sum("cachePoint" in b for m in last["messages"] for b in m["content"]))
+    assert n_points == 4
+    marked = [i for i, m in enumerate(last["messages"]) if any("cachePoint" in b for b in m["content"])]
+    assert marked[-1] == len(last["messages"]) - 1 and marked[0] < len(last["messages"]) - 3
