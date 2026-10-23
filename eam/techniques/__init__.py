@@ -12,6 +12,7 @@ A spec string selects techniques for a run::
 from __future__ import annotations
 
 from eam.techniques.agentdiet import AgentDiet
+from eam.techniques.auto_memory import AutoMemory
 from eam.techniques.base import Pipeline, Technique
 from eam.techniques.baseline import FullContext
 from eam.techniques.cache_layout import CacheLayout
@@ -48,6 +49,8 @@ REGISTRY: dict[str, type[Technique]] = {
     "iter_research": IterResearch,
     "carryover": FullCarryover,
     "fs_workspace": NoteWorkspace,
+    # this project's combined skill (phase 2), built from the phase-1 measurements
+    "automem": AutoMemory,
     # provisional (ours, not yet backed by an official source)
     "tiered_memory": TieredMemory,
     "keep_last_n": KeepLastN,
