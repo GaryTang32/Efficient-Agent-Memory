@@ -14,8 +14,10 @@ Token usage and Claude Code's own ``total_cost_usd`` are recorded.
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
+import re
 import subprocess
 import time
 from typing import Any
@@ -38,6 +40,7 @@ class ClaudeCLIClient:
         self.retries = retries
         self.extra_args = extra_args or []
         self.env = env
+        self.wait_for_limit = os.environ.get("EAM_CLAUDE_WAIT_FOR_LIMIT", "1") != "0"
 
     def build_command(self, req: Request) -> tuple[list[str], str]:
         system = "\n\n".join(b["text"] for b in req.system if "text" in b)
@@ -60,6 +63,20 @@ class ClaudeCLIClient:
             *self.extra_args,
         ]
         return cmd, json.dumps(payload) + "\n"
+
+    @staticmethod
+    def _seconds_until_reset(message: str, now: datetime.datetime | None = None) -> float | None:
+        """For Claude Code's usage-limit message ("You've hit your session limit · resets 8:10pm (UTC)"), the
+        seconds until the stated reset (next occurrence, UTC); None for any other error."""
+        m = re.search(r"limit\W+resets (\d{1,2})(?::(\d{2}))?\s*(am|pm)", message, re.I)
+        if not m:
+            return None
+        hour, minute = int(m.group(1)) % 12 + (12 if m.group(3).lower() == "pm" else 0), int(m.group(2) or 0)
+        now = now or datetime.datetime.now(datetime.timezone.utc)
+        reset = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if reset <= now:
+            reset += datetime.timedelta(days=1)
+        return (reset - now).total_seconds()
 
     def _run(self, cmd: list[str], stdin: str, max_tokens: int = 8192) -> dict[str, Any]:
         # Cap the reply length: without it a degenerate (repeating) reply can run to the model's 128K-token
@@ -92,6 +109,12 @@ class ClaudeCLIClient:
                 # billed) so the agent loop handles it like any other malformed turn instead of failing the run.
                 return {**result, "result": "", "is_error": False, "stop_reason": "max_tokens"}
             last = (result or {}).get("result") or proc.stderr[-500:] or proc.stdout[-500:]
+            wait = self._seconds_until_reset(str(last))
+            if wait is not None and self.wait_for_limit and wait < 6 * 3600:
+                # usage-limit window: sleep until the stated reset and try again (not counted as an attempt), so a
+                # batch pauses instead of turning every queued run into an error row
+                time.sleep(wait + 120)
+                return self._run(cmd, stdin, max_tokens)
             if attempt < self.retries:
                 time.sleep(2 * (attempt + 1))
         raise ClaudeCLIError(f"claude -p failed: {last}")

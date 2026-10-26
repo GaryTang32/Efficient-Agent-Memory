@@ -210,3 +210,15 @@ def test_cli_context_size_undoes_internal_continuation_turns():
                                      "cache_creation_input_tokens": 7731, "output_tokens": 8346}}
     assert ClaudeCLIClient._context_size(one) == 5002
     assert ClaudeCLIClient._context_size(two) == (6 + 5192 + 7731 - 8346) // 2  # ≈ 2.3K, the real request
+
+
+def test_cli_usage_limit_reset_parsing():
+    import datetime as dt
+
+    from eam.llm.claude_cli import ClaudeCLIClient
+
+    now = dt.datetime(2026, 10, 25, 19, 0, tzinfo=dt.timezone.utc)
+    msg = "You've hit your session limit · resets 8:10pm (UTC)"
+    assert ClaudeCLIClient._seconds_until_reset(msg, now) == 70 * 60
+    assert ClaudeCLIClient._seconds_until_reset("You've hit your session limit · resets 5am (UTC)", now) == 10 * 3600
+    assert ClaudeCLIClient._seconds_until_reset("API Error: overloaded", now) is None
