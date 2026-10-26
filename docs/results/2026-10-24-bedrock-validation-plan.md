@@ -73,7 +73,11 @@ Sonnet rows (they are not affected by the harness bugs; see the 2026-10-23 errat
 2. **History-editing methods become about one third cheaper relative to the baseline.** Masking goes from 37% to 24%, and ReSum on `ops_stream` from 384% to 266%. They are still dominated where something equally accurate is cheaper.
 3. **Cached long context gains nothing.** Its cost is almost all cache reads, and the CLI's Sonnet read rate (0.05×) is lower than Bedrock's 0.1×.
 
-Haiku rows are re-priced in `2026-10-24-automem-evaluation.md`, on the corrected harness.
+**Haiku** (corrected harness, `real_v4` rows): the ranking is again unchanged where the comparison is valid.
+- On `research_corpus` and `repo_debug`, every method's ratio drops by about 20% at Bedrock multipliers. Two examples:
+  - ReSum: 40% → 32%.
+  - AutoMemory on `repo_debug`: 96% → 78%.
+- On `ops_stream` and `ledger_audit`, the `naive@native` reference crossed Haiku's 100K long-context tier on the CLI. Its flat-rate re-price therefore understates it, and the re-priced ratios are not meaningful (flagged † by `--reprice`).
 
 ## 3. What the Bedrock runs would decide
 

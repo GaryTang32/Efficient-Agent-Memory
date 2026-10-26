@@ -32,6 +32,7 @@ Every result row records the technique's **provenance label**: `official prompt/
 | `ledger_audit` | Data larger than the context window, plus multiple rounds. 16 monthly ledgers and 8 refund files (≈81K estimated / ≈113K real tokens) against a 48K-token window. Three dependent rounds, each a **fresh session**: totals → net of refunds → discounted payables. | ~20–60 over 3 rounds | 16 checks: 5 totals; 5 nets + highest vendor; 5 payables + sum. `score` = fraction correct. `success` = all three rounds exact. |
 | `research_corpus` | Long single-session deep research (BrowseComp-Plus style, the benchmark of ReSum / Context-Folding / IterResearch). There are 130 documents of ~2K tokens (≈260K) about invented entities with confusable namesakes, and the facts are buried mid-document. 8 multi-hop questions (3–4 hops each) are revealed one at a time through `submit_answer`, so they cannot be researched in parallel. Q9 = the sum of the year answers. The final answer must list all 9 answers. 40K-token window. | ≥ ~65 sequential | `score` = fraction of the 9 answers right; `success` = all 9 |
 | `ops_stream` | Many sessions plus **knowledge updates**. A warehouse runs for 10 days; each day is a fresh session with 3 new event files (~3K tokens each). `AMEND`/`VOID` lines correct earlier events (mostly from earlier days) by id only. Correct stock needs carried state *and* memory of which earlier event belongs to which SKU. ≈80K estimated tokens of data against a 32K window. | ~60–190 over 10 sessions | per day: 6 stock levels + the lowest-stock SKU; `score` = mean over days; `success` = every day exact |
+| `repo_debug` | Debugging real code with real test runs. A generated Python library (`ledgerkit`, ~30 modules, ≈50K tokens) with planted bugs that are only covered by end-to-end scenarios (`tests/test_pipeline.py`), so a failing test does not name the faulty module. Tools: `list_files`, `read_file`, `grep`, `replace_in_file`, `run_tests` (pytest in an isolated copy). Two sessions with four bugs each; 16K window. | ~25–60 over 2 sessions | per session: the share of its scenarios passing when the *pristine* tests are run on the agent's code (editing tests does not help), halved on any regression |
 | `needle_research`, `inventory_ops`, `long_document_qa`, `multi_session_profile` | Earlier, easier tasks (used offline). A real model solves the first one in ~3 parallel steps. | — | Exact answer |
 
 All tasks are synthetic and seeded (`generate(seed)`), so instances are reproducible and answers are scored automatically. The filler text contains no digits and no facts. Relevant facts are placed at random positions inside long outputs.
@@ -115,6 +116,23 @@ Bedrock Converse runs will use explicit cache points, which is where cache-layou
    - failure modes read from `round_answers`/`answer` and `events`.
 
 With 3–5 seeds per cell, a difference of one success is within noise. Claims in the results documents are limited to effects that are consistent across seeds or large (e.g. 0/5 vs 5/5, or 4× cost).
+
+### Combined and external memories
+
+| Spec | What it is |
+|---|---|
+| `automem[:switch=…]` | AutoMemory v1 (`docs/automem.md`). Switches: `workspace`, `recall`, `autosave`, `guard`, `compact=resum\|mask\|none`, `trigger`, `keep_recent`. |
+| `ext_memory:backend=memoryos\|lightmem\|nemori` | The official packages in a sidecar (`scripts/memory_sidecar.py`, `.venv-memory`). Each session's task and answer is stored; the backend's own retrieval is recalled at the next session start. Their LLM calls go through a private gateway and are billed to the run as `aux:memory`. |
+| `<spec>#aux=<model>` | Run that spec with a different auxiliary (summariser) model, e.g. `automem#aux=cc-haiku`. |
+
+### Harness corrections (2026-10-24)
+
+Results recorded before these fixes are marked in their reports and were rerun where affected.
+
+1. **Size checks use the final attempt.** A backend retry is billed in full, but only the final attempt's prompt counts as the context size (`Response.prompt_size`).
+2. **Continuation turns.** Claude Code's internal continuation turns, when a reply reaches the output cap, are undone in the size estimate: (prompt − output) ÷ turns. The cap is 32K (`EAM_CLAUDE_MAX_OUTPUT`).
+3. **Logging.** Both retries and continuations are logged as `llm_retry`.
+4. **Usage limits.** The CLI client waits for a usage-limit reset instead of failing the run (`EAM_CLAUDE_WAIT_FOR_LIMIT`).
 
 ## 6. Measuring a method independently of model strength
 

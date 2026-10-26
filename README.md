@@ -7,7 +7,13 @@ agents that call LLMs through **Amazon Bedrock** (no self-hosted models). Goal: 
 - `docs/literature_review.md` — verified list of papers (venue, lab, repo, licence, Bedrock fit) and the implementation shortlist.
 - `docs/papers/` — deep-reading notes for individual papers.
 - `docs/methodology.md` — tasks, environment rules, metric definitions, procedure.
+- `docs/automem.md` — **AutoMemory v1**, the combined memory skill: bench technique, framework-agnostic library (`eam/memory_skill.py`), MCP server (`python -m eam.mcp_server`).
 - `docs/results/` — measured results:
+  - `2026-10-24-automem-evaluation.md` — **AutoMemory vs the published methods and the official memory systems (MemoryOS, LightMem, Nemori)** on four long tasks, Haiku and Sonnet. **Headline:**
+    - AutoMemory and workspace + ReSum are the only methods that are model-robust on all four tasks.
+    - With a Haiku summariser, AutoMemory solved 10/10 Sonnet runs (unlimited context: 8/10), at 19–122% of the unoptimised cost.
+    - The official memory systems scored 0.2–0.5 lower than a plain note workspace.
+  - `2026-10-24-bedrock-validation-plan.md` — Bedrock-ready experiments (blocked on credentials), plus a re-pricing at Bedrock cache rates.
   - `2026-10-22-ledger_audit-cross-model.md` — data larger than the window, three sessions, on Haiku/Sonnet/Opus. **Headline:** no single published method solves it; a persistent workspace plus ReSum resets solves 3/3 on Sonnet and Opus, and is the cheapest per success.
   - `2026-10-22-chain_hunt-cross-model.md` and `2026-10-22-chain_hunt-haiku-cli.md` — a long sequential trajectory.
 - `docs/backends.md` — how to run: Claude Code CLI (no Bedrock), Bedrock Converse, LiteLLM, Bedrock OpenAI-compatible endpoints, and a local gateway for third-party repos.
