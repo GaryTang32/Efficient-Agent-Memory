@@ -195,9 +195,15 @@ def run_agent(
             # Environment feedback, like the context meter real harnesses show: how full the window is right now.
             # Appended to the newest message only, so it never rewrites cached history; identical for every technique.
             used = sizer.predict(estimate)
-            ctx.messages[-1]["content"].append({"text": GAUGE.format(used=used, limit=context_limit)})
+            gauge = {"text": GAUGE.format(used=used, limit=context_limit)}
+            ctx.messages[-1]["content"].append(gauge)
+            if req.messages is not ctx.messages and req.messages and req.messages[-1] is not ctx.messages[-1]:
+                # a technique rendered a copy of the history (ReFold, CADOC): the request carries the gauge too
+                req.messages = [*req.messages[:-1], {**req.messages[-1],
+                                                     "content": [*req.messages[-1]["content"], gauge]}]
             estimate = estimate_request_tokens(req)
-        snapshot = [_fingerprint(m) for m in ctx.messages]
+        # what is actually sent: a rendered copy when a technique edits at render time
+        snapshot = [_fingerprint(m) for m in req.messages]
         if prev_snapshot and snapshot[: len(prev_snapshot)] != prev_snapshot:
             rewrites += 1  # earlier context changed => any cached prefix past that point is lost
             ctx.log("history_rewrite")

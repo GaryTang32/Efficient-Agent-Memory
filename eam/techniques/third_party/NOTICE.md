@@ -9,6 +9,9 @@ so that the techniques here follow the authors' own implementations. Each file n
 | `resum.py` | ReSum (Alibaba Tongyi Lab), https://github.com/Alibaba-NLP/DeepResearch `WebAgent/WebResummer/src/` | MIT License, Copyright (c) 2025 Alibaba-NLP |
 | `foldagent.py` | Context-Folding / FoldGRPO (ByteDance Seed; ICML 2026), https://github.com/sunnweiwei/FoldAgent `agents/` | Apache License 2.0 |
 | `memagent.py` | MemAgent (ByteDance Seed + Tsinghua AIR; ICLR 2026), https://github.com/BytedTsinghua-SIA/MemAgent `quickstart.py` | Apache License 2.0 |
+| `refold/` | ReFold (Su, Tian, Zhang [UCSB], Kundu [Intel]; arXiv 2610.07863), https://github.com/YupengSu/ReFold `src/refold/core` at 017328f — dedup.py, fold.py, filters.py, parse.py, prompts.json; import paths changed, nothing else | Apache License 2.0 (`refold/LICENSE`); the README adds a research/non-commercial disclaimer |
+| `selfcompact.py` | SelfCompact (Apple + JHU; arXiv 2606.23525), https://github.com/tianjianl/selfcompact `prompts.py` at 1295817 | MIT License, Copyright (c) 2025 Tianjian Li |
+| `coral.py` | CORAL (CUHK + Tencent + HKUST; COLM 2026; arXiv 2610.40350), paper App. I.1–I.3 (the linked code repo returned 404) | quoted from the paper for research reproduction, © the authors |
 
 The turn-control reminder strings (Gao & Peng, ICSE 2026) are quoted from the paper (§2.4) and also appear in the
 AgentDiet artifact's `expert.py`; they live in `eam/techniques/turn_control.py`.
@@ -21,3 +24,9 @@ MIT notice for the ReSum prompts:
 > persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice
 > and this permission notice shall be included in all copies or substantial portions of the Software.
 > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+
+Prompt texts quoted in technique modules (not vendored files): the Strands harness prompts in `eam/techniques/strands.py`
+(strands-agents 1.63.0 / strands-harness 0.3.3, Apache License 2.0, Copyright Amazon.com, Inc. or its affiliates); the
+SJC CONTEXT/QUESTION texts and the OpenClaw safeguard prompts in `eam/techniques/sjc.py` (quoted from arXiv 2610.20927;
+the SJC repo has no licence file, so its code is not copied); the AKV policy in `eam/techniques/akv.py` is re-implemented
+from https://github.com/thu-nics/AKV (Apache License 2.0).

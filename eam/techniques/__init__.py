@@ -12,11 +12,14 @@ A spec string selects techniques for a run::
 from __future__ import annotations
 
 from eam.techniques.agentdiet import AgentDiet
+from eam.techniques.akv import AKVRollingDrop
 from eam.techniques.auto_memory import AutoMemory
 from eam.techniques.base import Pipeline, Technique
 from eam.techniques.baseline import FullContext
+from eam.techniques.cadoc import CADOC
 from eam.techniques.cache_layout import CacheLayout
 from eam.techniques.compression import PromptCompression
+from eam.techniques.coral import CORAL
 from eam.techniques.ext_memory import ExternalMemory
 from eam.techniques.folding import ContextFolding
 from eam.techniques.iter_research import IterResearch
@@ -25,8 +28,13 @@ from eam.techniques.memagent import MemAgentReader
 from eam.techniques.naive import NoOptimization
 from eam.techniques.obs_mask import ObservationMasking
 from eam.techniques.offload import ToolResultOffload
+from eam.techniques.raw_rag import RawHistoryRAG
+from eam.techniques.refold import ReFold
 from eam.techniques.resum import ReSum
 from eam.techniques.router import ThinkingRouter
+from eam.techniques.selfcompact import SelfCompact
+from eam.techniques.sjc import OpenClawCompaction, SourceJudgedReSum
+from eam.techniques.strands import StrandsHarness
 from eam.techniques.tiered_memory import FullCarryover, TieredMemory
 from eam.techniques.todo import TodoRecitation
 from eam.techniques.turn_control import TurnControl
@@ -54,6 +62,16 @@ REGISTRY: dict[str, type[Technique]] = {
     "automem": AutoMemory,
     # official long-term memory packages (MemoryOS / LightMem / Nemori) through a sidecar
     "ext_memory": ExternalMemory,
+    # methods from the Sep-Nov 2026 literature scan (docs/literature/2026-11-scan), each faithful to its source
+    "strands": StrandsHarness,
+    "cadoc": CADOC,
+    "refold": ReFold,
+    "sjc": SourceJudgedReSum,
+    "openclaw": OpenClawCompaction,
+    "akv_drop": AKVRollingDrop,
+    "raw_rag": RawHistoryRAG,
+    "coral": CORAL,
+    "selfcompact": SelfCompact,
     # provisional (ours, not yet backed by an official source)
     "tiered_memory": TieredMemory,
     "keep_last_n": KeepLastN,
