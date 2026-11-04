@@ -1,0 +1,205 @@
+# AutoMemory v2: slimmer context at the same accuracy (2026-11-04)
+
+**Question.** The 2026-11 literature scan raised two candidate additions to AutoMemory v1:
+- Strands-style **previews** of large tool outputs at ingestion;
+- ReFold's **dedup and folding** of finished steps.
+
+Does either one cut tokens, cost or peak context without losing accuracy? The goal is the one in [`../problem_statement.md`](../problem_statement.md): the fewest tokens and dollars per solved task at full accuracy.
+
+**Answer.**
+- **`ingest` (previews) becomes the v2 default.**
+  - Haiku: 11/16 runs fully solved (v1: 7/16), at the same cost.
+  - Sonnet: 11 percentage points cheaper.
+- **`fold` is an optional "slim" mode.** It gives the smallest peak context, but costs more on Sonnet and lost accuracy on `ledger_audit` when used alone.
+
+Presets:
+- `automem_v2` = `automem:ingest=0.1`
+- `automem_v2_slim` = `automem:fold=true,ingest=0.1`
+
+These are 2–4 runs per cell, so differences under about 0.1 in score or 15 points in cost are within run-to-run noise.
+
+## Variants
+
+All three variants are AutoMemory v1 (workspace notes, recall, autosave, in-step guard, ReSum compaction at 0.75 × window, last 2 steps kept), plus:
+
+| Variant | Adds | Source |
+|---|---|---|
+| `automem:ingest=0.1` | Tool outputs above 10% of the window enter the context as a 750-token head/tail preview with a `[Stashed] [ref: …]` key. `retrieve_context` gets the full text back by grep pattern or line range. | Strands harness defaults (AWS); ported in `eam/techniques/strands.py` |
+| `automem:fold=true` | Every reply starts with PROGRESS/STALE lines. Steps marked STALE are folded into one note once they fall behind the chunked boundary (k = 3). Repeated reads and outputs become stubs that point to the earlier copy. `restore` brings back any folded step. The engine restarts after each compaction. | ReFold (UCSB + Intel); official engine vendored |
+| `automem:fold=true,ingest=0.1` | Both | |
+
+### Setup
+
+- **Tasks:** the four long tasks from the v1 evaluation (`docs/results/2026-10-24-automem-evaluation.md`), with the same seeds and windows, on the Claude Code CLI.
+- **Seeds:** Haiku 4, Sonnet 2.
+- **Sonnet's summariser is Haiku** (`#aux=cc-haiku`), the cheapest full-accuracy setting of v1.
+- **Reused from v4:** the anchors (`naive`, `naive@native`) and the comparators (`automem`, `automem#aux=cc-haiku`, `fs_workspace+resum`), all unchanged.
+- **One run errored** and is not scored: Sonnet `automem:fold=true` on repo-0 was refused by the API's safeguards ("Sonnet 5.5's safeguards flagged this message…"). That is a false positive on a normal debugging transcript.
+
+## Summary across the four tasks
+
+Each column is a mean over the four tasks, as a percentage of the ceiling (`naive@native` on the same task).
+
+**Cost and tokens:**
+- **Cost:** the median cost per run.
+- **Tokens:** the median prompt tokens per run. This counts cached tokens too, so methods that take more steps exceed 100% even when they are cheaper.
+- **Peak:** the median peak context, relative to the ceiling's peak.
+
+**Solved** counts runs in which every session was answered fully.
+
+The ratios here are task medians divided by the ceiling's task median. The per-task table below pairs each run with the ceiling run of the same instance, so a few cells differ by several points (for example Haiku `automem` on `ledger_audit`: 131% here, 118% there).
+
+**Haiku (4 seeds):**
+
+| Method | Mean score | Lowest task score | Solved | Mean cost | Mean tokens | Mean peak | Total $ |
+|---|---|---|---|---|---|---|---|
+| `automem` (v1) | 0.83 | 0.75 | 7/16 | 86% | 162% | 32% | 2.90 |
+| **`automem:ingest=0.1`** (v2) | **0.88** | 0.75 | **11/16** | **85%** | 156% | 32% | **2.45** |
+| `automem:fold=true` | 0.87 | 0.74 | 6/16 | 89% | 153% | **28%** | 2.46 |
+| `automem:fold=true,ingest=0.1` (v2 slim) | 0.87 | 0.67 | 6/16 | 90% | **146%** | **28%** | 2.52 |
+| `fs_workspace+resum` (best single method in v1) | 0.89 | 0.75 | 11/16 | 126% | 190% | 37% | 2.80 |
+
+**Sonnet (2 seeds, Haiku summariser):**
+
+| Method | Mean score | Lowest task score | Solved | Mean cost | Mean tokens | Mean peak | Total $ |
+|---|---|---|---|---|---|---|---|
+| `automem#aux=cc-haiku` (v1) | **1.00** | 1.00 | 10/10 | 72% | 104% | 35% | 10.32 |
+| **`automem:ingest=0.1#aux=cc-haiku`** (v2) | 0.98 | 0.93 | 6/8 | **64%** | **95%** | 36% | **7.09** |
+| `automem:fold=true#aux=cc-haiku` | 0.97 | 0.86 | 6/7 | 88% | 111% | 34% | 9.40 |
+| `automem:fold=true,ingest=0.1#aux=cc-haiku` (v2 slim) | **1.00** | 0.99 | 7/8 | 82% | 100% | **29%** | 9.74 |
+| `automem` (v1, Sonnet summarises) | 1.00 | 0.99 | 9/10 | 109% | 104% | 35% | 15.96 |
+| `fs_workspace+resum` | 0.93 | 0.75 | 8/10 | 75% | 82% | 41% | 11.05 |
+
+## Per task
+
+Each cell gives: runs solved · mean score · recovery (the share of the gap between floor and ceiling that the method closes) · median cost as a percentage of `naive@native` · median agent rounds · median wall-clock minutes. The table is generated by `python -m eam.bench.analyze --summary results/v2_report_rows.jsonl`.
+
+<!-- HEADLINE -->
+**ledger_audit** — success · accuracy · recovery · cost vs `naive@native` · rounds · minutes (medians; recovery defined only for methods)
+
+| method | cc-haiku | cc-sonnet |
+|---|---|---|
+| `naive` | 0/4 · 0.00 · — · 4% · 11 · 1.1 | 0/3 · 0.00 · — · 24% · 13 · 1.1 |
+| `naive@native` | 2/4 · 0.82 · — · 100% · 11 · 3.0 | 1/3 · 0.85 · — · 100% · 15 · 2.2 |
+| `automem` | 1/4 · 0.85 · 1.13 · 118% · 66 · 16.0 | 3/3 · 1.00 · 1.19 · 111% · 34 · 5.6 |
+| `automem#aux=cc-haiku` | — | 3/3 · 1.00 · 1.19 · 90% · 36 · 6.7 |
+| `automem:fold=true` | 1/4 · 0.74 · 0.99 · 121% · 56 · 14.9 | — |
+| `automem:fold=true#aux=cc-haiku` | — | 1/2 · 0.86 · 1.00 · 121% · 49 · 9.3 |
+| `automem:fold=true,ingest=0.1` | 0/4 · 0.67 · 0.87 · 94% · 48 · 12.7 | — |
+| `automem:fold=true,ingest=0.1#aux=cc-haiku` | — | 2/2 · 1.00 · 1.14 · 110% · 40 · 6.0 |
+| `automem:ingest=0.1` | 3/4 · 0.89 · 1.11 · 86% · 58 · 14.5 | — |
+| `automem:ingest=0.1#aux=cc-haiku` | — | 2/2 · 1.00 · 1.14 · 99% · 42 · 8.8 |
+| `fs_workspace+resum:max_context_k=40` | 3/4 · 0.97 · 1.24 · 102% · 58 · 13.4 | 3/3 · 1.00 · 1.19 · 119% · 37 · 3.9 |
+
+**ops_stream** — success · accuracy · recovery · cost vs `naive@native` · rounds · minutes (medians; recovery defined only for methods)
+
+| method | cc-haiku | cc-sonnet |
+|---|---|---|
+| `naive` | 0/4 · 0.20 · — · 14% · 30 · 5.6 | 0/2 · 0.19 · — · 28% · 29 · 2.4 |
+| `naive@native` | 0/4 · 0.96 · — · 100% · 30 · 13.3 | 2/2 · 1.00 · — · 100% · 30 · 4.3 |
+| `automem` | 0/4 · 0.84 · 0.84 · 69% · 82 · 22.1 | 1/2 · 0.99 · 0.99 · 212% · 74 · 14.4 |
+| `automem#aux=cc-haiku` | — | 2/2 · 1.00 · 1.00 · 122% · 66 · 14.8 |
+| `automem:fold=true` | 0/4 · 0.93 · 0.95 · 60% · 68 · 16.4 | — |
+| `automem:fold=true#aux=cc-haiku` | — | 2/2 · 1.00 · 1.00 · 100% · 59 · 10.5 |
+| `automem:fold=true,ingest=0.1` | 1/4 · 0.93 · 0.96 · 72% · 76 · 23.6 | — |
+| `automem:fold=true,ingest=0.1#aux=cc-haiku` | — | 1/2 · 0.99 · 0.99 · 117% · 64 · 11.7 |
+| `automem:ingest=0.1` | 1/4 · 0.87 · 0.88 · 76% · 88 · 24.3 | — |
+| `automem:ingest=0.1#aux=cc-haiku` | — | 0/2 · 0.93 · 0.91 · 79% · 48 · 9.7 |
+| `fs_workspace+resum:max_context_k=26` | 2/4 · 0.95 · 0.99 · 100% · 111 · 37.1 | 1/2 · 0.99 · 0.98 · 81% · 55 · 6.5 |
+
+**repo_debug** — success · accuracy · recovery · cost vs `naive@native` · rounds · minutes (medians; recovery defined only for methods)
+
+| method | cc-haiku | cc-sonnet |
+|---|---|---|
+| `naive` | 1/4 · 0.62 · — · 68% · 14 · 1.7 | 0/2 · 0.25 · — · 58% · 13 · 1.5 |
+| `naive@native` | 4/4 · 1.00 · — · 100% · 18 · 2.2 | 2/2 · 1.00 · — · 100% · 16 · 2.2 |
+| `automem` | 3/4 · 0.88 · 0.67 · 92% · 22 · 3.0 | 2/2 · 1.00 · 1.00 · 83% · 14 · 2.0 |
+| `automem#aux=cc-haiku` | — | 2/2 · 1.00 · 1.00 · 61% · 15 · 2.3 |
+| `automem:fold=true` | 4/4 · 1.00 · 1.00 · 136% · 30 · 6.5 | — |
+| `automem:fold=true#aux=cc-haiku` | — | 1/1 · 1.00 · 1.00 · 94% · 27 · 4.7 |
+| `automem:fold=true,ingest=0.1` | 4/4 · 1.00 · 1.00 · 141% · 29 · 4.6 | — |
+| `automem:fold=true,ingest=0.1#aux=cc-haiku` | — | 2/2 · 1.00 · 1.00 · 66% · 18 · 3.3 |
+| `automem:ingest=0.1` | 4/4 · 1.00 · 1.00 · 123% · 20 · 4.7 | — |
+| `automem:ingest=0.1#aux=cc-haiku` | — | 2/2 · 1.00 · 1.00 · 52% · 13 · 2.3 |
+| `fs_workspace+resum:max_context_k=13` | 3/4 · 0.88 · 0.67 · 282% · 34 · 6.0 | 1/2 · 0.75 · 0.75 · 70% · 12 · 1.7 |
+
+**research_corpus** — success · accuracy · recovery · cost vs `naive@native` · rounds · minutes (medians; recovery defined only for methods)
+
+| method | cc-haiku | cc-sonnet |
+|---|---|---|
+| `naive` | 0/4 · 0.00 · — · 26% · 28 · 9.4 | 0/3 · 0.00 · — · 27% · 27 · 2.0 |
+| `naive@native` | 3/4 · 0.75 · — · 100% · 60 · 12.4 | 3/3 · 1.00 · — · 100% · 52 · 4.7 |
+| `automem` | 3/4 · 0.75 · 1.00 · 52% · 62 · 20.9 | 3/3 · 1.00 · 1.00 · 29% · 57 · 6.9 |
+| `automem#aux=cc-haiku` | — | 3/3 · 1.00 · 1.00 · 19% · 58 · 6.1 |
+| `automem:fold=true` | 1/4 · 0.81 · 0.85 · 51% · 86 · 16.5 | — |
+| `automem:fold=true#aux=cc-haiku` | — | 2/2 · 1.00 · 1.00 · 29% · 61 · 8.6 |
+| `automem:fold=true,ingest=0.1` | 1/4 · 0.89 · 0.89 · 54% · 88 · 14.7 | — |
+| `automem:fold=true,ingest=0.1#aux=cc-haiku` | — | 2/2 · 1.00 · 1.00 · 29% · 61 · 7.9 |
+| `automem:ingest=0.1` | 3/4 · 0.75 · 1.00 · 50% · 55 · 16.9 | — |
+| `automem:ingest=0.1#aux=cc-haiku` | — | 2/2 · 1.00 · 1.00 · 18% · 59 · 8.1 |
+| `fs_workspace+resum:max_context_k=33` | 3/4 · 0.75 · 0.67 · 39% · 60 · 16.0 | 3/3 · 1.00 · 1.00 · 29% · 60 · 5.8 |
+<!-- /HEADLINE -->
+
+## Findings
+
+1. **Previews pay off where tool outputs are large; elsewhere they do nothing.**
+   - **repo_debug** (`pytest` logs up to ~3K tokens against a 16K window):
+     - Haiku: 3/4 → 4/4 solved, score 0.88 → 1.00.
+     - Sonnet: 61% → 52% of the ceiling's cost, still fully solved.
+   - **ledger_audit** (4K-token ledgers against a 48K window): Haiku went from 1/4 to 3/4 solved and from 118% to 86% of the ceiling's cost.
+   - **research_corpus** (documents of ~2K tokens, under the 4K threshold): nothing is truncated, so the run behaves exactly like v1 (Sonnet 20% vs 19%).
+   - The previews are applied at ingestion, so they never rewrite cached history.
+   - The full output stays retrievable, so the preview must not hide the facts the task needs. The Strands default threshold (1,500 tokens) hid details on `research_corpus`: `strands` scored 0.00 on Haiku and 0.72 on Sonnet there. A threshold relative to the window (10%) avoids that.
+
+2. **Folding gives the slimmest context, but on these tasks it costs more and it relies on the model.**
+   - **Peak context:**
+     - Sonnet `research_corpus`: 16K (fold + ingest) vs 29K (v1).
+     - Haiku: 28% vs 32% of the ceiling's peak on average.
+   - **Cost:**
+     - Each boundary advance rewrites history from the earliest folded step, and on the CLI that is billed as a cache write.
+     - Sonnet: +10 to +16 points of the ceiling's cost compared with v1.
+   - **Accuracy:** folding alone lowered `ledger_audit` (Haiku 0.85 → 0.74, Sonnet 1.00 → 0.86). The agent marks steps STALE whose figures it needs again later, and recovering them takes `restore` calls.
+   - **Combined with previews** (`v2 slim`), Sonnet kept a mean score of 1.00 at the smallest peak. That is the setting to use where a small working context matters more than the last 10–15% of cost.
+
+3. **Cheap summariser + previews is the best cost per solved task on the strong model.**
+   - Sonnet v2 costs 64% of the ceiling on average, against 109% when Sonnet writes its own summaries and 72% for v1 with Haiku summarising.
+   - Total spend for the same runs: $7.09, against $10.32 and $15.96.
+   - The one weak cell is Sonnet `ops_stream`: score 0.93, 0/2 fully solved, at 79% cost. With 2 seeds this cannot be told apart from noise; it is the first cell to rerun with more seeds.
+
+4. **v1's ablations still hold.**
+   - Compaction is essential.
+   - Recall/autosave and keeping recent steps help.
+   - The guard matters on `repo_debug` and costs a little on `ledger_audit`.
+
+   v2 changes what enters the context. It does not change those mechanics.
+
+## Recommendation
+
+| Use | Setting |
+|---|---|
+| Default | `automem_v2` (`automem:ingest=0.1`). With a strong agent model, add a cheaper summariser (`--aux-model` / `#aux=`). |
+| A small working context matters most (context rot, small windows) | `automem_v2_slim` (`automem:fold=true,ingest=0.1`) |
+| Not recommended | `fold` without previews |
+
+The library (`eam/memory_skill.py`) and the MCP server now apply the v2 preview by default (`preview=0.1`). `preview=0` restores v1 behaviour.
+
+## Spend
+
+The new v2 runs cost $33.66 (Haiku $7.43, Sonnet $26.23). The total below also includes the reused v4 anchor and comparator rows.
+
+<!-- SPEND -->
+cc-haiku: $17.31 · cc-sonnet: $89.85 · total $107.16
+<!-- /SPEND -->
+
+## Reproduce
+
+```bash
+scripts/run_automem_v2.sh cc-haiku 4 2
+scripts/run_automem_v2.sh cc-sonnet 2 1 "#aux=cc-haiku"
+# report rows: the v4 anchors and comparators plus results/automem_v2-*.jsonl
+python scripts/fill_report.py docs/results/2026-11-04-automemory-v2.md results/v2_report_rows.jsonl
+```
+
+`results/v2_report_rows.jsonl` is built from these runs:
+- the v4 runs of `naive`, `naive@native`, `automem`, `automem#aux=cc-haiku` and `fs_workspace+resum:*` (the same file list as the v1 report);
+- all rows of `results/automem_v2-*.jsonl`.

@@ -12,6 +12,7 @@ agents that call LLMs through **Amazon Bedrock** (no self-hosted models). Goal: 
 - `docs/methodology.md` — tasks, environment rules, metric definitions, procedure.
 - `docs/automem.md` — **AutoMemory v1**, the combined memory skill: bench technique, framework-agnostic library (`eam/memory_skill.py`), MCP server (`python -m eam.mcp_server`).
 - `docs/results/` — measured results:
+  - `2026-11-04-automemory-v2.md` — **AutoMemory v2** (preset `automem_v2`): head/tail previews of large tool outputs at ingestion become the default. Haiku: 11/16 runs solved (v1: 7/16) at the same cost. Sonnet with a Haiku summariser: 64% of the unoptimised cost (v1: 72%), score 0.98. ReFold folding is an optional slim mode (`automem_v2_slim`, smallest peak context).
   - `2026-10-24-automem-evaluation.md` — **AutoMemory vs the published methods and the official memory systems (MemoryOS, LightMem, Nemori)** on four long tasks, Haiku and Sonnet. **Headline:**
     - AutoMemory and workspace + ReSum are the only methods that are model-robust on all four tasks.
     - With a Haiku summariser, AutoMemory solved 10/10 Sonnet runs (unlimited context: 8/10), at 19–122% of the unoptimised cost.

@@ -132,4 +132,4 @@ AutoMemory v2 is a cache-aware harness layer built from the components that meas
 - compact rarely, with a cheap summariser, keeping the recent steps verbatim;
 - carry notes across sessions automatically.
 
-Every component is a switch so it can be ablated. It is judged on dollars and tokens per solved task at full accuracy, on both models. The variants under test are `automem:fold=true`, `automem:ingest=0.1` and both together. Results will go in `docs/results/`.
+Every component is a switch so it can be ablated. It is judged on dollars and tokens per solved task at full accuracy, on both models. Results ([`results/2026-11-04-automemory-v2.md`](results/2026-11-04-automemory-v2.md)): previews at ingestion (`automem_v2`) solved 11/16 Haiku runs (v1: 7/16) at the same cost, and cut Sonnet to 64% of the unoptimised cost (v1: 72%). Folding (`automem_v2_slim`) gives the smallest peak context, at a higher cost.

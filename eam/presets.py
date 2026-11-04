@@ -100,7 +100,24 @@ class AutoMemory(Technique):
         return f"auto->{self._inner.describe() if self._inner else '?'}"
 
 
+def automem_v2() -> Technique:
+    """AutoMemory v2 default (docs/results/2026-11-04-automemory-v2.md): v1 + head/tail previews at ingestion for
+    outputs above 10% of the window."""
+    from eam.techniques.auto_memory import AutoMemory as AM
+
+    return AM(ingest=0.1)
+
+
+def automem_v2_slim() -> Technique:
+    """AutoMemory v2 "slim" mode: v2 + ReFold dedup/folding; smallest peak context, a little more cost."""
+    from eam.techniques.auto_memory import AutoMemory as AM
+
+    return AM(ingest=0.1, fold=True)
+
+
 PRESETS: dict[str, Callable[[], Technique]] = {
+    "automem_v2": automem_v2,
+    "automem_v2_slim": automem_v2_slim,
     "cache_first": cache_first,
     "lean": lean,
     "cache_first_masked": cache_first_masked,

@@ -20,7 +20,7 @@ def test_notes_persist_and_are_recalled(tmp_path):
 
 
 def test_guard_offloads_only_what_does_not_fit(tmp_path):
-    s = MemorySkill(tmp_path, window=10_000, guard=0.9)
+    s = MemorySkill(tmp_path, window=10_000, guard=0.9, preview=0)  # the v1 guard alone
     s.start_step(context_tokens=6_000)
     small = s.ingest_tool_output("open", "x " * 400)  # ~ 300 real tokens: fits
     big = s.ingest_tool_output("open", "word " * 4000)  # would exceed 9,000
@@ -84,3 +84,15 @@ def test_mcp_server_over_stdio(tmp_path):
     finally:
         proc.stdin.close()
         proc.wait(timeout=5)
+
+
+def test_v2_preview_keeps_large_outputs_short_and_recoverable(tmp_path):
+    from eam.memory_skill import MemorySkill
+
+    skill = MemorySkill(tmp_path, window=10_000, guard=0)
+    big = "\n".join(f"line {i}" for i in range(3000))
+    out = skill.ingest_tool_output("run_tests", big, context_tokens=100)
+    assert out.startswith("[Truncated: 1 block") and "artifact://" in out
+    pointer = out.split("stored at ")[1].split(";")[0]
+    assert skill.read_artifact(pointer, length=10**6) == big
+    assert MemorySkill(tmp_path / "v1", window=10_000, guard=0, preview=0).ingest_tool_output("x", big, 100) == big

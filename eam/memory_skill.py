@@ -32,12 +32,15 @@ from eam.tokens import estimate_tokens
 class MemorySkill:
     def __init__(self, root: str | Path, *, window: int = 200_000, trigger: float = 0.75, guard: float = 0.9,
                  token_ratio: float = 1.5, summarize: Callable[[str], str] | None = None,
-                 max_note_chars: int = 20_000):
+                 max_note_chars: int = 20_000, preview: float = 0.1, preview_tokens: int = 750):
         self.root = Path(root).expanduser()
         (self.root / "artifacts").mkdir(parents=True, exist_ok=True)
         self.window, self.trigger, self.guard, self.token_ratio = int(window), trigger, guard, token_ratio
         self.summarize = summarize
         self.max_note_chars = max_note_chars
+        # v2: outputs above `preview` × window enter the context as a head/tail preview; the full text is an
+        # artifact (read_artifact pages it). 0 = off (v1 behaviour).
+        self.preview, self.preview_tokens = float(preview), int(preview_tokens)
         self._step_used: int | None = None
         self._last_summary: str | None = None
 
@@ -102,6 +105,12 @@ class MemorySkill:
         prompt past `guard` × window."""
         if self._step_used is None:
             self.start_step(context_tokens or 0)
+        if self.preview and estimate_tokens(text) > self.preview * self.window:
+            from eam.techniques.strands import preview as head_tail
+
+            short = head_tail(text, self.preview_tokens)
+            if short != text:
+                text = f"{short}\n\n[Full output stored at {self.offload(text, name)}; page it with read_artifact.]"
         n = int(estimate_tokens(text) * self.token_ratio)
         if self.guard and self._step_used + n > self.guard * self.window and n > 200:
             text = GUARDED.format(name=name, tokens=estimate_tokens(text), pointer=self.offload(text, name))
