@@ -263,7 +263,7 @@ The diagnostics come from each run's `records` field: ReFold's labels, SJC's ver
 ## What this means for AutoMemory
 
 1. **Keep v2 as the default.** No new method is better on both models across the four tasks.
-2. **Candidate v3 component: OpenClaw-style structured summaries in place of ReSum's** (plus SJC pruning as a switch), to be run as an ablation of AutoMemory. It was the cheapest strong compactor on several cells. Its weak cell (`repo_debug`) needs more seeds before anything is decided.
+2. **Candidate v3 component: OpenClaw-style structured summaries in place of ReSum's** (plus SJC pruning as a switch). The ablation ([`2026-11-04-automemory-v3-ablation.md`](2026-11-04-automemory-v3-ablation.md)) did not support it: inside AutoMemory every variant was worse than v2 on Haiku and tied on Sonnet.
 3. **Do not add:**
    - per-turn history edits (AKV every turn);
    - methods that rely on the model to manage its own memory (CORAL, ReFold's STALE marking) as defaults;
