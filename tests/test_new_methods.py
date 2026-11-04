@@ -3,6 +3,7 @@ task (the conversations must stay valid for Converse)."""
 
 import json
 import os
+import re
 
 import pytest
 
@@ -308,3 +309,33 @@ def test_every_new_method_runs_on_every_long_task(family, spec):
     out = run_instance(inst, spec, backend="mock", model=M, aux_model=M, models=MOCK_MODELS)
     assert "steps" in out
     assert out.get("error") is None or "context_overflow" in str(out.get("error")), out.get("error")
+
+
+# ---- AutoMemory v2 switches ----------------------------------------------------------------------------------
+@pytest.mark.parametrize("family", ["research_corpus", "ops_stream", "ledger_audit", "repo_debug"])
+@pytest.mark.parametrize("spec", ["automem:fold=true", "automem:ingest=0.05", "automem:fold=true,ingest=0.05"])
+def test_automem_v2_switches_run_on_every_long_task(family, spec):
+    out = run_instance(FAMILIES[family](0), spec, backend="mock", model=M, aux_model=M, models=MOCK_MODELS)
+    assert out.get("error") is None or "context_overflow" in str(out.get("error"))
+
+
+def test_automem_ingest_previews_and_retrieves():
+    from eam.techniques.auto_memory import AutoMemory
+
+    a = AutoMemory(ingest=0.01, compact="none", guard=0)
+    seen = []
+
+    def policy(req):
+        seen.append(req)
+        if len(seen) == 1:
+            return assistant(tool_use("read", {"i": 1}))
+        if len(seen) == 2:
+            ref = re.search(r"\[ref: (\S+)\]", req.messages[-1]["content"][0]["toolResult"]["content"][0]["text"])
+            return assistant(tool_use("retrieve_context", {"reference": ref.group(1), "pattern": "doc 1"}))
+        return final("FINAL ANSWER: ok")
+
+    res = run_agent("t", llm=MockLLM(policy), model=M, env_tools=echo_tools(3000), techniques=[a], max_steps=5,
+                    context_limit=100_000)
+    texts = [c["text"] for m in res.messages for b in m["content"] if "toolResult" in b
+             for c in b["toolResult"]["content"]]
+    assert texts[0].startswith("[Truncated: 1 block") and "> 1| doc 1" in texts[1]

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from eam.techniques.base import Technique
 from eam.techniques.obs_mask import ObservationMasking
+from eam.techniques.refold import ReFold, prompt_layer
 from eam.techniques.resum import ReSum
 from eam.techniques.workspace import NoteWorkspace
 from eam.tokens import estimate_tokens
@@ -50,7 +51,8 @@ class AutoMemory(Technique):
 
     def __init__(self, workspace: bool = True, recall: bool = True, autosave: bool = True, guard: float = 0.9,
                  compact: str = "resum", trigger: float = 0.75, default_window: int = 200_000,
-                 token_ratio: float = 1.5, keep_recent: int = 2):
+                 token_ratio: float = 1.5, keep_recent: int = 2, fold: bool = False, ingest: float = 0.0,
+                 ingest_preview: int = 750):
         self.workspace = bool(workspace)
         self.recall = bool(recall) and self.workspace
         self.autosave = bool(autosave) and self.workspace
@@ -60,6 +62,13 @@ class AutoMemory(Technique):
         self.default_window = int(default_window)
         self.token_ratio = float(token_ratio)  # real tokens per estimated token, conservative for dense text
         self.keep_recent = int(keep_recent)  # complete steps kept verbatim after a compaction
+        # v2 switches (docs/new_methods.md): ReFold's dedup + STALE folding as a render layer, and Strands-style
+        # head/tail previews at ingestion for outputs above `ingest` × window (0 = off), retrievable by reference
+        self.fold = bool(fold)
+        self.ingest = float(ingest)
+        self.ingest_preview = int(ingest_preview)
+        self._refold = ReFold() if self.fold else None
+        self._stash: dict[str, str] = {}
         self._ws = NoteWorkspace() if self.workspace else None
         self._compactor = None
         self._sessions = 0
@@ -84,18 +93,39 @@ class AutoMemory(Technique):
 
     # ---- hooks ---------------------------------------------------------------------------------------------
     def tools(self, ctx):
-        return self._ws.tools(ctx) if self._ws else []
+        tools = self._ws.tools(ctx) if self._ws else []
+        if self._refold:
+            tools += self._refold.tools(ctx)
+        if self.ingest:
+            from eam.techniques.strands import StrandsHarness
+
+            sh = StrandsHarness(memory=False)
+            sh._stash = self._stash
+            tools += sh.tools(ctx)
+        return tools
 
     def system_addendum(self):
         parts = []
         if self._ws:
             parts.append(self._ws.system_addendum())
+        if self._refold:
+            parts.append(self._refold.system_addendum())
         return "\n\n".join(parts) or None
+
+    def render(self, ctx, req):
+        return self._refold.render(ctx, req) if self._refold else req
+
+    def after_call(self, ctx, resp):
+        if self._refold:
+            self._refold.after_call(ctx, resp)
 
     def on_session_start(self, ctx):
         self._sessions += 1
         self._compactor = self._make_compactor(ctx)
         ctx.state["automem_guard_step"] = (-1, 0)
+        self._stash.clear()
+        if self._refold:
+            self._refold.on_session_start(ctx)  # puts the PROGRESS/STALE protocol into the first message
         if self.recall and self._notes_text():
             ctx.preamble.append(RECALL.format(notes=self._notes_text()))
             ctx.log("automem_recall", chars=len(self._notes_text()))
@@ -121,6 +151,9 @@ class AutoMemory(Technique):
                 ctx.state["automem_predicted"] = 0
                 if self.recall and self._notes_text():  # the reset message replaced the session's first message
                     ctx.messages[0]["content"].append({"text": RECALL.format(notes=self._notes_text())})
+                if self._refold:  # the rebuilt history starts a new step numbering; the protocol stays visible
+                    self._refold._reset()
+                    ctx.messages[0]["content"].append({"text": prompt_layer(self._refold.k)[1]})
                 if tail:  # the model keeps seeing its own latest calls (Haiku's replies degenerated without them)
                     ctx.messages.extend(tail)
                     ctx.log("automem_kept_recent", messages=len(tail))
@@ -147,9 +180,19 @@ class AutoMemory(Technique):
         return tail
 
     def on_tool_result(self, ctx, outcome):
+        window = self._window(ctx)
+        if self.ingest and not outcome.is_error and outcome.name != "retrieve_context" \
+                and estimate_tokens(outcome.text) > self.ingest * window:
+            from eam.techniques.strands import preview
+
+            ref = f"{outcome.tool_use_id}_0"
+            self._stash[ref] = outcome.text
+            new = preview(outcome.text, self.ingest_preview)
+            if new != outcome.text:
+                outcome.text = f"{new}\n\n[Stashed] [ref: {ref}] (retrieve_context with pattern or line_range)"
+                ctx.log("automem_ingest_preview", ref=ref)
         if not self.guard:
             return outcome
-        window = self._window(ctx)
         step, used = ctx.state.get("automem_guard_step", (-1, 0))
         if step != ctx.step:  # first result of this step: start from the last real prompt + the reply just sent
             reply = sum(estimate_tokens(b.get("text", "")) + estimate_tokens(str(b.get("toolUse", "")))
@@ -174,4 +217,5 @@ class AutoMemory(Technique):
 
     def describe(self) -> str:
         return (f"automem(workspace={self.workspace}, recall={self.recall}, autosave={self.autosave}, "
-                f"guard={self.guard}, compact={self.compact}, trigger={self.trigger}, keep_recent={self.keep_recent})")
+                f"guard={self.guard}, compact={self.compact}, trigger={self.trigger}, keep_recent={self.keep_recent}, "
+                f"fold={self.fold}, ingest={self.ingest})")
