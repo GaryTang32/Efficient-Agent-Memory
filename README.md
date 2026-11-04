@@ -4,6 +4,7 @@ A test bench for agent memory and context-window techniques — taken from tier-
 agents that call LLMs through **Amazon Bedrock** (no self-hosted models). Goal: measure each technique on its own
 (accuracy, tokens, $ with prompt caching on, latency), then combine the best into a reusable memory skill.
 
+- `docs/literature/2026-11-scan/` — **literature scan, Sep–Nov 2026**: a sweep of 1,515 arXiv papers (40% of the most relevant have Chinese authors, 9% big US labs), plus the US labs, Chinese labs, repos and practitioners, and what it means for AutoMemory v2 and Bedrock.
 - `docs/literature_review.md` — verified list of papers (venue, lab, repo, licence, Bedrock fit) and the implementation shortlist.
 - `docs/papers/` — deep-reading notes for individual papers.
 - `docs/methodology.md` — tasks, environment rules, metric definitions, procedure.
