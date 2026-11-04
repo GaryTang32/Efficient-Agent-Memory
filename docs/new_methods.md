@@ -1,6 +1,6 @@
 # Methods from the Sep–Nov 2026 literature scan
 
-These are the eight methods that [the scan](literature/2026-11-scan/README.md) found but that had not been tried yet. Each one is implemented as a technique in this harness and follows its own source as closely as the API allows. Every module's docstring states its source and lists its deviations. Results are in `docs/results/2026-11-04-new-methods.md`.
+These are the eight methods that [the scan](literature/2026-11-scan/README.md) found but that had not been tried yet. Each one is implemented as a technique in this harness and follows its own source as closely as the API allows. Every module's docstring states its source and lists its deviations. Results are in [`results/2026-11-04-new-methods.md`](results/2026-11-04-new-methods.md).
 
 ## The methods at a glance
 
