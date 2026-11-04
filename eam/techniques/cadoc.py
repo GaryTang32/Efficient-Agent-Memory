@@ -61,8 +61,14 @@ class CADOC(Technique):
     # ---- prices ---------------------------------------------------------------------------------------------
     def _weights(self, ctx) -> tuple[float, float]:
         m = ctx.model
-        if self.mode == "route" and m.price_cache_read is not None and m.price_in:
-            return (m.price_cache_write or m.price_in) / m.price_in, m.price_cache_read / m.price_in
+        if self.mode == "route":
+            if m.price_cache_read is not None and m.price_in:
+                return (m.price_cache_write or m.price_in) / m.price_in, m.price_cache_read / m.price_in
+            from eam.bench.analyze import CLI_INPUT_RATES  # Claude Code profiles carry no prices (CLI reports cost)
+
+            if m.key in CLI_INPUT_RATES:
+                p_in, p_read, p_write = CLI_INPUT_RATES[m.key]
+                return p_write / p_in, p_read / p_in
         return 1.0, self.w_r_paper
 
     # ---- objects --------------------------------------------------------------------------------------------

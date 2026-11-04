@@ -87,10 +87,32 @@ def _ext(backend: str) -> dict[str, list[str]]:
     return {task: [f"ext_memory:backend={backend}+resum:max_context_k={kk}"] for task, kk in k.items()}
 
 
+# Methods from the Sep-Nov 2026 literature scan (docs/literature/2026-11-scan), each as its source specifies it,
+# against the v4 anchors (naive, naive@native) and comparators (fs_workspace+resum, automem), which are reused from
+# the real_v4 result files. Single-session task: each method alone. Multi-session tasks: each within-session method
+# gets the same note workspace (fs_workspace+X), so the context method is the only difference from
+# fs_workspace+resum; raw-history RAG replaces the workspace (raw_rag+resum vs fs_workspace+resum); the Strands
+# harness brings its own long-term memory and runs alone. ReSum-family hosts use the task's usual K.
+V5_K = {"research_corpus": 33, "ops_stream": 26, "ledger_audit": 40, "repo_debug": 13}
+V5_WITHIN = ["cadoc", "refold", "akv_drop", "akv_drop:keep=8,block=8", "selfcompact", "coral",
+             "sjc:max_context_k={k}", "openclaw:max_context_k={k}", "openclaw:max_context_k={k},sjc=true"]
+
+
+def _v5(task: str) -> list[str]:
+    k = V5_K[task]
+    within = [s.format(k=k) for s in V5_WITHIN]
+    if task == "research_corpus":
+        return ["strands", *within]
+    return ["strands", *[f"fs_workspace+{s}" for s in within], f"raw_rag+resum:max_context_k={k}"]
+
+
+REAL_V5 = {task: _v5(task) for task in V5_K}
+
+
 SUITES = {"individual": INDIVIDUAL, "combined": COMBINED, "smoke": SMOKE, "real_v1": REAL_V1, "real_v2": REAL_V2,
           "real_v2_aware": REAL_V2,
           "real_v3": REAL_V3, "real_v4_haiku": REAL_V4_HAIKU, "real_v4_sonnet": REAL_V4_SONNET,
-          "extmem_memoryos": _ext("memoryos"), "extmem_lightmem": _ext("lightmem"), "extmem_nemori": _ext("nemori")}
+          "extmem_memoryos": _ext("memoryos"), "extmem_lightmem": _ext("lightmem"), "extmem_nemori": _ext("nemori"), "real_v5": REAL_V5}
 
 # Task settings per suite. real_v2 = "unaware" (the papers' setting: the harness silently enforces the window);
 # real_v2_aware = the agent is told the limit and sees a context gauge each step.
