@@ -87,6 +87,16 @@ class AutoMemory(Technique):
             # ReSum's trigger is 0.9·(K·1024 − 1000); choose K so that it fires at `trigger` × window.
             k = (self.trigger * self._window(ctx) / 0.9 + 1000) / 1024
             return ReSum(max_context_k=k)
+        if self.compact in ("openclaw", "openclaw+sjc", "sjc"):
+            # v3 candidates (docs/results/2026-11-04-new-methods.md): OpenClaw's structured summary (the SJC
+            # paper's host) in place of ReSum's, optionally pruned by SJC; or SJC on ReSum. Same trigger as ReSum.
+            from eam.techniques.sjc import OpenClawCompaction, SourceJudgedReSum
+
+            k = (self.trigger * self._window(ctx) / 0.9 + 1000) / 1024
+            if self.compact == "sjc":
+                return SourceJudgedReSum(max_context_k=k)
+            return OpenClawCompaction(max_context_k=k, sjc=self.compact == "openclaw+sjc", keep_last=False,
+                                      first="task")
         if self.compact == "mask":
             return ObservationMasking()
         return None
@@ -122,6 +132,8 @@ class AutoMemory(Technique):
     def on_session_start(self, ctx):
         self._sessions += 1
         self._compactor = self._make_compactor(ctx)
+        if self._compactor is not None:
+            self._compactor.on_session_start(ctx)
         ctx.state["automem_guard_step"] = (-1, 0)
         self._stash.clear()
         if self._refold:
@@ -133,7 +145,9 @@ class AutoMemory(Technique):
     def before_call(self, ctx):
         if self._compactor is None:
             return
-        if isinstance(self._compactor, ReSum):
+        from eam.techniques.sjc import OpenClawCompaction
+
+        if isinstance(self._compactor, (ReSum, OpenClawCompaction)):
             tail = self._recent_tail(ctx)
             # the guard's prediction of the coming prompt (real tokens), if it is larger than the last real size
             predicted = ctx.state.get("automem_predicted", 0)
@@ -141,12 +155,12 @@ class AutoMemory(Technique):
                 saved, ctx.last_prompt_tokens = ctx.last_prompt_tokens, predicted
                 n_before = len(ctx.events)
                 self._compactor.before_call(ctx)
-                compacted = any(e["kind"] == "resum_rebuild" for e in ctx.events[n_before:])
+                compacted = any(e["kind"] in ("resum_rebuild", "openclaw_rebuild") for e in ctx.events[n_before:])
                 ctx.last_prompt_tokens = 0 if compacted else saved
             else:
                 n_before = len(ctx.events)
                 self._compactor.before_call(ctx)
-                compacted = any(e["kind"] == "resum_rebuild" for e in ctx.events[n_before:])
+                compacted = any(e["kind"] in ("resum_rebuild", "openclaw_rebuild") for e in ctx.events[n_before:])
             if compacted:
                 ctx.state["automem_predicted"] = 0
                 if self.recall and self._notes_text():  # the reset message replaced the session's first message

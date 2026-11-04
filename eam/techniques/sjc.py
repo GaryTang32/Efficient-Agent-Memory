@@ -418,9 +418,13 @@ class OpenClawCompaction(Technique):
     cache_safe = False
 
     def __init__(self, max_context_k: float = 32, sjc: bool = False, judge: str = "cc-haiku", tau: float = 0.5,
-                 summary_tokens: int = 8192):
+                 summary_tokens: int = 8192, keep_last: bool = True, first: str = "message"):
         self.max_context_k = float(max_context_k)
         self.sjc = bool(sjc)
+        # inside AutoMemory: AutoMemory keeps its own recent steps and re-adds the notes, so the host keeps no
+        # interaction (keep_last=False) and restarts from the task statement (first="task")
+        self.keep_last = bool(keep_last)
+        self.first = str(first)
         self.judge = str(judge)
         self.tau = float(tau)
         self.summary_tokens = int(summary_tokens)
@@ -462,7 +466,8 @@ class OpenClawCompaction(Technique):
         if tokens < self.trigger_tokens or len(ctx.messages) < 5:
             return
         # keep the first prompt and the most recent interaction (assistant call + its results) verbatim
-        keep = ctx.messages[-2:] if ctx.messages[-2]["role"] == "assistant" else ctx.messages[-1:]
+        keep = (ctx.messages[-2:] if ctx.messages[-2]["role"] == "assistant" else ctx.messages[-1:]) \
+            if self.keep_last else []
         span_msgs = ctx.messages[1: len(ctx.messages) - len(keep)]
         if not span_msgs:
             return
@@ -495,10 +500,11 @@ class OpenClawCompaction(Technique):
                                     self.judge, tau=self.tau)
         st["prev"] = summary
         first = st["first"] or ctx.messages[0]
-        first_text = "\n".join(b["text"] for b in first["content"] if "text" in b)
+        first_text = ctx.task_header() if self.first == "task" else \
+            "\n".join(b["text"] for b in first["content"] if "text" in b)
         ctx.messages[:] = [{"role": "user", "content": [{"text": OC_RESET.format(task=first_text, summary=summary)}]},
                            *keep]
-        if ctx.messages[1]["role"] == "user":  # no assistant kept: merge into one user message
+        if len(ctx.messages) > 1 and ctx.messages[1]["role"] == "user":  # no assistant kept: one user message
             ctx.messages[:] = [{"role": "user", "content": ctx.messages[0]["content"] + ctx.messages[1]["content"]}]
         ctx.log("openclaw_rebuild", tokens_before=tokens)
         if rec is not None:

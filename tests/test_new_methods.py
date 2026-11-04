@@ -339,3 +339,35 @@ def test_automem_ingest_previews_and_retrieves():
     texts = [c["text"] for m in res.messages for b in m["content"] if "toolResult" in b
              for c in b["toolResult"]["content"]]
     assert texts[0].startswith("[Truncated: 1 block") and "> 1| doc 1" in texts[1]
+
+
+# ---- AutoMemory v3 candidates: OpenClaw / SJC compaction ----------------------------------------------------
+@pytest.mark.parametrize("family", ["research_corpus", "ops_stream", "ledger_audit", "repo_debug"])
+@pytest.mark.parametrize("compact", ["openclaw", "openclaw+sjc", "sjc"])
+def test_automem_openclaw_compaction_runs_on_every_long_task(family, compact):
+    out = run_instance(FAMILIES[family](0), f"automem:ingest=0.1,compact={compact}", backend="mock", model=M,
+                       aux_model=M, models=MOCK_MODELS)
+    assert out.get("error") is None or "context_overflow" in str(out.get("error"))
+
+
+def test_automem_openclaw_rebuilds_with_task_tail_and_notes():
+    from eam.techniques.auto_memory import AutoMemory
+
+    def aux(req):
+        text = req.messages[-1]["content"][-1]["text"]
+        if "source judge" in (req.system[0]["text"] if req.system else ""):
+            return final(json.dumps({"b1__info": {"answer": "no", "p_yes": 0.1}}))
+        assert "<conversation>" in text
+        return final(OC_SUMMARY)
+
+    a = AutoMemory(compact="openclaw+sjc", trigger=0.3, guard=0)
+    a._ws.notes["plan"] = "remember 7"
+    policy = scripted([assistant(tool_use("read", {"i": i})) for i in range(12)] + [final("FINAL ANSWER: x")])
+    res = run_agent("audit task", llm=MockLLM(policy, aux_policy=aux), model=M, env_tools=echo_tools(400),
+                    techniques=[a], max_steps=16, context_limit=8_000)
+    kinds = [e["kind"] for e in res.events]
+    assert "openclaw_rebuild" in kinds and "sjc_gate" in kinds and "automem_kept_recent" in kinds
+    first = res.messages[0]["content"]
+    text = "\n".join(b.get("text", "") for b in first)
+    assert text.startswith("Task: audit task") and "## Exact identifiers" in text and "remember 7" in text
+    assert "Use the ledger" not in text  # pruned by the judge (entry b1)
