@@ -133,6 +133,11 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "cache_hit_rate": summary["cache_hit_rate"],
         "calls": summary["calls"],
         "by_tag": summary["by_tag"],
+        # per-method diagnostics (ReFold labels, SJC verdicts, SelfCompact probes, CORAL/CADOC counts)
+        "records": [{k: (v if not isinstance(v, str) else v[:300]) for k, v in e.items() if k != "raw"}
+                    for e in (all_events or res.events)
+                    if e["kind"].endswith("_record") or e["kind"] in ("sjc_gate", "selfcompact_probe",
+                                                                       "selfcompact_rebuild", "openclaw_cancelled")],
         "llm_latency_ms": summary["latency_ms"],
         "wall_s": round(time.perf_counter() - t0, 2),
         "peak_prompt_tokens": res.peak_prompt_tokens,
