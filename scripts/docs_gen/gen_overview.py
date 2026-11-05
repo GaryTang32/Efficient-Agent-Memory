@@ -1,15 +1,25 @@
-"""Generator for docs/overview.html. Reads the reference brief style (ref.css, sprite.svg, nav script) and the
-result summary (overview_data.json) from a scratch directory; paths below are those of the session that wrote it."""
+"""Generator for docs/overview.html.
+
+    python scripts/docs_gen/build_overview_data.py scripts/docs_gen/overview_data.json   # from results/*.jsonl
+    python scripts/docs_gen/gen_overview.py
+
+The page style (assets/ref.css, sprite.svg, the navigation and motion scripts) follows the reference brief the user
+supplied; overview_extras.py holds the interactive pieces."""
 """Generate docs/overview.html (Efficient Agent Memory research brief) in the reference brief's style."""
 import json
 import html
+import sys
 from pathlib import Path
 
-SCR = Path("/tmp/claude-0/-home-user-Efficient-Agent-Memory/a3af5893-3596-59f4-92f9-11b797e768ea/scratchpad")
-REF_CSS = (SCR / "ref" / "ref.css").read_text()
-SPRITE = (SCR / "ref" / "sprite.svg").read_text()
-D = json.loads((SCR / "overview_data.json").read_text())
-OUT = Path("/home/user/Efficient-Agent-Memory/docs/overview.html")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import overview_extras as X  # noqa: E402
+
+HERE = Path(__file__).resolve().parent
+ASSETS = HERE / "assets"
+REF_CSS = (ASSETS / "ref.css").read_text()
+SPRITE = (ASSETS / "sprite.svg").read_text()
+D = json.loads((HERE / "overview_data.json").read_text())
+OUT = HERE.parent.parent / "docs" / "overview.html"
 FAMS = ["research_corpus", "ops_stream", "ledger_audit", "repo_debug"]
 FAM_SHORT = {"research_corpus": "Research", "ops_stream": "Ops stream", "ledger_audit": "Ledger audit",
              "repo_debug": "Repo debug"}
@@ -625,6 +635,23 @@ def a(fam):
 v2h, v2s = a(("automem:ingest=0.1", "automem:ingest=0.1#aux=cc-haiku"))
 v1h, v1s = a(("automem", "automem#aux=cc-haiku"))
 v2x = agg(cell("automem:ingest=0.1,compact=sjc#aux=cc-haiku", "cc-sonnet"))
+POINTS = []
+for g_, label_, sub_, hs_, ss_ in ROWS:
+    for model_, spec_ in (("haiku", hs_), ("sonnet", ss_)):
+        if not spec_:
+            continue
+        a_ = agg(cell(spec_, "cc-" + model_))
+        if a_:
+            POINTS.append(dict(model=model_, group=g_, label=label_, cost=a_["cost"], score=a_["score"], n=a_["n"],
+                               ceiling=agg(cell("naive@native", "cc-" + model_))["score"]))
+MIX = []
+for label_, spec_ in (("Unoptimised ceiling (no cache)", "naive@native"), ("Full context, cached (overflows)", "full"),
+                      ("AutoMemory v2", "automem:ingest=0.1#aux=cc-haiku"), ("AutoMemory v2 strong", "automem:ingest=0.1,compact=sjc#aux=cc-haiku"),
+                      ("ReFold", "refold"), ("CADOC", "cadoc"), ("SelfCompact", "selfcompact"), ("Strands defaults", "strands"),
+                      ("AKV drop, blocks of 8", "akv_drop:keep=8,block=8"), ("Observation masking", "obs_mask"), ("AKV drop, every turn", "akv_drop")):
+    v_ = D.get(spec_, {}).get("cc-sonnet", {}).get("research_corpus")
+    if v_:
+        MIX.append((label_, v_["read"], v_["write"], v_["unc"], v_["cost"]))
 
 NAV = """
 <nav class="sidenav" id="sidenav" aria-label="Sections">
@@ -655,7 +682,8 @@ NAV = """
     <li class="sn-part sn-p3" data-name="03 Methods"><a href="#mt">%(layers)s<span><b>03</b> Methods</span></a>
       <ol>
         <li><a href="#mt-map">%(grid)s<span><i>3.1</i> Where each method acts</span></a></li>
-        <li><a href="#mt-cards">%(sliders)s<span><i>3.2</i> Method by method</span></a></li>
+        <li><a href="#mt-auto">%(steps)s<span><i>3.2</i> AutoMemory step by step</span></a></li>
+        <li><a href="#mt-cards">%(sliders)s<span><i>3.3</i> Method by method</span></a></li>
       </ol></li>
     <li class="sn-part sn-p4" data-name="04 Effectiveness now"><a href="#ef">%(gauge)s<span><b>04</b> Effectiveness now</span></a>
       <ol>
@@ -663,7 +691,8 @@ NAV = """
         <li><a href="#ef-heat">%(grid)s<span><i>4.2</i> Per task</span></a></li>
         <li><a href="#ef-v2">%(trend)s<span><i>4.3</i> AutoMemory v1 → v3</span></a></li>
         <li><a href="#ef-lessons">%(bulb)s<span><i>4.4</i> What works</span></a></li>
-        <li><a href="#ef-next">%(flag)s<span><i>4.5</i> Open questions</span></a></li>
+        <li><a href="#ef-pick">%(route)s<span><i>4.5</i> Which setting?</span></a></li>
+        <li><a href="#ef-next">%(flag)s<span><i>4.6</i> Open questions</span></a></li>
       </ol></li>
     <li class="sn-sep" role="presentation"></li>
     <li class="sn-part sn-p5" data-name="Conclusion"><a href="#conclusion">%(check)s<span>Conclusion</span></a></li>
@@ -682,7 +711,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap">
-<style>{REF_CSS}{EXTRA_CSS}</style>
+<style>{REF_CSS}{EXTRA_CSS}{X.CSS}</style>
 {SPRITE}
 <div class="readbar" aria-hidden="true"><span></span></div>
 <div class="layout">
@@ -703,7 +732,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <li><strong>Automatic beats model-managed.</strong> Steps the harness applies by itself (previews at ingestion, recall, compaction at a fixed trigger) work on both models; methods that need the model to manage its own memory fail on the weaker one.</li>
         <li><strong>AutoMemory v2 is the current best:</strong> Haiku {v2h["score"]:.2f} mean score at {v2h["cost"]:.0f}% of the unoptimised cost; Sonnet {v2s["score"]:.2f} at {v2s["cost"]:.0f}%. For strong models, v2 + SJC pruning solved {v2x["solved"]}/{v2x["runs"]} Sonnet runs at {v2x["cost"]:.0f}%. No newer method beats it across the board.</li>
       </ul>
-      <p class="rec"><strong>Recommendation:</strong> use <code>automem_v2</code> as the default memory layer; for a strong agent use <code>automem_v2_strong</code> with a cheaper model writing summaries and judging them. Validate on real repositories next (<a href="#ef-next">4.5</a>).</p>
+      <p class="rec"><strong>Recommendation:</strong> use <code>automem_v2</code> as the default memory layer; for a strong agent use <code>automem_v2_strong</code> with a cheaper model writing summaries and judging them. Validate on real repositories next (<a href="#ef-next">4.6</a>).</p>
     </div>
     {figure(OVERVIEW_SVG, "Every step re-sends the conversation. The four places a method can act decide whether it keeps the prompt cache.")}
     <details class="glossary">
@@ -725,9 +754,9 @@ PAGE = f"""<title>Efficient Agent Memory</title>
       <div><span class="part">{ic("wrench")}Part 2</span><a class="ttl" href="#hx">Harness and experiments</a><span class="gist">The loop, the tasks, the runs and the logs</span>
         <ol><li><span>2.1</span><a href="#hx-loop">The agent loop</a></li><li><span>2.2</span><a href="#hx-tasks">The four long tasks</a></li><li><span>2.3</span><a href="#hx-runs">Experiments run</a></li><li><span>2.4</span><a href="#hx-log">Logging and analysis</a></li><li><span>2.5</span><a href="#hx-fix">Harness corrections</a></li></ol></div>
       <div><span class="part">{ic("layers")}Part 3</span><a class="ttl" href="#mt">Methods</a><span class="gist">{len(M)} methods: mechanism, evidence, verdict</span>
-        <ol><li><span>3.1</span><a href="#mt-map">Where each method acts</a></li><li><span>3.2</span><a href="#mt-cards">Method by method</a></li></ol></div>
+        <ol><li><span>3.1</span><a href="#mt-map">Where each method acts</a></li><li><span>3.2</span><a href="#mt-auto">AutoMemory step by step</a></li><li><span>3.3</span><a href="#mt-cards">Method by method</a></li></ol></div>
       <div><span class="part">{ic("gauge")}Part 4</span><a class="ttl" href="#ef">Effectiveness now</a><span class="gist">Scores, costs and what they mean</span>
-        <ol><li><span>4.1</span><a href="#ef-board">Scoreboard</a></li><li><span>4.2</span><a href="#ef-heat">Per task</a></li><li><span>4.3</span><a href="#ef-v2">AutoMemory v1 → v3</a></li><li><span>4.4</span><a href="#ef-lessons">What works</a></li><li><span>4.5</span><a href="#ef-next">Open questions</a></li></ol></div>
+        <ol><li><span>4.1</span><a href="#ef-board">Scoreboard</a></li><li><span>4.2</span><a href="#ef-heat">Per task</a></li><li><span>4.3</span><a href="#ef-v2">AutoMemory v1 → v3</a></li><li><span>4.4</span><a href="#ef-lessons">What works</a></li><li><span>4.5</span><a href="#ef-pick">Which setting?</a></li><li><span>4.6</span><a href="#ef-next">Open questions</a></li></ol></div>
     </nav>
   </header>
 
@@ -765,6 +794,9 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <li>What should survive until the next session?</li><li>How does it come back at the right moment?</li><li>Called agent memory, long-term memory.</li></ul></div>
     </div>
     <p class="implication">{ic("bulb")}<strong>Measure</strong>cost per solved task at full accuracy, with real cache prices. Tokens removed is the wrong target.</p>
+    <h4>Try it: why fewer tokens can cost more</h4>
+    <p class="lead-in">Pick a strategy and press Play. Each bar is one step's prompt: green is read from the cache, red is re-written to it. Switch the price route to see how Bedrock's cheaper cache writes change the picture.</p>
+    {X.simulator()}
   </section>
 
   <section id="obj-pain" aria-labelledby="h-obj-pain">
@@ -858,6 +890,8 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <tr><th>6 · v3 ablation</th><td>OpenClaw / SJC as the compaction step?</td><td>Haiku 4 · Sonnet 2 · 72 runs</td><td>Not adopted; SJC an option for strong models.</td><td>2026-11-04-automemory-v3-ablation</td></tr>
         <tr><th>7 · More Sonnet seeds</th><td>Confirm or rule out compact=sjc</td><td>Sonnet 4 · 34 runs</td><td>SJC 16/16 solved; adopted for strong models.</td><td>2026-11-04-automemory-v3-ablation</td></tr>
       </tbody></table></div>
+    <h4>Timeline</h4>
+    {X.timeline()}
     <div class="stats">
       <div class="stat"><span class="num">≈ 2,150</span><span class="lbl">CLI benchmark runs recorded, pilots included</span></div>
       <div class="stat"><span class="num">≈ $1,085</span><span class="lbl">total list-price spend (Sonnet ≈ $820, Haiku ≈ $230, Opus ≈ $34)</span></div>
@@ -904,14 +938,21 @@ PAGE = f"""<title>Efficient Agent Memory</title>
   <section id="mt-map" aria-labelledby="h-mt-map">
     <h3 id="h-mt-map">{ic("grid", "ic hic")}<span class="no">3.1</span>Where each method acts</h3>
     <p>The hook a method uses predicts its cost behaviour; who drives it (the harness or the model) predicts whether it works on a weaker model.</p>
+    {figure(X.method_map(), "Colour: violet = AutoMemory component, green = works on both models, amber = mixed or model-dependent, red = fails on these tasks. Select a chip to open its method card. The harness-driven, cache-safe methods (top row, left) are the ones that held up on both models.")}
     <div class="tbl-wrap"><table>
       <thead><tr><th>Method</th><th>Developer</th><th>Acts at</th><th>Driven by</th><th>Status</th></tr></thead>
       <tbody>{"".join(f'<tr><th>{E(m["name"])}</th><td>{E(m["dev"])}</td><td>{E(m["acts"])}</td><td>{E(m["driver"])}</td><td><span class="str {STR[m["ev"]][0]}">{STR[m["ev"]][1]}</span></td></tr>' for m in M)}</tbody>
     </table></div>
   </section>
 
+  <section id="mt-auto" aria-labelledby="h-mt-auto">
+    <h3 id="h-mt-auto">{ic("steps", "ic hic")}<span class="no">3.2</span>AutoMemory v2, step by step</h3>
+    <p class="lead-in">Press Play, use the arrow keys, or pick a step. Each step names its hook, its effect on the prompt cache, and the measurement behind it.</p>
+    {X.automem_stepper()}
+  </section>
+
   <section id="mt-cards" aria-labelledby="h-mt-cards">
-    <h3 id="h-mt-cards">{ic("sliders", "ic hic")}<span class="no">3.2</span>Method by method</h3>
+    <h3 id="h-mt-cards">{ic("sliders", "ic hic")}<span class="no">3.3</span>Method by method</h3>
     <p class="lead-in">Select a method for its mechanism, how it is implemented here, the evidence, and its measured results on the four long tasks.</p>
     {method_tabs()}
     <p class="note">Score = mean task accuracy; recovery = share of the floor-to-ceiling gap closed; cost and peak = median as a percentage of the unoptimised ceiling on the same task. Within-session methods run with the same note workspace on multi-session tasks.</p>
@@ -926,6 +967,10 @@ PAGE = f"""<title>Efficient Agent Memory</title>
 
   <section id="ef-board" aria-labelledby="h-ef-board">
     <h3 id="h-ef-board">{ic("chart", "ic hic")}<span class="no">4.1</span>Scoreboard</h3>
+    <h4>Accuracy against cost</h4>
+    <p class="lead-in">Up is more accurate, left is cheaper. The green zone is the goal: the ceiling's accuracy at below its cost. Switch models to compare.</p>
+    {X.scatter(POINTS)}
+    <h4>All methods, both models</h4>
     <p class="lead-in">Mean score over the four long tasks; the black tick is the ceiling's score. In brackets, mean cost as a percentage of the ceiling (green below 90%, red above 110%) and, where a method ran on fewer tasks, how many of the four. Hover a bar for recovery, peak and solved runs.</p>
     <div class="legend"><span><i style="background:var(--muted);opacity:.45"></i>Reference</span><span><i style="background:var(--accent)"></i>Published (phase 1)</span><span><i style="background:var(--amber)"></i>Sep–Nov 2026 scan</span><span><i style="background:var(--violet)"></i>AutoMemory</span></div>
     {scoreboard()}
@@ -974,6 +1019,9 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <li>Deleting old tool results over an API<span class="ev">AKV ledger_audit 0.00–0.17</span></li>
         <li>Self-probing on the agent model<span class="ev">SelfCompact 138–179% mean cost</span></li></ul></div>
     </div>
+    <h4>Measured: where the prompt tokens go</h4>
+    <p class="lead-in">The cache explains the cost column. Methods that edit history often turn cache reads (cheap) into cache writes (2× the input price).</p>
+    {X.token_mix(MIX)}
     <div class="message">
       <p class="lead">Let the harness do the remembering, and keep the cached prefix stable.</p>
       <div class="tiles">
@@ -984,8 +1032,14 @@ PAGE = f"""<title>Efficient Agent Memory</title>
     </div>
   </section>
 
+  <section id="ef-pick" aria-labelledby="h-ef-pick">
+    <h3 id="h-ef-pick">{ic("route", "ic hic")}<span class="no">4.5</span>Which setting should I use?</h3>
+    <p class="lead-in">Answer three questions; the flowchart follows your answers.</p>
+    {X.chooser()}
+  </section>
+
   <section id="ef-next" aria-labelledby="h-ef-next">
-    <h3 id="h-ef-next">{ic("flag", "ic hic")}<span class="no">4.5</span>Open questions and next steps</h3>
+    <h3 id="h-ef-next">{ic("flag", "ic hic")}<span class="no">4.6</span>Open questions and next steps</h3>
     <div class="tbl-wrap"><table>
       <thead><tr><th>Item</th><th>Status</th><th>Cost</th><th>Why it matters</th></tr></thead>
       <tbody>
@@ -1034,7 +1088,22 @@ PAGE = f"""<title>Efficient Agent Memory</title>
   </section>
 </main>
 </div>
-<script>{(SCR / "ref" / "script_tabs_nav.js").read_text()}</script>
+<script>{(ASSETS / "script_tabs_nav.js").read_text()}</script>
+<script>{(ASSETS / "script0.js").read_text()}</script>
+<script>
+(() => {{
+  document.querySelectorAll('[data-motion-root]').forEach((root) => {{
+    root.querySelectorAll('[data-goto]').forEach((chip) => chip.addEventListener('click', () => {{
+      const target = Number(chip.dataset.goto); let cur = Number(root.dataset.stepCurrent); let guard = 12;
+      while (cur !== target && guard-- > 0) {{
+        const btn = root.querySelector(`[data-motion-action="${{target > cur ? 'next' : 'prev'}}"]`);
+        if (!btn || btn.disabled) break; btn.click(); cur = Number(root.dataset.stepCurrent);
+      }}
+    }}));
+  }});
+}})();
+</script>
+<script>{X.SIM_JS}{X.MAP_JS}{X.SCATTER_JS}{X.CHOOSER_JS}{X.TOOLTIP_JS}</script>
 <script>
 (() => {{
   document.querySelectorAll('[data-tabs]').forEach((root) => {{

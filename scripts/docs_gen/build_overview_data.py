@@ -42,6 +42,8 @@ for (m, f, s), rs in g.items():
         cost=round(st.median(r["cost_usd"] for r in rs) / rc * 100), tok=round(st.median(r["prompt_tokens"] for r in rs) / rt * 100),
         peak=round(st.median(r["peak_prompt_tokens"] for r in rs) / rp * 100), solved=sum(r["success"] for r in rs),
         usd=round(sum(r["cost_usd"] for r in rs), 2), steps=round(st.median(r["steps"] for r in rs)),
-        wall=round(st.median(r["wall_s"] for r in rs) / 60, 1))
+        wall=round(st.median(r["wall_s"] for r in rs) / 60, 1),
+        read=sum(r["usage"].get("cache_read_tokens", 0) for r in rs), write=sum(r["usage"].get("cache_write_tokens", 0) for r in rs),
+        unc=sum(r["usage"].get("input_tokens", 0) for r in rs), out=sum(r["usage"].get("output_tokens", 0) for r in rs))
 json.dump(out, open(OUT, "w"), indent=0)
 print(OUT, len(out))
