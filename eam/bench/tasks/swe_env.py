@@ -74,8 +74,9 @@ def labels(test_ids: list[str]) -> list[str]:
     out = []
     for t in test_ids:
         m = _TEST_ID.match(t)
-        if m:
-            out.append(f"{m.group(2)}.{m.group(1)}")
+        if m:  # newer ids already end with the method: "test_x (module.Class.test_x)"
+            name, path = m.group(1), m.group(2)
+            out.append(path if path.endswith("." + name) else f"{path}.{name}")
     return out
 
 
