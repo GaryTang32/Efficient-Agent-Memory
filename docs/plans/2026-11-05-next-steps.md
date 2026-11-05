@@ -14,7 +14,13 @@ Background:
 - [`../results/2026-11-04-new-methods.md`](../results/2026-11-04-new-methods.md)
 - [`../results/2026-11-04-automemory-v3-ablation.md`](../results/2026-11-04-automemory-v3-ablation.md)
 
-## A. More Sonnet seeds for `compact=sjc` (running)
+## A. More Sonnet seeds for `compact=sjc` (done 2026-11-05)
+
+**Outcome.**
+- **Rule met:** SJC on ReSum solved 16/16 Sonnet runs (v2: 13/16), with a score at least as high as v2 on every task, at a mean cost 3–5 points higher.
+- **New preset:** `automem_v2_strong`, the recommended setting for strong agent models.
+- **Details:** [`../results/2026-11-04-automemory-v3-ablation.md`](../results/2026-11-04-automemory-v3-ablation.md), section *Sonnet at 4 seeds*.
+- **Cost:** 34 runs, $36.11.
 
 **Why.**
 - In the v3 ablation, on Sonnet (2 seeds), `compact=sjc` solved 8/8 runs at 66% of the ceiling's cost.

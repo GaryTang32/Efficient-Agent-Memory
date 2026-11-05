@@ -115,8 +115,18 @@ def automem_v2_slim() -> Technique:
     return AM(ingest=0.1, fold=True)
 
 
+def automem_v2_strong() -> Technique:
+    """AutoMemory v2 for strong agent models (docs/results/2026-11-04-automemory-v3-ablation.md, Sonnet at 4 seeds):
+    v2 with ReSum summaries pruned by SJC's source judge. Pair it with a cheaper summariser/judge model (``#aux=``).
+    Not for weaker agent models: on Haiku it lowered research_corpus and ledger_audit."""
+    from eam.techniques.auto_memory import AutoMemory as AM
+
+    return AM(ingest=0.1, compact="sjc")
+
+
 PRESETS: dict[str, Callable[[], Technique]] = {
     "automem_v2": automem_v2,
+    "automem_v2_strong": automem_v2_strong,
     "automem_v2_slim": automem_v2_slim,
     "cache_first": cache_first,
     "lean": lean,

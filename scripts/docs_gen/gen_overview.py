@@ -132,7 +132,7 @@ ROWS = [  # (group, label, sub, haiku spec, sonnet spec)
     ("ours", "AutoMemory v2 (default)", "v1 + previews at ingestion", "automem:ingest=0.1", "automem:ingest=0.1#aux=cc-haiku"),
     ("ours", "AutoMemory v2 slim", "v2 + ReFold folding", "automem:fold=true,ingest=0.1",
      "automem:fold=true,ingest=0.1#aux=cc-haiku"),
-    ("ours", "v2 + SJC (v3 candidate)", "ReSum summaries pruned by SJC", "automem:ingest=0.1,compact=sjc",
+    ("ours", "AutoMemory v2 strong", "v2 + SJC pruning; for strong agent models", "automem:ingest=0.1,compact=sjc",
      "automem:ingest=0.1,compact=sjc#aux=cc-haiku"),
     ("ours", "v2 + OpenClaw (v3 candidate)", "structured summaries", "automem:ingest=0.1,compact=openclaw",
      "automem:ingest=0.1,compact=openclaw#aux=cc-haiku"),
@@ -417,16 +417,16 @@ method(id="am2", grp="This project", tag="A2", name="AutoMemory v2 (default)", d
        ev="strong", evtext="Haiku 0.88 mean, 11/16 solved (v1 7/16) at 85% cost. Sonnet 0.98 at 64% (v1 72%).",
        verdict="The current default: the only setting at the ceiling's accuracy below its cost on both models.",
        rows=("automem:ingest=0.1", "automem:ingest=0.1#aux=cc-haiku"))
-method(id="am3", grp="This project", tag="A3", name="v3 ablation: SJC / OpenClaw", dev="this project",
+method(id="am3", grp="This project", tag="A3", name="v2 strong + v3 ablation", dev="this project",
        src="automem:ingest=0.1,compact=sjc | openclaw | openclaw+sjc", acts="Compaction", driver="Harness + judge",
        what="v2 with ReSum's summary replaced by OpenClaw's structured summary, SJC pruning, or both.",
        how=["Same as v2 except the compaction step.", "OpenClaw restarts from the task statement; AutoMemory re-adds notes and recent steps.",
             "SJC's Haiku judge prunes entries not sourced from tool outputs."],
-       impl="72 runs, same seeds and windows as v2. Sonnet seeds 2–3 are running (task A).",
+       impl="72 runs at the same seeds and windows as v2, then 34 more Sonnet runs (instances 2–3) under a decision rule fixed in advance. v2 + SJC is the preset automem_v2_strong.",
        flow=[("v2", "unchanged", "nb"), ("Compaction swap", "OpenClaw / SJC", "nb-focal"), ("Judge", "prune unsourced entries", "nb"),
              ("Compare", "same seeds as v2", "nb-check")],
-       ev="outcome", evtext="Haiku: 0.77–0.81 mean (v2 0.88) at 114–124% cost. Sonnet: all tie; SJC on ReSum 8/8 at 66%.",
-       verdict="Not adopted. compact=sjc is an option for strong models, pending more seeds.",
+       ev="outcome", evtext="Haiku: 0.77–0.81 mean (v2 0.88) at 114–124% cost. Sonnet at 4 seeds: v2 + SJC solved 16/16 (v2 13/16), never below v2 on any task, mean cost +3 to +5 points.",
+       verdict="OpenClaw not adopted. SJC on ReSum is the strong-model preset automem_v2_strong; v2 stays the default for weaker models.",
        rows=("automem:ingest=0.1,compact=sjc", "automem:ingest=0.1,compact=sjc#aux=cc-haiku"))
 
 STR = {"strong": ("str-strong", "Measured · both models"), "outcome": ("str-outcome", "Measured · mixed"),
@@ -624,6 +624,7 @@ def a(fam):
 
 v2h, v2s = a(("automem:ingest=0.1", "automem:ingest=0.1#aux=cc-haiku"))
 v1h, v1s = a(("automem", "automem#aux=cc-haiku"))
+v2x = agg(cell("automem:ingest=0.1,compact=sjc#aux=cc-haiku", "cc-sonnet"))
 
 NAV = """
 <nav class="sidenav" id="sidenav" aria-label="Sections">
@@ -692,7 +693,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
       <p class="eyebrow">Research brief · November 2026</p>
       <h1>Efficient Agent Memory</h1>
       <p class="dek">What this repository studies, how each memory and token-saving method works, and how well each one works today on four long agent tasks, measured on Claude Haiku and Sonnet.</p>
-      <p class="hero-meta"><span>≈ 2,100 benchmark runs</span><span>26 methods and variants</span><span>Claude Code CLI route</span><span>Evidence to 5 Nov 2026</span></p>
+      <p class="hero-meta"><span>≈ 2,150 benchmark runs</span><span>26 methods and variants</span><span>Claude Code CLI route</span><span>Evidence to 5 Nov 2026</span></p>
     </div>
     <div class="brief">
       <span class="k">{ic("brief")}Key points</span>
@@ -700,9 +701,9 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <li><strong>The objective</strong> is the fewest tokens and dollars per solved task, at full accuracy, with a slim working context, for long-running agents such as coding agents.</li>
         <li><strong>Fewer tokens is not fewer dollars.</strong> Re-sent history is cheap only while it stays byte-identical in the prompt cache; methods that edit history every step often cost more than they save.</li>
         <li><strong>Automatic beats model-managed.</strong> Steps the harness applies by itself (previews at ingestion, recall, compaction at a fixed trigger) work on both models; methods that need the model to manage its own memory fail on the weaker one.</li>
-        <li><strong>AutoMemory v2 is the current best:</strong> Haiku {v2h["score"]:.2f} mean score at {v2h["cost"]:.0f}% of the unoptimised cost; Sonnet {v2s["score"]:.2f} at {v2s["cost"]:.0f}%. No newer method beats it across the board.</li>
+        <li><strong>AutoMemory v2 is the current best:</strong> Haiku {v2h["score"]:.2f} mean score at {v2h["cost"]:.0f}% of the unoptimised cost; Sonnet {v2s["score"]:.2f} at {v2s["cost"]:.0f}%. For strong models, v2 + SJC pruning solved {v2x["solved"]}/{v2x["runs"]} Sonnet runs at {v2x["cost"]:.0f}%. No newer method beats it across the board.</li>
       </ul>
-      <p class="rec"><strong>Recommendation:</strong> use <code>automem_v2</code> as the default memory layer, with a cheaper model writing summaries for a strong agent. Validate it on real repositories next (<a href="#ef-next">4.5</a>).</p>
+      <p class="rec"><strong>Recommendation:</strong> use <code>automem_v2</code> as the default memory layer; for a strong agent use <code>automem_v2_strong</code> with a cheaper model writing summaries and judging them. Validate on real repositories next (<a href="#ef-next">4.5</a>).</p>
     </div>
     {figure(OVERVIEW_SVG, "Every step re-sends the conversation. The four places a method can act decide whether it keeps the prompt cache.")}
     <details class="glossary">
@@ -744,7 +745,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
       <dt>Approach</dt><dd>Implement published memory and context methods faithfully (official code or prompts where they exist), measure each on the same long tasks and models, then combine the winners into one memory layer (AutoMemory).</dd>
       <dt>Route</dt><dd>Claude Code CLI (Haiku, Sonnet; Opus in phase 1), with Bedrock-ready code paths. Bedrock validation is blocked on credentials.</dd>
       <dt>Deliverables</dt><dd>A benchmark harness, {len(M)} method implementations, AutoMemory v1/v2 as a bench technique, a Python library and an MCP server, and result reports for every phase.</dd>
-      <dt>Bottom line</dt><dd class="bottom">AutoMemory v2 matches the unoptimised ceiling's accuracy on both models at 64–85% of its cost.</dd>
+      <dt>Bottom line</dt><dd class="bottom">AutoMemory v2 matches the unoptimised ceiling's accuracy on both models at {min(v2h["cost"], v2s["cost"]):.0f}–{max(v2h["cost"], v2s["cost"]):.0f}% of its cost.</dd>
     </dl>
   </section>
 
@@ -855,11 +856,11 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <tr><th>4 · Eight new methods</th><td>Do the Sep–Nov 2026 methods help?</td><td>Haiku 4 · Sonnet 2 · 258 runs</td><td>None beats AutoMemory across the board.</td><td>2026-11-04-new-methods</td></tr>
         <tr><th>5 · AutoMemory v2</th><td>Previews and folding as switches?</td><td>Haiku 4 · Sonnet 2 · 72 runs</td><td>Previews become the default.</td><td>2026-11-04-automemory-v2</td></tr>
         <tr><th>6 · v3 ablation</th><td>OpenClaw / SJC as the compaction step?</td><td>Haiku 4 · Sonnet 2 · 72 runs</td><td>Not adopted; SJC an option for strong models.</td><td>2026-11-04-automemory-v3-ablation</td></tr>
-        <tr><th>7 · More Sonnet seeds</th><td>Confirm or rule out compact=sjc</td><td>Sonnet 4</td><td>Running</td><td>docs/plans/2026-11-05-next-steps</td></tr>
+        <tr><th>7 · More Sonnet seeds</th><td>Confirm or rule out compact=sjc</td><td>Sonnet 4 · 34 runs</td><td>SJC 16/16 solved; adopted for strong models.</td><td>2026-11-04-automemory-v3-ablation</td></tr>
       </tbody></table></div>
     <div class="stats">
-      <div class="stat"><span class="num">≈ 2,100</span><span class="lbl">CLI benchmark runs recorded, pilots included</span></div>
-      <div class="stat"><span class="num">≈ $1,050</span><span class="lbl">total list-price spend (Sonnet ≈ $790, Haiku ≈ $230, Opus ≈ $34)</span></div>
+      <div class="stat"><span class="num">≈ 2,150</span><span class="lbl">CLI benchmark runs recorded, pilots included</span></div>
+      <div class="stat"><span class="num">≈ $1,085</span><span class="lbl">total list-price spend (Sonnet ≈ $820, Haiku ≈ $230, Opus ≈ $34)</span></div>
       <div class="stat"><span class="num">1,515</span><span class="lbl">arXiv papers screened in the Sep–Nov 2026 scan</span></div>
       <div class="stat"><span class="num">{len(M)}</span><span class="lbl">methods implemented and documented here</span></div>
     </div>
@@ -920,7 +921,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
   <div class="banner" id="ef" data-pn="04">
     <span class="tag">{ic("gauge")}Part 4 · Where things stand</span>
     <h2>Effectiveness now</h2>
-    <div class="meta"><span>docs/results/</span><span>Haiku 4 seeds · Sonnet 2–3 seeds</span><span>Differences under ~0.1 score or ~15 points cost are within noise</span></div>
+    <div class="meta"><span>docs/results/</span><span>Haiku 4 seeds · Sonnet 2–4 seeds</span><span>Differences under ~0.1 score or ~15 points cost are within noise</span></div>
   </div>
 
   <section id="ef-board" aria-labelledby="h-ef-board">
@@ -953,7 +954,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <tr><th>Cheaper summariser (v1)</th><td>—</td><td>Same accuracy, 20–40% cheaper</td><td>Default for strong models</td></tr>
         <tr><th>Previews at 10% of window (v2)</th><td>0.83 → 0.88; 7 → 11 of 16 solved</td><td>72% → 64% cost</td><td><strong>Adopted (automem_v2)</strong></td></tr>
         <tr><th>ReFold folding (v2 slim)</th><td>Smallest peak; ledger_audit worse</td><td>Peak 16K vs 29K; +10–16 points cost</td><td>Optional slim mode</td></tr>
-        <tr><th>SJC / OpenClaw compaction (v3)</th><td>0.77–0.81, 114–124% cost</td><td>All tie; SJC 8/8 at 66%</td><td>Not adopted; Sonnet option pending seeds</td></tr>
+        <tr><th>SJC / OpenClaw compaction (v3)</th><td>0.77–0.81, 114–124% cost</td><td>4 seeds: SJC 16/16 solved (v2 13/16), +3 to +5 points cost</td><td><strong>SJC adopted for strong models (automem_v2_strong)</strong>; OpenClaw not adopted</td></tr>
       </tbody></table></div>
   </section>
 
@@ -988,7 +989,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
     <div class="tbl-wrap"><table>
       <thead><tr><th>Item</th><th>Status</th><th>Cost</th><th>Why it matters</th></tr></thead>
       <tbody>
-        <tr><th>A · Sonnet seeds for compact=sjc</th><td><span class="lvl lvl-med">Running</span></td><td>≈ $33</td><td>Decides whether SJC pruning becomes the strong-model setting.</td></tr>
+        <tr><th>A · Sonnet seeds for compact=sjc</th><td><span class="lvl lvl-low">Done: rule met</span></td><td>$36</td><td>SJC pruning is now the strong-model preset (automem_v2_strong).</td></tr>
         <tr><th>B · SWE-bench Verified workdays (Django)</th><td><span class="lvl lvl-high">Blocked: permission to run third-party tests</span></td><td>≈ $60–180</td><td>First evidence on real repositories and multi-issue days.</td></tr>
         <tr><th>Bedrock validation</th><td><span class="lvl lvl-high">Blocked: credentials</span></td><td>—</td><td>Explicit cache points and Bedrock prices (writes 1.25×).</td></tr>
         <tr><th>Codex / OpenAI pricing</th><td><span class="lvl lvl-low">Not started</span></td><td>re-pricing only</td><td>Automatic caching at different prices may change which methods pay off.</td></tr>
@@ -997,8 +998,8 @@ PAGE = f"""<title>Efficient Agent Memory</title>
 
   <section class="endnote" id="conclusion" aria-labelledby="h-concl">
     <h2 id="h-concl">{ic("check", "ic hic")}Conclusion</h2>
-    <p>The repository set out to cut tokens and cost for long-running agents without losing accuracy. After faithful ports of {len(M)} published and new methods and about 2,100 benchmark runs, the answer is a small set of automatic, cache-aware rules rather than any single clever technique: shrink outputs when they arrive, compact rarely and keep the recent steps, and keep notes outside the context that come back by themselves.</p>
-    <p>AutoMemory v2 packages those rules. It matches the unoptimised ceiling's accuracy on Haiku and Sonnet at 64–85% of its cost, and no method from the latest literature beats it across the board. The next proof point is real repositories.</p>
+    <p>The repository set out to cut tokens and cost for long-running agents without losing accuracy. After faithful ports of {len(M)} published and new methods and about 2,150 benchmark runs, the answer is a small set of automatic, cache-aware rules rather than any single clever technique: shrink outputs when they arrive, compact rarely and keep the recent steps, and keep notes outside the context that come back by themselves.</p>
+    <p>AutoMemory v2 packages those rules. It matches the unoptimised ceiling's accuracy on Haiku and Sonnet at {min(v2h["cost"], v2s["cost"]):.0f}–{max(v2h["cost"], v2s["cost"]):.0f}% of its cost, and no method from the latest literature beats it across the board. For strong agent models, adding SJC's source-judged pruning made it solve every Sonnet run. The next proof point is real repositories.</p>
     <p class="note">Results are from the Claude Code CLI route at list prices, on four long benchmark tasks with emulated windows; 2–4 runs per cell. See each report in docs/results/ for exact tables and regeneration commands.</p>
   </section>
 
