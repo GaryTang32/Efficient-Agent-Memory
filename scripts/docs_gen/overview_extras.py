@@ -436,9 +436,10 @@ def timeline():
           ("24–26 Oct", "AutoMemory v1", "four long tasks + official memory systems", "model-robust on all four"),
           ("4 Nov", "Scan + 8 methods", "1,515 papers; 258 runs", "none beats AutoMemory"),
           ("4 Nov", "v2 + v3 ablation", "previews, folding, OpenClaw, SJC; 144 runs", "previews adopted"),
-          ("5 Nov", "Sonnet seeds", "34 runs, decision rule fixed in advance", "automem_v2_strong")]
+          ("5 Nov", "Sonnet seeds", "34 runs, decision rule fixed in advance", "automem_v2_strong"),
+          ("5 Nov", "SWE-bench", "40 real Django issues; 160 runs", "lean wins on real code")]
     n = len(ev)
-    X0, X1 = 70, 870
+    X0, X1 = 60, 880
     out = ['<svg class="dg" viewBox="0 0 940 210" style="min-width:860px;max-width:1100px" role="img" aria-labelledby="tl-t tl-d">'
            '<title id="tl-t">Experiment timeline</title><desc id="tl-d">From single methods on 22 October to the strong-model preset on 5 November.</desc>'
            '<rect width="940" height="210" class="bgp"/>'
@@ -466,22 +467,25 @@ def timeline():
 # ------------------------------------------------------------------ 7. setting chooser
 def chooser():
     nodes = {  # id: (x, y, w, label, kind)
-        "q1": (200, 16, 340, "Long task, many steps or several sessions?", "q"),
-        "r0": (10, 104, 240, "Short task: full context with caching", "res"),
-        "q2": (300, 104, 300, "Strong agent model (Sonnet-class)?", "q"),
-        "q3": (40, 192, 300, "Smallest working context matters most?", "q"),
-        "r3": (410, 192, 320, "automem_v2_strong + cheap summariser", "res"),
-        "r1": (10, 280, 200, "automem_v2", "res"),
-        "r2": (230, 280, 220, "automem_v2_slim", "res"),
+        "q1": (200, 16, 340, "Long task, large outputs or a tight window?", "q"),
+        "r0": (10, 104, 230, "Short task: cached full history", "res"),
+        "q2": (300, 104, 330, "Do later sessions build on earlier results?", "q"),
+        "r4": (10, 192, 250, "automem_v2_lean (no workspace)", "res"),
+        "q3": (330, 192, 300, "Strong agent model (Sonnet-class)?", "q"),
+        "q4": (40, 280, 340, "Smallest working context matters most?", "q"),
+        "r3": (430, 280, 300, "automem_v2_strong + cheap summariser", "res"),
+        "r1": (10, 368, 200, "automem_v2", "res"),
+        "r2": (230, 368, 220, "automem_v2_slim", "res"),
     }
     edges = {  # id: (path, label, lx, ly)
-        "e1n": ("M300 60 V80 H130 V102", "NO", 206, 76), "e1y": ("M450 60 V102", "YES", 458, 86),
-        "e2n": ("M380 148 V168 H190 V190", "NO", 276, 164), "e2y": ("M540 148 V168 H570 V190", "YES", 578, 182),
-        "e3n": ("M110 236 V278", "NO", 118, 262), "e3y": ("M280 236 V256 H340 V278", "YES", 348, 270),
+        "e1n": ("M300 60 V80 H125 V102", "NO", 206, 76), "e1y": ("M450 60 V102", "YES", 458, 86),
+        "e2n": ("M380 148 V168 H135 V190", "NO", 250, 164), "e2y": ("M560 148 V168 H480 V190", "YES", 566, 164),
+        "e3n": ("M400 236 V256 H210 V278", "NO", 300, 252), "e3y": ("M560 236 V256 H580 V278", "YES", 586, 270),
+        "e4n": ("M110 324 V366", "NO", 118, 350), "e4y": ("M300 324 V344 H340 V366", "YES", 348, 358),
     }
-    out = ['<svg class="dg fc" viewBox="0 0 740 330" style="min-width:680px;max-width:900px" role="img" aria-labelledby="fc-t fc-d">'
-           '<title id="fc-t">Which memory setting to use</title><desc id="fc-d">Short tasks need no memory layer; strong models use automem_v2_strong; otherwise automem_v2, or automem_v2_slim when the smallest context matters most.</desc>'
-           '<rect width="740" height="330" class="bgp"/>'
+    out = ['<svg class="dg fc" viewBox="0 0 740 420" style="min-width:680px;max-width:900px" role="img" aria-labelledby="fc-t fc-d">'
+           '<title id="fc-t">Which memory setting to use</title><desc id="fc-d">Short tasks need no memory layer; independent sessions use automem_v2_lean; sessions that build on each other use automem_v2_strong on strong models, otherwise automem_v2, or automem_v2_slim when the smallest context matters most.</desc>'
+           '<rect width="740" height="420" class="bgp"/>'
            '<defs><marker id="fc-a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" class="hd"/></marker></defs>']
     for eid, (d, lab, lx, ly) in edges.items():
         out.append(f'<path id="fc-{eid}" d="{d}" class="fe" marker-end="url(#fc-a)"/><text id="fcl-{eid}" x="{lx}" y="{ly}" class="fl">{lab}</text>')
@@ -489,9 +493,10 @@ def chooser():
         out.append(f'<g id="fc-{nid}" class="fn{" res" if kind == "res" else ""}"><rect x="{x}" y="{y}" width="{w}" height="44" rx="6"/>'
                    f'<text x="{x + w / 2}" y="{y + 27}" text-anchor="middle" class="{"n-name" if kind == "q" else "t-check"}">{E(lab)}</text></g>')
     out.append("</svg>")
-    qs = [("q1", "Is it a long task: many steps, large tool outputs, or several sessions?"),
-          ("q2", "Is the agent a strong model (Sonnet-class or above)?"),
-          ("q3", "Does the smallest working context matter more than the last 10–15% of cost?")]
+    qs = [("q1", "Is it a long task: many steps, large tool outputs, or a tight context window?"),
+          ("q2", "Do later sessions build on earlier sessions' results (running state, multi-day research)?"),
+          ("q3", "Is the agent a strong model (Sonnet-class or above)?"),
+          ("q4", "Does the smallest working context matter more than the last 10–15% of cost?")]
     qhtml = "".join(f'<div class="q" data-q="{qid}"><p>{E(t)}</p><div class="seg" role="group" aria-label="{E(t)}">'
                     f'<button type="button" data-a="y" aria-pressed="false">Yes</button><button type="button" data-a="n" aria-pressed="false">No</button></div></div>'
                     for qid, t in qs)
@@ -503,25 +508,28 @@ def chooser():
 CHOOSER_JS = r"""
 (() => {
   const root = document.getElementById('chooser'); if (!root) return;
-  const ans = { q1: 'y', q2: 'n', q3: 'n' };
+  const ans = { q1: 'y', q2: 'n', q3: 'n', q4: 'n' };
   const PICK = {
-    r0: ['full (provider caching), no memory layer', 'Short tasks fit the window; caching alone keeps re-sent history cheap.'],
-    r1: ['automem_v2', 'The default: previews at ingestion, guard, ReSum at 75% with the last 2 steps, notes with recall and autosave. Haiku 0.88 at 85% of the unoptimised cost.'],
-    r2: ['automem_v2_slim', 'v2 plus ReFold folding: the smallest peak context, at 10–16 points more cost and lower ledger_audit accuracy.'],
-    r3: ['automem_v2_strong', 'v2 with SJC pruning of the summaries, judged by a cheaper model. Sonnet: 16/16 runs solved at 61% of the unoptimised cost.']
+    r0: ['full (provider caching), no memory layer', 'Short tasks fit the window; caching alone keeps re-sent history cheap. Haiku on real Django issues: 35/40 resolved at 76% of the unoptimised cost.'],
+    r4: ['automem_v2_lean', 'Previews, guard and compaction without the note workspace. Real Django issues: Sonnet 36/40 at 60% of the unoptimised cost under a 16K window; Haiku 35/40 (the ceiling) at 94%.'],
+    r1: ['automem_v2', 'The multi-session default: previews, guard, ReSum at 75% with the last 2 steps, notes with recall and autosave. Synthetic long tasks: Haiku 0.88 at 85% of the unoptimised cost.'],
+    r2: ['automem_v2_slim', 'v2 plus ReFold folding: the smallest peak context, at 5–20 points more cost.'],
+    r3: ['automem_v2_strong', 'v2 with SJC pruning of the summaries, judged by a cheaper model. Synthetic long tasks, Sonnet: 16/16 runs solved at 61% of the unoptimised cost.']
   };
   const render = () => {
-    const on = new Set(); let res;
-    on.add('q1');
+    const on = new Set(['q1']); let res;
     if (ans.q1 === 'n') { on.add('e1n'); res = 'r0'; }
     else { on.add('e1y'); on.add('q2');
-      if (ans.q2 === 'y') { on.add('e2y'); res = 'r3'; }
-      else { on.add('e2n'); on.add('q3'); if (ans.q3 === 'y') { on.add('e3y'); res = 'r2'; } else { on.add('e3n'); res = 'r1'; } } }
+      if (ans.q2 === 'n') { on.add('e2n'); res = 'r4'; }
+      else { on.add('e2y'); on.add('q3');
+        if (ans.q3 === 'y') { on.add('e3y'); res = 'r3'; }
+        else { on.add('e3n'); on.add('q4'); if (ans.q4 === 'y') { on.add('e4y'); res = 'r2'; } else { on.add('e4n'); res = 'r1'; } } } }
     on.add(res);
     root.querySelectorAll('.fn, .fe').forEach((n) => n.classList.toggle('on', on.has(n.id.replace('fc-', ''))));
     root.querySelectorAll('.fl').forEach((n) => n.classList.toggle('on', on.has(n.id.replace('fcl-', ''))));
     root.querySelector('[data-q="q2"]').classList.toggle('off', ans.q1 === 'n');
-    root.querySelector('[data-q="q3"]').classList.toggle('off', ans.q1 === 'n' || ans.q2 === 'y');
+    root.querySelector('[data-q="q3"]').classList.toggle('off', ans.q1 === 'n' || ans.q2 === 'n');
+    root.querySelector('[data-q="q4"]').classList.toggle('off', ans.q1 === 'n' || ans.q2 === 'n' || ans.q3 === 'y');
     root.querySelectorAll('.q').forEach((q) => q.querySelectorAll('[data-a]').forEach((b) => b.setAttribute('aria-pressed', String(ans[q.dataset.q] === b.dataset.a))));
     document.getElementById('pick-name').innerHTML = '<code>' + PICK[res][0] + '</code>';
     document.getElementById('pick-why').textContent = PICK[res][1];
@@ -551,3 +559,39 @@ TOOLTIP_JS = r"""
   });
 })();
 """
+
+
+# ------------------------------------------------------------------ 8. SWE-bench board
+SWE_ROWS = [("Ceiling: full history, no cache", "naive@native", "own"), ("Full history, cached (everyday default)", "full@native", "own"),
+            ("AutoMemory v2", "automem_v2@native", "own"), ("AutoMemory v2 strong", "automem_v2_strong@native", "own"),
+            ("AutoMemory v2 lean (no workspace)", "automem:workspace=false,ingest=0.1@native", "own"),
+            ("No memory", "naive", "16K"), ("Full history, cached", "full", "16K"), ("AutoMemory v1", "automem", "16K"),
+            ("AutoMemory v2", "automem_v2", "16K"), ("AutoMemory v2 strong", "automem_v2_strong", "16K"),
+            ("AutoMemory v2 lean (no workspace)", "automem:workspace=false,ingest=0.1", "16K")]
+
+
+def swe_board(swe):
+    out = ['<div class="board" role="table" aria-label="SWE-bench workdays: issues resolved and cost per setting">',
+           '<div class="board-row head" role="row"><span role="columnheader">Setting · window</span>'
+           '<span role="columnheader">Haiku · resolved (cost vs ceiling · $/resolved)</span>'
+           '<span role="columnheader">Sonnet · resolved (cost vs ceiling · $/resolved)</span></div>']
+    win = None
+    for label, spec, w in SWE_ROWS:
+        if w != win:
+            win = w
+            out.append(f'<div class="board-row grp" role="row"><span role="cell">{"The model\'s own window" if w == "own" else "Tight 16K window"}</span><span></span><span></span></div>')
+        cells = []
+        for m in ("cc-haiku", "cc-sonnet"):
+            v = swe.get(m, {}).get(spec)
+            if not v:
+                cells.append('<span class="bcell" role="cell"><span class="btrack"></span><span class="bval"><span class="c">not run</span></span></span>')
+                continue
+            ceil = swe[m]["naive@native"]["resolved"] / swe[m]["naive@native"]["n"]
+            g = "ours" if "workspace=false" in spec else "anc" if spec in ("naive@native", "naive") else "pub" if spec.startswith("full") else "new"
+            cc = "cheap" if v["cost"] < 90 else "dear" if v["cost"] > 110 else ""
+            tip = f'{label} ({w}) · {m[3:]}: {v["resolved"]}/{v["n"]} resolved, cost {v["cost"]}% of the ceiling, ${v["per"]:.3f} per resolved issue, median peak {v["peak"] / 1000:.1f}K'
+            cells.append(f'<span class="bcell" role="cell" title="{E(tip)}"><span class="btrack"><span class="bfill g-{g}" style="width:{v["resolved"] / v["n"] * 100:.0f}%"></span>'
+                         f'<span class="bmark" style="left:{ceil * 100:.0f}%"></span></span><span class="bval">{v["resolved"]}/{v["n"]} <span class="c {cc}">({v["cost"]}% · ${v["per"]:.3f})</span></span></span>')
+        out.append(f'<div class="board-row" role="row"><span class="bname" role="rowheader">{E(label)}</span>' + "".join(cells) + "</div>")
+    out.append("</div>")
+    return "".join(out)

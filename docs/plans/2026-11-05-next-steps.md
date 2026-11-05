@@ -50,7 +50,14 @@ Background:
 
 **Deliverable.** An update to `docs/results/2026-11-04-automemory-v3-ablation.md` with the 4-seed Sonnet numbers.
 
-## B. A realistic coding benchmark (proposed; blocked on a permission)
+## B. A realistic coding benchmark (done 2026-11-05)
+
+**Outcome.**
+- **Run:** 40 Django issues, 160 runs, $56 (the earlier estimate was $60–180).
+- **Result:** AutoMemory without the note workspace (`automem_v2_lean`) is the best setting on real coding work. The workspace adds overhead when the issues are independent.
+- **Details:** [`../results/2026-11-05-swe-bench-workdays.md`](../results/2026-11-05-swe-bench-workdays.md).
+
+**Original proposal:**
 
 **Why.** Apart from `repo_debug` (real `pytest` on a generated library), the benchmark tasks are synthetic. The open gap in [`../problem_statement.md`](../problem_statement.md) §5 is evidence on real repositories and multi-session work, which is the setting of a daily Codex or Claude Code user:
 - repeated exploration of a large codebase;

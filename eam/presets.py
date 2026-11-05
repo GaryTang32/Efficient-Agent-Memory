@@ -124,8 +124,18 @@ def automem_v2_strong() -> Technique:
     return AM(ingest=0.1, compact="sjc")
 
 
+def automem_v2_lean() -> Technique:
+    """AutoMemory v2 without the note workspace, for sessions that do not depend on each other's results (one coding
+    issue per session): previews at ingestion, the in-step guard and ReSum compaction only
+    (docs/results/2026-11-05-swe-bench-workdays.md). Not for multi-session work that builds on earlier results."""
+    from eam.techniques.auto_memory import AutoMemory as AM
+
+    return AM(workspace=False, ingest=0.1)
+
+
 PRESETS: dict[str, Callable[[], Technique]] = {
     "automem_v2": automem_v2,
+    "automem_v2_lean": automem_v2_lean,
     "automem_v2_strong": automem_v2_strong,
     "automem_v2_slim": automem_v2_slim,
     "cache_first": cache_first,

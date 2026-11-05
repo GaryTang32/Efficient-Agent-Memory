@@ -19,6 +19,7 @@ ASSETS = HERE / "assets"
 REF_CSS = (ASSETS / "ref.css").read_text()
 SPRITE = (ASSETS / "sprite.svg").read_text()
 D = json.loads((HERE / "overview_data.json").read_text())
+SWE = D.pop("__swe__", {})
 OUT = HERE.parent.parent / "docs" / "overview.html"
 FAMS = ["research_corpus", "ops_stream", "ledger_audit", "repo_debug"]
 FAM_SHORT = {"research_corpus": "Research", "ops_stream": "Ops stream", "ledger_audit": "Ledger audit",
@@ -690,9 +691,10 @@ NAV = """
         <li><a href="#ef-board">%(chart)s<span><i>4.1</i> Scoreboard</span></a></li>
         <li><a href="#ef-heat">%(grid)s<span><i>4.2</i> Per task</span></a></li>
         <li><a href="#ef-v2">%(trend)s<span><i>4.3</i> AutoMemory v1 → v3</span></a></li>
-        <li><a href="#ef-lessons">%(bulb)s<span><i>4.4</i> What works</span></a></li>
-        <li><a href="#ef-pick">%(route)s<span><i>4.5</i> Which setting?</span></a></li>
-        <li><a href="#ef-next">%(flag)s<span><i>4.6</i> Open questions</span></a></li>
+        <li><a href="#ef-swe">%(cpu)s<span><i>4.4</i> Real repositories</span></a></li>
+        <li><a href="#ef-lessons">%(bulb)s<span><i>4.5</i> What works</span></a></li>
+        <li><a href="#ef-pick">%(route)s<span><i>4.6</i> Which setting?</span></a></li>
+        <li><a href="#ef-next">%(flag)s<span><i>4.7</i> Open questions</span></a></li>
       </ol></li>
     <li class="sn-sep" role="presentation"></li>
     <li class="sn-part sn-p5" data-name="Conclusion"><a href="#conclusion">%(check)s<span>Conclusion</span></a></li>
@@ -703,7 +705,7 @@ ICONS = {k: ic(v, "ic sn-ic") if k in ("home", "target", "wrench", "layers", "ga
          for k, v in dict(list="list", home="home", target="target", file="file", info="info", alert="alert", box="box",
                           scale="scale", wrench="wrench", steps="steps", route="route", audit="audit", shield="shield",
                           layers="layers", grid="grid", sliders="sliders", gauge="gauge", chart="chart", trend="trend",
-                          bulb="bulb", flag="flag", check="check", book="book").items()}
+                          bulb="bulb", flag="flag", check="check", book="book", cpu="cpu").items()}
 ICONS["list"] = ic("list")
 
 PAGE = f"""<title>Efficient Agent Memory</title>
@@ -722,7 +724,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
       <p class="eyebrow">Research brief · November 2026</p>
       <h1>Efficient Agent Memory</h1>
       <p class="dek">What this repository studies, how each memory and token-saving method works, and how well each one works today on four long agent tasks, measured on Claude Haiku and Sonnet.</p>
-      <p class="hero-meta"><span>≈ 2,150 benchmark runs</span><span>26 methods and variants</span><span>Claude Code CLI route</span><span>Evidence to 5 Nov 2026</span></p>
+      <p class="hero-meta"><span>≈ 2,310 benchmark runs</span><span>26 methods and variants</span><span>Claude Code CLI route</span><span>SWE-bench Verified: 40 Django issues</span><span>Evidence to 5 Nov 2026</span></p>
     </div>
     <div class="brief">
       <span class="k">{ic("brief")}Key points</span>
@@ -731,8 +733,9 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <li><strong>Fewer tokens is not fewer dollars.</strong> Re-sent history is cheap only while it stays byte-identical in the prompt cache; methods that edit history every step often cost more than they save.</li>
         <li><strong>Automatic beats model-managed.</strong> Steps the harness applies by itself (previews at ingestion, recall, compaction at a fixed trigger) work on both models; methods that need the model to manage its own memory fail on the weaker one.</li>
         <li><strong>AutoMemory v2 is the current best:</strong> Haiku {v2h["score"]:.2f} mean score at {v2h["cost"]:.0f}% of the unoptimised cost; Sonnet {v2s["score"]:.2f} at {v2s["cost"]:.0f}%. For strong models, v2 + SJC pruning solved {v2x["solved"]}/{v2x["runs"]} Sonnet runs at {v2x["cost"]:.0f}%. No newer method beats it across the board.</li>
+        <li><strong>On real repositories</strong> (40 SWE-bench Verified Django issues), AutoMemory without the note workspace resolved 35–36 of 40, like the ceiling, at 60–95% of its cost; with the workspace, independent issues cost more than they save.</li>
       </ul>
-      <p class="rec"><strong>Recommendation:</strong> use <code>automem_v2</code> as the default memory layer; for a strong agent use <code>automem_v2_strong</code> with a cheaper model writing summaries and judging them. Validate on real repositories next (<a href="#ef-next">4.6</a>).</p>
+      <p class="rec"><strong>Recommendation:</strong> use <code>automem_v2</code> as the default memory layer; for a strong agent use <code>automem_v2_strong</code> with a cheaper model writing summaries and judging them. For independent tasks such as coding issues, drop the workspace: <code>automem_v2_lean</code>. See the chooser (<a href="#ef-pick">4.6</a>).</p>
     </div>
     {figure(OVERVIEW_SVG, "Every step re-sends the conversation. The four places a method can act decide whether it keeps the prompt cache.")}
     <details class="glossary">
@@ -756,7 +759,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
       <div><span class="part">{ic("layers")}Part 3</span><a class="ttl" href="#mt">Methods</a><span class="gist">{len(M)} methods: mechanism, evidence, verdict</span>
         <ol><li><span>3.1</span><a href="#mt-map">Where each method acts</a></li><li><span>3.2</span><a href="#mt-auto">AutoMemory step by step</a></li><li><span>3.3</span><a href="#mt-cards">Method by method</a></li></ol></div>
       <div><span class="part">{ic("gauge")}Part 4</span><a class="ttl" href="#ef">Effectiveness now</a><span class="gist">Scores, costs and what they mean</span>
-        <ol><li><span>4.1</span><a href="#ef-board">Scoreboard</a></li><li><span>4.2</span><a href="#ef-heat">Per task</a></li><li><span>4.3</span><a href="#ef-v2">AutoMemory v1 → v3</a></li><li><span>4.4</span><a href="#ef-lessons">What works</a></li><li><span>4.5</span><a href="#ef-pick">Which setting?</a></li><li><span>4.6</span><a href="#ef-next">Open questions</a></li></ol></div>
+        <ol><li><span>4.1</span><a href="#ef-board">Scoreboard</a></li><li><span>4.2</span><a href="#ef-heat">Per task</a></li><li><span>4.3</span><a href="#ef-v2">AutoMemory v1 → v3</a></li><li><span>4.4</span><a href="#ef-swe">Real repositories</a></li><li><span>4.5</span><a href="#ef-lessons">What works</a></li><li><span>4.6</span><a href="#ef-pick">Which setting?</a></li><li><span>4.7</span><a href="#ef-next">Open questions</a></li></ol></div>
     </nav>
   </header>
 
@@ -827,7 +830,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <li>Self-hosted models and KV-cache editing (the user runs on hosted APIs).</li>
         <li>Training-based methods (CORAL's RL variant, MemAgent's RL weights).</li>
         <li>Bedrock validation: code ready, blocked on credentials.</li>
-        <li>Real-repository benchmark (SWE-bench Verified): designed, blocked on a permission.</li>
+        <li>Larger real-repository runs: 40 Django issues so far, one model route.</li>
         <li>Codex / OpenAI pricing: not yet re-priced.</li></ul></div>
     </div>
   </section>
@@ -889,12 +892,13 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <tr><th>5 · AutoMemory v2</th><td>Previews and folding as switches?</td><td>Haiku 4 · Sonnet 2 · 72 runs</td><td>Previews become the default.</td><td>2026-11-04-automemory-v2</td></tr>
         <tr><th>6 · v3 ablation</th><td>OpenClaw / SJC as the compaction step?</td><td>Haiku 4 · Sonnet 2 · 72 runs</td><td>Not adopted; SJC an option for strong models.</td><td>2026-11-04-automemory-v3-ablation</td></tr>
         <tr><th>7 · More Sonnet seeds</th><td>Confirm or rule out compact=sjc</td><td>Sonnet 4 · 34 runs</td><td>SJC 16/16 solved; adopted for strong models.</td><td>2026-11-04-automemory-v3-ablation</td></tr>
+        <tr><th>8 · SWE-bench Verified</th><td>Does it hold on real repositories?</td><td>Haiku, Sonnet · 40 issues · 160 runs</td><td>Lean (no workspace) best; workspace is overhead on independent issues.</td><td>2026-11-05-swe-bench-workdays</td></tr>
       </tbody></table></div>
     <h4>Timeline</h4>
     {X.timeline()}
     <div class="stats">
-      <div class="stat"><span class="num">≈ 2,150</span><span class="lbl">CLI benchmark runs recorded, pilots included</span></div>
-      <div class="stat"><span class="num">≈ $1,085</span><span class="lbl">total list-price spend (Sonnet ≈ $820, Haiku ≈ $230, Opus ≈ $34)</span></div>
+      <div class="stat"><span class="num">≈ 2,310</span><span class="lbl">CLI benchmark runs recorded, pilots included</span></div>
+      <div class="stat"><span class="num">≈ $1,140</span><span class="lbl">total list-price spend (Sonnet ≈ $870, Haiku ≈ $235, Opus ≈ $34)</span></div>
       <div class="stat"><span class="num">1,515</span><span class="lbl">arXiv papers screened in the Sep–Nov 2026 scan</span></div>
       <div class="stat"><span class="num">{len(M)}</span><span class="lbl">methods implemented and documented here</span></div>
     </div>
@@ -1003,8 +1007,25 @@ PAGE = f"""<title>Efficient Agent Memory</title>
       </tbody></table></div>
   </section>
 
+  <section id="ef-swe" aria-labelledby="h-ef-swe">
+    <h3 id="h-ef-swe">{ic("cpu", "ic hic")}<span class="no">4.4</span>Real repositories: SWE-bench Verified workdays</h3>
+    <p class="lead-in">40 real Django issues in 8 workdays of 5 consecutive sessions, graded with each issue's official tests; 160 runs. The bar is the share of issues resolved; the black tick is the ceiling's. Cost is the total over the same workdays as a percentage of the ceiling's.</p>
+    {X.swe_board(SWE)}
+    <div class="duo">
+      <div class="good"><span class="k">What held up on real code</span><ul class="plain">
+        <li>Previews, guard and compaction without the workspace (<code>automem_v2_lean</code>)<span class="ev">Sonnet 36/40 at 60% (16K) and 76% (own window); Haiku 35/40, the ceiling, at 94–95%</span></li>
+        <li>Any memory layer under a tight window<span class="ev">16K without one: 31–33/40; with lean: 35–36/40</span></li>
+        <li>Plain caching for short sessions on a large window<span class="ev">Haiku cached full history: 35/40 at 76%</span></li></ul></div>
+      <div class="bad"><span class="k">What did not</span><ul class="plain">
+        <li>The note workspace on independent issues<span class="ev">+50% tool calls; v2 at 118–158% of the ceiling's cost at the own window</span></li>
+        <li>SJC pruning on short sessions<span class="ev">v2 strong 35–36/40 at 120–123%</span></li>
+        <li>Compaction-heavy settings when sessions are short<span class="ev">no compaction fires below a 12–26K peak</span></li></ul></div>
+    </div>
+    <p class="implication">{ic("bulb")}<strong>Rule</strong>keep the within-session half of AutoMemory always on; switch the note workspace on only when later sessions build on earlier results.</p>
+  </section>
+
   <section id="ef-lessons" aria-labelledby="h-ef-lessons">
-    <h3 id="h-ef-lessons">{ic("bulb", "ic hic")}<span class="no">4.4</span>What works and what does not</h3>
+    <h3 id="h-ef-lessons">{ic("bulb", "ic hic")}<span class="no">4.5</span>What works and what does not</h3>
     <div class="duo">
       <div class="good"><span class="k">Works on both models</span><ul class="plain">
         <li>Shrinking outputs at ingestion, with retrieval<span class="ev">v2: Haiku 11/16 solved vs 7/16 at the same cost</span></li>
@@ -1033,18 +1054,19 @@ PAGE = f"""<title>Efficient Agent Memory</title>
   </section>
 
   <section id="ef-pick" aria-labelledby="h-ef-pick">
-    <h3 id="h-ef-pick">{ic("route", "ic hic")}<span class="no">4.5</span>Which setting should I use?</h3>
-    <p class="lead-in">Answer three questions; the flowchart follows your answers.</p>
+    <h3 id="h-ef-pick">{ic("route", "ic hic")}<span class="no">4.6</span>Which setting should I use?</h3>
+    <p class="lead-in">Answer up to four questions; the flowchart follows your answers.</p>
     {X.chooser()}
   </section>
 
   <section id="ef-next" aria-labelledby="h-ef-next">
-    <h3 id="h-ef-next">{ic("flag", "ic hic")}<span class="no">4.6</span>Open questions and next steps</h3>
+    <h3 id="h-ef-next">{ic("flag", "ic hic")}<span class="no">4.7</span>Open questions and next steps</h3>
     <div class="tbl-wrap"><table>
       <thead><tr><th>Item</th><th>Status</th><th>Cost</th><th>Why it matters</th></tr></thead>
       <tbody>
         <tr><th>A · Sonnet seeds for compact=sjc</th><td><span class="lvl lvl-low">Done: rule met</span></td><td>$36</td><td>SJC pruning is now the strong-model preset (automem_v2_strong).</td></tr>
-        <tr><th>B · SWE-bench Verified workdays (Django)</th><td><span class="lvl lvl-high">Blocked: permission to run third-party tests</span></td><td>≈ $60–180</td><td>First evidence on real repositories and multi-issue days.</td></tr>
+        <tr><th>B · SWE-bench Verified workdays (Django)</th><td><span class="lvl lvl-low">Done</span></td><td>$56</td><td>automem_v2_lean is the setting for independent coding tasks.</td></tr>
+        <tr><th>Adaptive workspace</th><td><span class="lvl lvl-med">Next</span></td><td>small</td><td>Turn the note workspace on only when a task refers to earlier results.</td></tr>
         <tr><th>Bedrock validation</th><td><span class="lvl lvl-high">Blocked: credentials</span></td><td>—</td><td>Explicit cache points and Bedrock prices (writes 1.25×).</td></tr>
         <tr><th>Codex / OpenAI pricing</th><td><span class="lvl lvl-low">Not started</span></td><td>re-pricing only</td><td>Automatic caching at different prices may change which methods pay off.</td></tr>
       </tbody></table></div>
@@ -1052,8 +1074,8 @@ PAGE = f"""<title>Efficient Agent Memory</title>
 
   <section class="endnote" id="conclusion" aria-labelledby="h-concl">
     <h2 id="h-concl">{ic("check", "ic hic")}Conclusion</h2>
-    <p>The repository set out to cut tokens and cost for long-running agents without losing accuracy. After faithful ports of {len(M)} published and new methods and about 2,150 benchmark runs, the answer is a small set of automatic, cache-aware rules rather than any single clever technique: shrink outputs when they arrive, compact rarely and keep the recent steps, and keep notes outside the context that come back by themselves.</p>
-    <p>AutoMemory v2 packages those rules. It matches the unoptimised ceiling's accuracy on Haiku and Sonnet at {min(v2h["cost"], v2s["cost"]):.0f}–{max(v2h["cost"], v2s["cost"]):.0f}% of its cost, and no method from the latest literature beats it across the board. For strong agent models, adding SJC's source-judged pruning made it solve every Sonnet run. The next proof point is real repositories.</p>
+    <p>The repository set out to cut tokens and cost for long-running agents without losing accuracy. After faithful ports of {len(M)} published and new methods and about 2,310 benchmark runs, the answer is a small set of automatic, cache-aware rules rather than any single clever technique: shrink outputs when they arrive, compact rarely and keep the recent steps, and keep notes outside the context that come back by themselves.</p>
+    <p>AutoMemory v2 packages those rules. It matches the unoptimised ceiling's accuracy on Haiku and Sonnet at {min(v2h["cost"], v2s["cost"]):.0f}–{max(v2h["cost"], v2s["cost"]):.0f}% of its cost, and no method from the latest literature beats it across the board. For strong agent models, adding SJC's source-judged pruning made it solve every Sonnet run. On 40 real Django issues the within-session half alone (automem_v2_lean) matched the ceiling's accuracy at 60–95% of its cost: the note workspace belongs only where sessions build on each other. The next proof point is real repositories.</p>
     <p class="note">Results are from the Claude Code CLI route at list prices, on four long benchmark tasks with emulated windows; 2–4 runs per cell. See each report in docs/results/ for exact tables and regeneration commands.</p>
   </section>
 
