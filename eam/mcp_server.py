@@ -10,7 +10,9 @@ Register it with any MCP client, e.g. Claude Code (`.mcp.json`):
 Tools: write_note, read_notes, recall (notes for the start of a session), save_session (autosave a session's
 result), offload / read_artifact (recoverable offload of large text), context_budget (should the caller compact,
 how much may the next step add), compact (ReSum's official summary prompt: returned for the caller's own model to
-run, or executed here when $EAM_MEMORY_ROUTE names a route such as claude-cli and $EAM_MEMORY_MODEL a model key).
+run, or executed here when $EAM_MEMORY_ROUTE names a route such as claude-cli and $EAM_MEMORY_MODEL a model key),
+handoff (the NVIDIA EoCC handoff-recap prompt, arXiv 2611.05306: the agent answers it as its own next turn, then
+restarts from the task, the notes and the recap).
 """
 
 from __future__ import annotations
@@ -46,6 +48,13 @@ TOOLS: list[dict[str, Any]] = MemorySkill.tool_specs() + [
                                                        "history": {"type": "string"},
                                                        "last_summary": {"type": "string"}},
                       "required": ["question", "history"]}},
+    {"name": "handoff", "description": "End-of-conversation compaction (NVIDIA EoCC). Without 'recap': returns "
+     "the handoff prompt; answer it yourself as your next turn, without tool calls. With 'recap' (your answer): "
+     "returns the message to restart the conversation from (task, notes and recap).",
+     "input_schema": {"type": "object", "properties": {"question": {"type": "string"},
+                                                       "recap": {"type": "string"},
+                                                       "variant": {"type": "string", "enum": ["general", "swe"]}},
+                      "required": ["question"]}},
 ]
 
 
@@ -102,6 +111,12 @@ class Server:
             msgs = s.maybe_compact([{"role": "user", "content": str(args["history"])}],
                                    context_tokens=10**12, question=str(args["question"]))
             return msgs[-1]["content"]
+        if name == "handoff":
+            if args.get("variant"):
+                s.handoff_variant = str(args["variant"])
+            if not args.get("recap"):
+                return s.handoff_prompt()
+            return s.apply_handoff([], str(args["recap"]), question=str(args["question"]))[-1]["content"]
         raise ValueError(f"unknown tool '{name}'")
 
     def handle(self, msg: dict[str, Any]) -> dict[str, Any] | None:

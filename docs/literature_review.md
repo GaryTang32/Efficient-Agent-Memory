@@ -86,6 +86,7 @@ Deep-reading notes for individual papers live in [`docs/papers/`](papers/).
 - **LLMLingua-2**: Findings of ACL'24, Microsoft. It is a building block inside LightMem and SeCom.
 - **Manus context-engineering rules**: industry blog, no code. Kept as engineering defaults: stable prefix, append-only context, recoverable offload, todo recitation.
 - **Vendor guidance**: MiniMax M2.1 (keep the first and last 5 AI turns past 30% of the context), DeepSeek V3.2 (discard-all / discard-75%), Qwen-Agent truncation. These are cheap baselines from Chinese model vendors; they are documentation, not papers.
+- **"You don't need long context"** (NVIDIA, arXiv 2611.05306, Nov 2026; preprint, US lab): end-of-conversation compaction (EoCC) with a six-field handoff recap written by the agent itself, plus selective reading of long inputs. Implemented as `eocc` and as AutoMemory's `compact=handoff` ([notes](papers/2611.05306-you-dont-need-long-context.md)).
 - **Observation masking**: the baseline in both AgentDiet and AttnCompress, implemented in AttnCompress's `traj_analyzer.py` (window 2, minimum 300 tokens). It is the cheapest strong baseline.
 
 ## F. Implementation shortlist (phase 1: test each technique on its own)

@@ -15,6 +15,17 @@ These are the eight methods that [the scan](literature/2026-11-scan/README.md) f
 | `coral` | CORAL, agent-managed working memory with context resets | CUHK + Tencent + HKUST | arXiv 2610.40350, prompting-only variant (the code link returns 404) | System prompt, `memory-management-tool` and `context-optimization-tool` descriptions and the reset template are all verbatim. The agent alone decides when to reset. | The prompt is appended to the benchmark's own system prompt. Unit ids, memory rendering and tool return texts are ours. |
 | `selfcompact` | SelfCompact, self-compacting agents | Apple + JHU | arXiv 2606.23525 and github.com/tianjianl/selfcompact (MIT) | Gates: round ≥ 3, period 2, cap 1000. The C1/C2/C3/N1 rubric and the summary are both written by the agent's own model. The prompts and the reset message are verbatim. | The 40K gate is scaled to 0.31 × window. A backstop at 0.8 × window forces a compaction (the code has none; the paper mentions one at 0.30). The probe is appended to the last user message and the tools are kept. |
 
+## Added after the scan: EoCC (NVIDIA, 2026-11-03)
+
+| Spec | Method | Developer | Source used | Faithful to the source | Deviations |
+|---|---|---|---|---|---|
+| `eocc[:writer=agent\|aux,variant=general\|swe]`; AutoMemory `compact=handoff` / `handoff_aux` | EoCC, end-of-conversation compaction ("You don't need long context") | NVIDIA | arXiv 2611.05306, App. G (no code released; the harnesses are mini-swe-agent v2.4 and its mini-agent generalisation) | Both compaction prompts verbatim (`third_party/nvidia_eocc.py`). The trigger is the compaction threshold, 0.75 × the total context limit as in the paper's 48K/36K … 16K/12K settings. The agent writes the recap as its own next turn, with no tool calls, and the conversation resets to the system prompt, task and recap. | The texts that fill the prompt's `{persistence}`, `{handoff_details}`, `{submission_reminder}` and the recap section are ours. `writer=aux` (the summariser writes the recap from a transcript) is our variant. Inside AutoMemory the reset also carries the notes and the last two steps, as for its other compactors. |
+
+Notes: [`papers/2611.05306-you-dont-need-long-context.md`](papers/2611.05306-you-dont-need-long-context.md). The paper's
+other half, selective reading of long inputs, matches what AutoMemory's previews and the bounded tools already do;
+the SWE task's `read_file` now also names the next window ("next: read_file start_line=…"), as the paper's
+`doc-read` does.
+
 ## Shared harness change
 
 Some techniques send a rendered copy of the history instead of editing it: ReFold, CADOC, and Strands' memory injection. For these, the loop now adds the context gauge to the request that is actually sent, and counts history rewrites on that request rather than on the stored history. Techniques that do not render a copy behave exactly as before.

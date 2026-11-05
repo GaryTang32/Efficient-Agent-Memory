@@ -17,8 +17,9 @@ Components and the evidence behind them:
 * ``keep_recent`` — after a compaction the last steps are kept verbatim after the summary (as Claude Code's own
   compaction does): with only the reset message left, Haiku's tool-call replies degenerated.
 * ``compact`` — compaction when the window binds: ``resum`` (official ReSum prompts; rare resets keep the prompt
-  cache alive), ``mask`` (observation masking: the only single-session method that recovered on Haiku) or
-  ``none``. The trigger is a fraction of the actual window (``trigger`` × window) rather than a fixed K. Until
+  cache alive), ``handoff`` / ``handoff_aux`` (the NVIDIA EoCC handoff recap, written by the agent model or by
+  the summariser; ``handoff_variant`` picks the paper's SWE or general prompt), ``openclaw`` / ``sjc``,
+  ``mask`` (observation masking: the only single-session method that recovered on Haiku) or ``none``. The trigger is a fraction of the actual window (``trigger`` × window) rather than a fixed K. Until
   then the context is kept whole, which on a cached route is the cheapest correct option while it fits.
 * cache-awareness — all edits happen at ingestion (guard, offload) or at rare resets (compaction, recall);
   nothing rewrites earlier history every step (masking aside, when chosen), because history rewrites are paid as
@@ -39,6 +40,7 @@ from eam.tokens import estimate_tokens
 
 GUARDED = ("[Output of {name} moved out of the context to keep it within the window ({tokens:,} tokens). "
            "It is stored at {pointer}; read it with read_artifact (offset/length to page), one item per step.]")
+REBUILDS = ("resum_rebuild", "openclaw_rebuild", "handoff_rebuild")
 RECALL = ("Your persistent workspace notes (saved in earlier sessions or before the conversation was "
           "compacted):\n\n{notes}\n\nUse them; keep them up to date with write_note.")
 
@@ -52,7 +54,7 @@ class AutoMemory(Technique):
     def __init__(self, workspace: bool = True, recall: bool = True, autosave: bool = True, guard: float = 0.9,
                  compact: str = "resum", trigger: float = 0.75, default_window: int = 200_000,
                  token_ratio: float = 1.5, keep_recent: int = 2, fold: bool = False, ingest: float = 0.0,
-                 ingest_preview: int = 750):
+                 ingest_preview: int = 750, handoff_variant: str = "general"):
         self.workspace = bool(workspace)
         self.recall = bool(recall) and self.workspace
         self.autosave = bool(autosave) and self.workspace
@@ -67,6 +69,7 @@ class AutoMemory(Technique):
         self.fold = bool(fold)
         self.ingest = float(ingest)
         self.ingest_preview = int(ingest_preview)
+        self.handoff_variant = str(handoff_variant)
         self._refold = ReFold() if self.fold else None
         self._stash: dict[str, str] = {}
         self._ws = NoteWorkspace() if self.workspace else None
@@ -97,6 +100,14 @@ class AutoMemory(Technique):
                 return SourceJudgedReSum(max_context_k=k)
             return OpenClawCompaction(max_context_k=k, sjc=self.compact == "openclaw+sjc", keep_last=False,
                                       first="task")
+        if self.compact in ("handoff", "handoff_aux"):
+            # the NVIDIA paper's EoCC recap (docs/papers/2611.05306-…); restart from the task statement, so the
+            # notes and the recent steps are added back below, as for the other compactors
+            from eam.techniques.eocc import HandoffCompaction
+
+            return HandoffCompaction(writer="agent" if self.compact == "handoff" else "aux",
+                                     variant=self.handoff_variant, first="task",
+                                     trigger_tokens=self.trigger * self._window(ctx))
         if self.compact == "mask":
             return ObservationMasking()
         return None
@@ -145,9 +156,10 @@ class AutoMemory(Technique):
     def before_call(self, ctx):
         if self._compactor is None:
             return
+        from eam.techniques.eocc import HandoffCompaction
         from eam.techniques.sjc import OpenClawCompaction
 
-        if isinstance(self._compactor, (ReSum, OpenClawCompaction)):
+        if isinstance(self._compactor, (ReSum, OpenClawCompaction, HandoffCompaction)):
             tail = self._recent_tail(ctx)
             # the guard's prediction of the coming prompt (real tokens), if it is larger than the last real size
             predicted = ctx.state.get("automem_predicted", 0)
@@ -155,12 +167,12 @@ class AutoMemory(Technique):
                 saved, ctx.last_prompt_tokens = ctx.last_prompt_tokens, predicted
                 n_before = len(ctx.events)
                 self._compactor.before_call(ctx)
-                compacted = any(e["kind"] in ("resum_rebuild", "openclaw_rebuild") for e in ctx.events[n_before:])
+                compacted = any(e["kind"] in REBUILDS for e in ctx.events[n_before:])
                 ctx.last_prompt_tokens = 0 if compacted else saved
             else:
                 n_before = len(ctx.events)
                 self._compactor.before_call(ctx)
-                compacted = any(e["kind"] in ("resum_rebuild", "openclaw_rebuild") for e in ctx.events[n_before:])
+                compacted = any(e["kind"] in REBUILDS for e in ctx.events[n_before:])
             if compacted:
                 ctx.state["automem_predicted"] = 0
                 if self.recall and self._notes_text():  # the reset message replaced the session's first message

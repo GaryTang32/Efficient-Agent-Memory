@@ -11,7 +11,15 @@ OpenAI-style message lists, with a persistent on-disk store.
     skill.save_session(final_answer)                                                            # autosave
 
 `summarize(prompt) -> str` is any LLM call (a cheaper model is fine: the summary prompt is ReSum's official
-prompt). Tool specs for write_note / read_notes / read_artifact come from `tool_specs()`; route those calls to
+prompt). With ``compaction="handoff"`` the compaction is the NVIDIA EoCC handoff recap (arXiv 2611.05306) instead:
+either the agent writes it as its own next turn, which reads the whole history from the prompt cache,
+
+    if skill.should_compact(last_prompt_tokens):
+        messages.append({"role": "user", "content": skill.handoff_prompt()})
+        recap = my_agent_llm(messages)                       # the agent's reply, no tool calls
+        messages = skill.apply_handoff(messages, recap, question=task)
+
+or `maybe_compact` has `summarize` write it from a transcript. Tool specs for write_note / read_notes / read_artifact come from `tool_specs()`; route those calls to
 `call_tool`. The MCP server (`eam/mcp_server.py`) exposes the same store as MCP tools.
 """
 
@@ -32,7 +40,8 @@ from eam.tokens import estimate_tokens
 class MemorySkill:
     def __init__(self, root: str | Path, *, window: int = 200_000, trigger: float = 0.75, guard: float = 0.9,
                  token_ratio: float = 1.5, summarize: Callable[[str], str] | None = None,
-                 max_note_chars: int = 20_000, preview: float = 0.1, preview_tokens: int = 750):
+                 max_note_chars: int = 20_000, preview: float = 0.1, preview_tokens: int = 750,
+                 compaction: str = "resum", handoff_variant: str = "general"):
         self.root = Path(root).expanduser()
         (self.root / "artifacts").mkdir(parents=True, exist_ok=True)
         self.window, self.trigger, self.guard, self.token_ratio = int(window), trigger, guard, token_ratio
@@ -41,6 +50,9 @@ class MemorySkill:
         # v2: outputs above `preview` × window enter the context as a head/tail preview; the full text is an
         # artifact (read_artifact pages it). 0 = off (v1 behaviour).
         self.preview, self.preview_tokens = float(preview), int(preview_tokens)
+        if compaction not in ("resum", "handoff"):
+            raise ValueError("compaction must be 'resum' or 'handoff'")
+        self.compaction, self.handoff_variant = compaction, handoff_variant
         self._step_used: int | None = None
         self._last_summary: str | None = None
 
@@ -135,6 +147,10 @@ class MemorySkill:
         if not self.should_compact(context_tokens) or self.summarize is None:
             return messages
         system = [m for m in messages[:1] if m.get("role") == "system"]
+        if self.compaction == "handoff":
+            transcript = "\n".join(f"[{m.get('role')}] {m.get('content')}" for m in messages[len(system):])
+            recap = self.summarize(f"<conversation>\n{transcript}\n</conversation>\n\n{self.handoff_prompt()}")
+            return self.apply_handoff(messages, recap, question=question) if (recap or "").strip() else messages
         history = "\n".join(str({"role": m.get("role"), "content": m.get("content")}) for m in messages[len(system):])
         template = P.QUERY_SUMMARY_PROMPT_LAST if self._last_summary else P.QUERY_SUMMARY_PROMPT
         prompt = (template.replace("{{{question}}}", question).replace("{{{recent_history_messages}}}", history)
@@ -149,6 +165,25 @@ class MemorySkill:
         if self.notes():
             reset += "\n\n" + RECALL.format(notes=self.read_notes())
         return system + [{"role": "user", "content": reset}]
+
+    # ---- handoff compaction (NVIDIA EoCC, arXiv 2611.05306) -------------------------------------------------
+    def handoff_prompt(self) -> str:
+        """The paper's compaction prompt (App. G), to send as a user message; the reply is the recap."""
+        from eam.techniques.eocc import compaction_prompt
+
+        return compaction_prompt(self.handoff_variant)
+
+    def apply_handoff(self, messages: list[dict[str, Any]], recap: str, *, question: str
+                      ) -> list[dict[str, Any]]:
+        """Reset to the system message, the task, the notes and the recap (nothing else is kept)."""
+        from eam.techniques.eocc import RECAP_SECTION
+
+        system = [m for m in messages[:1] if m.get("role") == "system"]
+        text = f"Task: {question}"
+        if self.notes():
+            text += "\n\n" + RECALL.format(notes=self.read_notes())
+        text += "\n\n" + RECAP_SECTION.format(recap=str(recap).strip())
+        return system + [{"role": "user", "content": text}]
 
     # ---- tools for the agent -------------------------------------------------------------------------------
     @staticmethod

@@ -20,9 +20,12 @@ p.add_argument("--first", type=int, default=0)
 p.add_argument("--issues", type=int, default=5)
 p.add_argument("--window", type=int, default=64000)
 p.add_argument("--workers", type=int, default=2)
+p.add_argument("--validation", default=None, help="validation rows to draw issues from (default: "
+               "results/swe_validation.jsonl, the 40-issue set)")
 p.add_argument("--out", required=True)
 a = p.parse_args()
 os.environ.setdefault("EAM_CLAUDE_TIMEOUT", "900")
 run_suite({"swe_workday": a.specs}, backend="claude-cli", model_key=a.model, aux_key=a.aux_model or a.model,
           n=a.workdays, seed=a.first, out=a.out, workers=a.workers, resume=True,
-          task_kwargs={"swe_workday": {"n_issues": a.issues, "context_limit": a.window}})
+          task_kwargs={"swe_workday": {"n_issues": a.issues, "context_limit": a.window,
+                                       "validation": a.validation}})

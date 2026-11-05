@@ -22,7 +22,7 @@ Every component has a switch, so it can be ablated.
 | Recall | `recall=` | Notes are put into the first message of every session, and after every compaction | Haiku re-read old files instead of its notes: 0.34 vs Sonnet 0.99 |
 | Autosave | `autosave=` | Each session's final answer is saved as a note, with no LLM call | Later sessions most often need an earlier session's result |
 | In-step guard | `guard=0.9` (0 = off) | While a step's tool outputs arrive, any output that would push the next prompt past 0.9 × window goes to the artifact store; a pointer stays | ReSum checks only between calls. One Haiku step of parallel calls added 13–18K tokens and overflowed whatever the trigger margin. |
-| Compaction | `compact=resum\|mask\|none`, `trigger=0.75` | ReSum's official summary prompt at 0.75 × window; until then the context is kept whole | Rare resets keep the prompt cache alive. Cached full context is cheapest while it fits (17–27% of uncached cost). |
+| Compaction | `compact=resum\|handoff\|handoff_aux\|sjc\|openclaw\|mask\|none`, `trigger=0.75` | ReSum's official summary prompt at 0.75 × window; until then the context is kept whole. `handoff`: NVIDIA's EoCC handoff recap (objective, facts, applied changes, verification, dead ends, next command), written by the agent model as its own next turn, so the history is read from the cache; `handoff_aux` has the summariser write it; `handoff_variant=swe\|general` picks the paper's prompt | Rare resets keep the prompt cache alive. Cached full context is cheapest while it fits (17–27% of uncached cost). |
 | Cheaper summariser | `--aux-model` | The summary runs on the auxiliary model | Summary calls were ~40% of the recipe's cost on Sonnet |
 
 Cache-awareness is a design rule, not a switch. Edits happen only at ingestion (guard, offload) or at rare resets (compaction, recall). Nothing rewrites earlier history every step, because on the Claude Code route each rewrite is billed as a cache write at 2× the input price.
@@ -57,6 +57,10 @@ while True:
         messages.append(tool_message(call, skill.ingest_tool_output(call.name, out)))   # in-step guard
     predicted = skill.end_step()
     messages = skill.maybe_compact(messages, context_tokens=predicted, question=task)  # rare reset
+    # or, with MemorySkill(..., compaction="handoff"): the agent writes the recap itself (a prompt-cache hit)
+    # if skill.should_compact(predicted):
+    #     messages.append({"role": "user", "content": skill.handoff_prompt()})
+    #     messages = skill.apply_handoff(messages, my_agent_llm(messages), question=task)
 ```
 
 ## MCP server
@@ -78,6 +82,7 @@ Add it to `.mcp.json` (Claude Code) or to your client's MCP configuration:
 | `offload`, `read_artifact` | keep large text out of the context and page it back |
 | `context_budget` | whether to compact now, and how much the next step may add |
 | `compact` | ReSum's summary prompt for your model; or a ready reset message, if `EAM_MEMORY_ROUTE` (e.g. `claude-cli`) and `EAM_MEMORY_MODEL` (e.g. `cc-haiku`) are set |
+| `handoff` | NVIDIA's EoCC handoff prompt (`variant`: `general` or `swe`); answer it yourself as your next turn, then call again with `recap` to get the message to restart from (task, notes, recap) |
 
 **Verified with Claude Code (2026-10-24).** Two separate `claude -p --model haiku --mcp-config … --allowedTools mcp__automem__…` processes were run:
 - Session 1 called `recall`, `write_note` and `save_session`.

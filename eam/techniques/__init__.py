@@ -37,6 +37,7 @@ from eam.techniques.sjc import OpenClawCompaction, SourceJudgedReSum
 from eam.techniques.strands import StrandsHarness
 from eam.techniques.tiered_memory import FullCarryover, TieredMemory
 from eam.techniques.todo import TodoRecitation
+from eam.techniques.eocc import HandoffCompaction
 from eam.techniques.turn_control import TurnControl
 from eam.techniques.workspace import NoteWorkspace
 
@@ -72,6 +73,8 @@ REGISTRY: dict[str, type[Technique]] = {
     "raw_rag": RawHistoryRAG,
     "coral": CORAL,
     "selfcompact": SelfCompact,
+    # NVIDIA, "You don't need long context" (arXiv 2611.05306): end-of-conversation handoff compaction
+    "eocc": HandoffCompaction,
     # provisional (ours, not yet backed by an official source)
     "tiered_memory": TieredMemory,
     "keep_last_n": KeepLastN,

@@ -30,3 +30,9 @@ Prompt texts quoted in technique modules (not vendored files): the Strands harne
 SJC CONTEXT/QUESTION texts and the OpenClaw safeguard prompts in `eam/techniques/sjc.py` (quoted from arXiv 2610.20927;
 the SJC repo has no licence file, so its code is not copied); the AKV policy in `eam/techniques/akv.py` is re-implemented
 from https://github.com/thu-nics/AKV (Apache License 2.0).
+
+The EoCC compaction prompts in `eam/techniques/third_party/nvidia_eocc.py` are quoted from "You don't need long
+context" (Belcak et al., NVIDIA, arXiv 2611.05306, App. G); no code was released with the paper. The SWE-bench Django
+test directives and log parser in `eam/bench/tasks/swe_env.py` are ported from https://github.com/SWE-bench/SWE-bench
+(MIT License, Copyright (c) 2023 Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press,
+Karthik R Narasimhan).

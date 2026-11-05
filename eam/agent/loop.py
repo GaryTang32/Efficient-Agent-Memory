@@ -155,6 +155,7 @@ def run_agent(
         env_tools = [*env_tools, read_artifact_tool()]
     tools = collect_tools(env_tools, techniques, ctx)
     tool_map = {t.spec.name: t for t in tools}
+    ctx.tool_specs = [t.spec for t in tools]
     # Static instructions only: the system prompt must not change between calls.
     addenda = [a for a in (t.system_addendum() for t in techniques) if a]
     system_text = "\n\n".join([system_prompt, *addenda])

@@ -1,9 +1,9 @@
-"""swe_workday: a working day on a real repository. Consecutive real GitHub issues from SWE-bench Verified (Django
-4.2 / 5.0), one session per issue; each session starts from a fresh working copy at that issue's base commit, and
+"""swe_workday: a working day on a real repository. Consecutive real GitHub issues from SWE-bench Verified (Django;
+4.2 / 5.0 in the 40-issue set, 4.0–5.0 in the wider set), one session per issue; each session starts from a fresh working copy at that issue's base commit, and
 the conversation of earlier sessions is gone. Only the memory method's own store (notes, retrieved history) carries
 over, which is what a daily Codex or Claude Code user lives with.
 
-Instances are the issues that `scripts/swe_validate.py` confirmed in this environment (FAIL_TO_PASS fails without
+Instances are the issues that `scripts/swe_validate.py` confirmed in this environment (the ``validation`` file) (FAIL_TO_PASS fails without
 the official fix; everything passes with it), ordered by creation date; workday `seed` takes issues
 `seed*n_issues … seed*n_issues + n_issues − 1`. Each issue is graded as SWE-bench does: the issue's test patch is
 applied to the agent's working copy and the issue is resolved iff all FAIL_TO_PASS and PASS_TO_PASS tests pass.
@@ -78,7 +78,8 @@ def generate(seed: int, n_issues: int = 5, context_limit: int | None = 64_000,
         start = max(1, int(args.get("start_line", 1) or 1))
         end = min(len(lines), int(args.get("end_line", start + 199) or start + 199), start + 199)
         body = "\n".join(f"{i:5d}  {lines[i - 1]}" for i in range(start, end + 1))
-        more = f"\n… [{len(lines) - end} more lines]" if end < len(lines) else ""
+        more = (f"\n… [{len(lines) - end} more lines; next: read_file start_line={end + 1}]" if end < len(lines)
+                else "")
         return f"{args.get('path')} (lines {start}-{end} of {len(lines)})\n{body}{more}"
 
     def grep(args, ctx):

@@ -3,9 +3,16 @@
 Data: SWE-bench Verified (Jimenez et al., ICLR 2024; Chowdhury et al., OpenAI 2024), downloaded at run time from the
 Hugging Face datasets server into ``~/.cache/eam/swe`` (not redistributed). Repository: a blobless clone of
 https://github.com/django/django; every session works in its own git worktree at the issue's base commit. Tests run
-with Django's own runner (``tests/runtests.py``) under a Python 3.11 virtualenv with Django's two runtime
-dependencies, no Docker. Grading follows SWE-bench: the issue's test patch is applied to the agent's working copy,
-and the issue counts as resolved iff every FAIL_TO_PASS and PASS_TO_PASS test passes.
+with Django's own runner (``tests/runtests.py``) under a Python 3.11 virtualenv with Django's runtime
+dependencies, no Docker. Grading follows SWE-bench (github.com/SWE-bench/SWE-bench, MIT): the issue's test patch is
+applied to the agent's working copy; the test modules it touches are run (SWE-bench's Django test directives); the
+verbose log is parsed with SWE-bench's Django log parser (ported below); the issue counts as resolved iff every
+FAIL_TO_PASS and PASS_TO_PASS test passed (skipped tests do not count against it, as in SWE-bench).
+
+Many of SWE-bench's Django test ids are the first line of a test's docstring (unittest prints it in place of the
+name at verbosity 2), so they are matched in the log, not turned into labels. Names are compared without the
+method suffix that Python 3.11 adds ("test_x (mod.Class.test_x)" = "test_x (mod.Class)"): the dataset uses the
+older form for Django < 5.0, and every version runs on Python 3.11 here.
 """
 
 from __future__ import annotations
@@ -42,7 +49,7 @@ def ensure_setup() -> None:
                         "https://github.com/django/django", str(REPO)], check=True)
     if not VENV_PY.exists():
         subprocess.run(["python3.11", "-m", "venv", str(VENV_PY.parent.parent)], check=True)
-        subprocess.run([str(VENV_PY), "-m", "pip", "-q", "install", "asgiref>=3.7", "sqlparse>=0.3.1"], check=True)
+        subprocess.run([str(VENV_PY), "-m", "pip", "-q", "install", "asgiref>=3.7", "sqlparse>=0.3.1", "pytz"], check=True)
 
 
 def instances() -> dict[str, dict]:
@@ -80,6 +87,76 @@ def labels(test_ids: list[str]) -> list[str]:
     return out
 
 
+_NON_TEST_EXTS = (".json", ".png", "csv", ".txt", ".md", ".jpg", ".jpeg", ".pkl", ".yml", ".yaml", ".toml")
+_PY311_NAME = re.compile(r"^(\w+) \(([\w.]+)\.\1\)$")
+
+
+def directives(test_patch: str) -> list[str]:
+    """SWE-bench's test directives for Django: the files the test patch touches, as runtests.py module labels."""
+    out = []
+    for f in re.findall(r"diff --git a/.* b/(.*)", test_patch):
+        if any(f.endswith(ext) for ext in _NON_TEST_EXTS):
+            continue
+        f = f[:-3] if f.endswith(".py") else f
+        f = f[len("tests/"):] if f.startswith("tests/") else f
+        out.append(f.replace("/", "."))
+    return list(dict.fromkeys(out))
+
+
+def canonical(name: str) -> str:
+    return _PY311_NAME.sub(r"\1 (\2)", name.strip())
+
+
+def parse_log(log: str) -> dict[str, str]:
+    """SWE-bench's `parse_log_django` (harness/log_parsers), ported: test name or docstring line -> status."""
+    status: dict[str, str] = {}
+    prev = None
+    for line in log.split("\n"):
+        line = line.strip()
+        if "--version is equivalent to version" in line:
+            status["--version is equivalent to version"] = "PASSED"
+        if " ... " in line:
+            prev = line.split(" ... ")[0]
+        for suffix in (" ... ok", " ... OK", " ...  OK"):
+            if line.endswith(suffix):
+                if line.startswith("Applying sites.0002_alter_domain_unique...test_no_migrations"):
+                    line = line.split("...", 1)[-1].strip()
+                status[line.rsplit(suffix, 1)[0]] = "PASSED"
+                break
+        if " ... skipped" in line:
+            status[line.split(" ... skipped")[0]] = "SKIPPED"
+        if line.endswith(" ... FAIL"):
+            status[line.split(" ... FAIL")[0]] = "FAILED"
+        if line.startswith("FAIL:"):
+            status[line.split()[1].strip()] = "FAILED"
+        if line.endswith(" ... ERROR"):
+            status[line.split(" ... ERROR")[0]] = "ERROR"
+        if line.startswith("ERROR:"):
+            status[line.split()[1].strip()] = "ERROR"
+        if line.lstrip().startswith("ok") and prev is not None:
+            status[prev] = "PASSED"
+    for pattern in (r"^(.*?)\s\.\.\.\sTesting\ against\ Django\ installed\ in\ ((?s:.*?))\ silenced\)\.\nok$",
+                    r"^(.*?)\s\.\.\.\sInternal\ Server\ Error:\ \/(.*)\/\nok$",
+                    r"^(.*?)\s\.\.\.\sSystem check identified no issues \(0 silenced\)\nok$"):
+        for m in re.finditer(pattern, log, re.MULTILINE):
+            status[m.group(1)] = "PASSED"
+    return {canonical(k): v for k, v in status.items()}
+
+
+def report(status: dict[str, str], inst: dict) -> dict[str, list[str]]:
+    """SWE-bench's per-test outcome: a test fails if it is missing from the log or FAILED/ERROR."""
+    out: dict[str, list[str]] = {"f2p_failed": [], "p2p_failed": [], "f2p_passed": []}
+    for key, tag in (("FAIL_TO_PASS", "f2p"), ("PASS_TO_PASS", "p2p")):
+        for t in json.loads(inst[key]):
+            st = status.get(canonical(t))
+            if st in ("PASSED", "XFAIL"):
+                if tag == "f2p":
+                    out["f2p_passed"].append(t)
+            elif st is None or st in ("FAILED", "ERROR"):
+                out[f"{tag}_failed"].append(t)
+    return out
+
+
 def run_tests(d: Path, selector: str | list[str] = "", timeout: int = 600) -> tuple[int, str]:
     """Django's own test runner in working copy `d`; returns (exit code, output)."""
     args = selector if isinstance(selector, list) else selector.split()
@@ -92,10 +169,23 @@ def run_tests(d: Path, selector: str | list[str] = "", timeout: int = 600) -> tu
     return r.returncode, (r.stdout + r.stderr)
 
 
+def evaluate(d: Path, inst: dict, timeout: int = 1200) -> dict | None:
+    """Apply the test patch to `d` (modifies it), run the touched test modules, return SWE-bench's report
+    (None if the patch does not apply)."""
+    if not apply_patch(d, inst["test_patch"]):
+        return None
+    mods = directives(inst["test_patch"])
+    if not mods:
+        return {"f2p_failed": json.loads(inst["FAIL_TO_PASS"]), "p2p_failed": [], "f2p_passed": [], "log": ""}
+    code, out = run_tests(d, mods, timeout=timeout)
+    return {**report(parse_log(out), inst), "log": out[-3000:]}
+
+
 def resolved(d: Path, inst: dict) -> tuple[bool, str]:
     """SWE-bench grading on a working copy that may contain the agent's edits (modifies `d`)."""
-    if not apply_patch(d, inst["test_patch"]):
+    rep = evaluate(d, inst)
+    if rep is None:
         return False, "test patch did not apply"
-    tests = labels(json.loads(inst["FAIL_TO_PASS"])) + labels(json.loads(inst["PASS_TO_PASS"]))
-    code, out = run_tests(d, tests)
-    return code == 0, out[-3000:]
+    ok = not rep["f2p_failed"] and not rep["p2p_failed"]
+    detail = "" if ok else f"failed: {(rep['f2p_failed'] + rep['p2p_failed'])[:5]}\n{rep['log'][-1500:]}"
+    return ok, detail
