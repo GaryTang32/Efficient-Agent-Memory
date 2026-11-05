@@ -7,7 +7,7 @@ patch, and FAIL_TO_PASS + PASS_TO_PASS must all pass with it. Writes one JSON li
 import json
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -43,7 +43,8 @@ def check(iid):
 
 
 with ThreadPoolExecutor(WORKERS) as ex, OUT.open("a") as f:
-    for row in ex.map(check, cand):
+    for fut in as_completed([ex.submit(check, c) for c in cand]):
+        row = fut.result()
         f.write(json.dumps(row) + "\n")
         f.flush()
         print(row["instance_id"], row["fails_before"], row["passes_with_gold"], row["seconds"], flush=True)
