@@ -5,6 +5,7 @@ agents that call LLMs through **Amazon Bedrock** (no self-hosted models). Goal: 
 (accuracy, tokens, $ with prompt caching on, latency), then combine the best into a reusable memory skill.
 
 - `docs/problem_statement.md` — **why this matters**: what agent memory and token optimisation mean for everyday coding agents (Codex, Claude Code), their users' pain points, and how each is addressed here.
+- `docs/plans/2026-11-05-next-steps.md` — **plan and proposal**: more Sonnet seeds for `compact=sjc` (running), and a realistic coding benchmark on SWE-bench Verified (Django) workdays, with cost estimates (≈ $95–215 together).
 - `docs/new_methods.md` — the eight methods from the 2026-11 scan (Strands, CADOC, ReFold, SJC, AKV, raw-history RAG, CORAL, SelfCompact): sources and deviations.
 - `docs/literature/2026-11-scan/` — **literature scan, Sep–Nov 2026**: a sweep of 1,515 arXiv papers (40% of the most relevant have Chinese authors, 9% big US labs), plus the US labs, Chinese labs, repos and practitioners, and what it means for AutoMemory v2 and Bedrock.
 - `docs/literature_review.md` — verified list of papers (venue, lab, repo, licence, Bedrock fit) and the implementation shortlist.
