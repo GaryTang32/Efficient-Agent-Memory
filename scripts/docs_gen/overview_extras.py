@@ -431,29 +431,32 @@ def token_mix(rows):
 
 # ------------------------------------------------------------------ 6. timeline
 def timeline():
-    ev = [("22 Oct", "Phase 1", "single methods · chain_hunt, ledger_audit", "Haiku · Sonnet · Opus"),
+    ev = [("22 Oct", "Phase 1", "single methods on two tasks", "Haiku · Sonnet · Opus"),
           ("23 Oct", "Phase 2", "long-horizon tasks, model-normalised protocol", "erratum after two harness bugs"),
           ("24–26 Oct", "AutoMemory v1", "four long tasks + official memory systems", "model-robust on all four"),
           ("4 Nov", "Scan + 8 methods", "1,515 papers; 258 runs", "none beats AutoMemory"),
           ("4 Nov", "v2 + v3 ablation", "previews, folding, OpenClaw, SJC; 144 runs", "previews adopted"),
           ("5 Nov", "Sonnet seeds", "34 runs, decision rule fixed in advance", "automem_v2_strong"),
-          ("5 Nov", "SWE-bench", "40 real Django issues; 160 runs", "lean wins on real code")]
+          ("5 Nov", "SWE-bench", "40 real Django issues; 160 runs", "lean wins on real code"),
+          ("6 Nov", "NVIDIA handoff", "100 issues, 32K + 16K; 480 runs", "lean_handoff preset")]
     n = len(ev)
-    X0, X1 = 60, 880
-    out = ['<svg class="dg" viewBox="0 0 940 210" style="min-width:860px;max-width:1100px" role="img" aria-labelledby="tl-t tl-d">'
-           '<title id="tl-t">Experiment timeline</title><desc id="tl-d">From single methods on 22 October to the strong-model preset on 5 November.</desc>'
-           '<rect width="940" height="210" class="bgp"/>'
+    X0, X1 = 60, 1110
+    out = ['<svg class="dg" viewBox="0 0 1170 300" style="min-width:1060px;max-width:1300px" role="img" aria-labelledby="tl-t tl-d">'
+           '<title id="tl-t">Experiment timeline</title><desc id="tl-d">From single methods on 22 October to NVIDIA’s handoff recap on 100 real issues on 6 November.</desc>'
+           '<rect width="1170" height="300" class="bgp"/>'
            f'<line x1="{X0}" y1="70" x2="{X1}" y2="70" class="base-l"/>']
     for i, (d, h, s, r) in enumerate(ev):
         xx = X0 + i * (X1 - X0) / (n - 1)
         anchor = "start" if i == 0 else "end" if i == n - 1 else "middle"
-        out.append(f'<g data-motion-item data-step="{i + 1}" aria-label="{E(h)}"><circle cx="{xx}" cy="70" r="8" class="tl-dot"/>'
+        dy = 95 if i % 2 else 0  # alternate rows, so neighbouring labels never overlap
+        stem = f'<line x1="{xx}" y1="78" x2="{xx}" y2="{78 + dy}" class="base-l"/>' if dy else ""
+        out.append(f'<g data-motion-item data-step="{i + 1}" aria-label="{E(h)}">{stem}<circle cx="{xx}" cy="70" r="8" class="tl-dot"/>'
                    f'<text x="{xx}" y="50" text-anchor="{anchor}" class="t-acc">{E(d)}</text>'
-                   f'<text x="{xx}" y="98" text-anchor="{anchor}" class="n-name">{E(h)}</text>'
-                   f'<text x="{xx}" y="116" text-anchor="{anchor}" class="n-sub">{E(s[:34])}</text>'
-                   f'<text x="{xx}" y="130" text-anchor="{anchor}" class="n-sub">{E(s[34:68])}</text>'
-                   f'<text x="{xx}" y="152" text-anchor="{anchor}" class="t-check">{E(r)}</text></g>')
-    out.append('<text x="70" y="196" class="lane-s">Blocked: Bedrock validation (credentials) · SWE-bench Verified workdays (permission to run third-party tests)</text></svg>')
+                   f'<text x="{xx}" y="{98 + dy}" text-anchor="{anchor}" class="n-name">{E(h)}</text>'
+                   f'<text x="{xx}" y="{116 + dy}" text-anchor="{anchor}" class="n-sub">{E(s[:34])}</text>'
+                   f'<text x="{xx}" y="{130 + dy}" text-anchor="{anchor}" class="n-sub">{E(s[34:68])}</text>'
+                   f'<text x="{xx}" y="{152 + dy}" text-anchor="{anchor}" class="t-check">{E(r)}</text></g>')
+    out.append('<text x="70" y="290" class="lane-s">Blocked: Bedrock validation (credentials)</text></svg>')
     return (f'<div class="stepper" data-motion-root data-motion-mode="reveal" data-step-count="{n}" data-step-current="{n}" data-frame="static" '
             f'style="--motion-hold:700ms"><div class="diagram">' + "".join(out) + '</div>'
             '<div data-motion-controls role="group" aria-label="Timeline playback controls">'
@@ -563,11 +566,12 @@ TOOLTIP_JS = r"""
 
 # ------------------------------------------------------------------ 8. SWE-bench board
 SWE_ROWS = [("Ceiling: full history, no cache", "naive@native", "own"), ("Full history, cached (everyday default)", "full@native", "own"),
-            ("AutoMemory v2", "automem_v2@native", "own"), ("AutoMemory v2 strong", "automem_v2_strong@native", "own"),
-            ("AutoMemory v2 lean (no workspace)", "automem:workspace=false,ingest=0.1@native", "own"),
-            ("No memory", "naive", "16K"), ("Full history, cached", "full", "16K"), ("AutoMemory v1", "automem", "16K"),
-            ("AutoMemory v2", "automem_v2", "16K"), ("AutoMemory v2 strong", "automem_v2_strong", "16K"),
-            ("AutoMemory v2 lean (no workspace)", "automem:workspace=false,ingest=0.1", "16K")]
+            ("Full history, cached", "full", "32K"), ("AutoMemory v2 lean (ReSum)", "automem:workspace=false,ingest=0.1", "32K"),
+            ("AutoMemory v2 lean + handoff", "automem:workspace=false,ingest=0.1,compact=handoff,handoff_variant=swe", "32K"), ("… recap written by Haiku (Sonnet only)", "automem:workspace=false,ingest=0.1,compact=handoff_aux,handoff_variant=swe", "32K"),
+            ("EoCC alone (NVIDIA)", "eocc:variant=swe", "32K"),
+            ("AutoMemory v2 lean (ReSum)", "automem:workspace=false,ingest=0.1@16k", "16K"), ("AutoMemory v2 lean + handoff", "automem:workspace=false,ingest=0.1,compact=handoff,handoff_variant=swe@16k", "16K"),
+            ("… recap written by Haiku (Sonnet only)", "automem:workspace=false,ingest=0.1,compact=handoff_aux,handoff_variant=swe@16k", "16K"), ("EoCC alone (NVIDIA)", "eocc:variant=swe@16k", "16K")]
+GROUPS = {"own": "The model's own window", "32K": "32K window (compaction at 24K)", "16K": "Tight 16K window (compaction at 12K)"}
 
 
 def swe_board(swe):
@@ -579,7 +583,7 @@ def swe_board(swe):
     for label, spec, w in SWE_ROWS:
         if w != win:
             win = w
-            out.append(f'<div class="board-row grp" role="row"><span role="cell">{"The model\'s own window" if w == "own" else "Tight 16K window"}</span><span></span><span></span></div>')
+            out.append(f'<div class="board-row grp" role="row"><span role="cell">{GROUPS[w]}</span><span></span><span></span></div>')
         cells = []
         for m in ("cc-haiku", "cc-sonnet"):
             v = swe.get(m, {}).get(spec)
@@ -588,8 +592,9 @@ def swe_board(swe):
                 continue
             ceil = swe[m]["naive@native"]["resolved"] / swe[m]["naive@native"]["n"]
             g = "ours" if "workspace=false" in spec else "anc" if spec in ("naive@native", "naive") else "pub" if spec.startswith("full") else "new"
+            ovf = f", {v['overflows']} sessions overflowed" if v.get("overflows") else ""
             cc = "cheap" if v["cost"] < 90 else "dear" if v["cost"] > 110 else ""
-            tip = f'{label} ({w}) · {m[3:]}: {v["resolved"]}/{v["n"]} resolved, cost {v["cost"]}% of the ceiling, ${v["per"]:.3f} per resolved issue, median peak {v["peak"] / 1000:.1f}K'
+            tip = f'{label} ({w}) · {m[3:]}: {v["resolved"]}/{v["n"]} resolved, cost {v["cost"]}% of the ceiling, ${v["per"]:.3f} per resolved issue, median peak {v["peak"] / 1000:.1f}K, {v.get("compactions", 0)} compactions{ovf}'
             cells.append(f'<span class="bcell" role="cell" title="{E(tip)}"><span class="btrack"><span class="bfill g-{g}" style="width:{v["resolved"] / v["n"] * 100:.0f}%"></span>'
                          f'<span class="bmark" style="left:{ceil * 100:.0f}%"></span></span><span class="bval">{v["resolved"]}/{v["n"]} <span class="c {cc}">({v["cost"]}% · ${v["per"]:.3f})</span></span></span>')
         out.append(f'<div class="board-row" role="row"><span class="bname" role="rowheader">{E(label)}</span>' + "".join(cells) + "</div>")

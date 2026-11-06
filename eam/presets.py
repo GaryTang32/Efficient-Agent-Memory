@@ -133,9 +133,20 @@ def automem_v2_lean() -> Technique:
     return AM(workspace=False, ingest=0.1)
 
 
+def automem_v2_lean_handoff() -> Technique:
+    """`automem_v2_lean` with NVIDIA's EoCC handoff recap (arXiv 2611.05306) in place of ReSum's summary, written by
+    the agent model itself (docs/results/2026-11-06-handoff-and-swe-100.md). On 100 SWE-bench Verified issues at a
+    16K window it resolved 81 (Haiku) and 88 (Sonnet) against 76 and 86 with ReSum, at 6–16 points more cost:
+    the accuracy-first choice for coding work under a tight window; `automem_v2_lean` stays the cheapest."""
+    from eam.techniques.auto_memory import AutoMemory as AM
+
+    return AM(workspace=False, ingest=0.1, compact="handoff", handoff_variant="swe")
+
+
 PRESETS: dict[str, Callable[[], Technique]] = {
     "automem_v2": automem_v2,
     "automem_v2_lean": automem_v2_lean,
+    "automem_v2_lean_handoff": automem_v2_lean_handoff,
     "automem_v2_strong": automem_v2_strong,
     "automem_v2_slim": automem_v2_slim,
     "cache_first": cache_first,

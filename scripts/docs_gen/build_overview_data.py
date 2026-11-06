@@ -13,7 +13,7 @@ FILES = ("results/real_v4-research_corpus-haiku.jsonl results/real_v4-research_c
          "results/real_v2-cli-sonnet.jsonl results/real_v4-repo_debug-haiku.jsonl results/real_v4-repo_debug-sonnet.jsonl "
          "results/extmem-memoryos-haiku.jsonl results/extmem-lightmem-haiku.jsonl results/extmem-nemori-haiku.jsonl").split()
 FILES += sorted(glob.glob("results/real_v5-*.jsonl")) + sorted(glob.glob("results/automem_v2-*.jsonl")) \
-    + sorted(glob.glob("results/seeds_sonnet-*.jsonl"))
+    + sorted(glob.glob("results/seeds_sonnet-*.jsonl")) + sorted(glob.glob("results/handoff-*.jsonl"))
 
 
 def key(r):
@@ -46,29 +46,40 @@ for (m, f, s), rs in g.items():
         read=sum(r["usage"].get("cache_read_tokens", 0) for r in rs), write=sum(r["usage"].get("cache_write_tokens", 0) for r in rs),
         unc=sum(r["usage"].get("input_tokens", 0) for r in rs), out=sum(r["usage"].get("output_tokens", 0) for r in rs))
 swe = {}
-for f in ("results/swe-haiku.jsonl", "results/swe-sonnet.jsonl"):
-    try:
-        lines = open(f).read().splitlines()
-    except OSError:
+# 100-issue set (SWE-bench-faithful grading): the 32K grid with own-window references, and the 16K grid (key "@16k")
+for m in ("haiku", "sonnet"):
+    rs = []
+    for f, tag in ((f"results/swe_wide-{m}.jsonl", ""), (f"results/swe_16k-{m}.jsonl", "@16k"),
+                   (f"results/swe_16k-{m}-aux.jsonl", "@16k")):
+        try:
+            lines = open(f).read().splitlines()
+        except OSError:
+            continue
+        for x in lines:
+            if x.strip():
+                r = json.loads(x)
+                if "error" not in r or "overflow" in str(r["error"]):
+                    r["spec"] += tag
+                    rs.append(r)
+    if not rs:
         continue
-    rs = [json.loads(x) for x in lines if x.strip()]
-    rs = [r for r in rs if "error" not in r]
     by = collections.defaultdict(dict)
     for r in rs:
         by[r["spec"]][r["instance"]] = r
-    for m in {r["model"] for r in rs}:
-        ref = {i: r for i, r in by.get("naive@native", {}).items() if r["model"] == m}
-        for spec, runs in by.items():
-            runs = {i: r for i, r in runs.items() if r["model"] == m}
-            common = [i for i in runs if i in ref]
-            res = sum(sum(r["round_scores"]) for r in runs.values())
-            n = sum(len(r["round_scores"]) for r in runs.values())
-            usd = sum(r["cost_usd"] for r in runs.values())
-            swe.setdefault(m, {})[spec] = dict(
-                resolved=round(res), n=n, usd=round(usd, 2), per=round(usd / max(res, 1), 3),
-                cost=round(100 * sum(runs[i]["cost_usd"] for i in common) / max(sum(ref[i]["cost_usd"] for i in common), 1e-9)),
-                peak=round(st.median(r["peak_prompt_tokens"] for r in runs.values())),
-                steps=round(st.median(r["steps"] for r in runs.values())))
+    mk = rs[0]["model"]
+    ref = by.get("naive@native", {})
+    for spec, runs in by.items():
+        common = [i for i in runs if i in ref]
+        res = sum(sum(r["round_scores"]) for r in runs.values())
+        n = sum(len(r["round_scores"]) for r in runs.values())
+        usd = sum(r["cost_usd"] for r in runs.values())
+        swe.setdefault(mk, {})[spec] = dict(
+            resolved=round(res), n=n, usd=round(usd, 2), per=round(usd / max(res, 1), 3),
+            cost=round(100 * sum(runs[i]["cost_usd"] for i in common) / max(sum(ref[i]["cost_usd"] for i in common), 1e-9)),
+            peak=round(st.median(r["peak_prompt_tokens"] for r in runs.values())),
+            steps=round(st.median(r["steps"] for r in runs.values())),
+            compactions=sum(v for r in runs.values() for k, v in r["events"].items() if k.endswith("_rebuild")),
+            overflows=sum(r["events"].get("context_overflow", 0) for r in runs.values()))
 out["__swe__"] = swe
 json.dump(out, open(OUT, "w"), indent=0)
 print(OUT, len(out))

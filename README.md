@@ -4,6 +4,7 @@ A test bench for agent memory and context-window techniques — taken from tier-
 agents that call LLMs through **Amazon Bedrock** (no self-hosted models). Goal: measure each technique on its own
 (accuracy, tokens, $ with prompt caching on, latency), then combine the best into a reusable memory skill.
 
+- `docs/overview.html` — **the HTML overview**: objective, scope, each method's mechanism, diagrams and interactive charts of the results.
 - `docs/problem_statement.md` — **why this matters**: what agent memory and token optimisation mean for everyday coding agents (Codex, Claude Code), their users' pain points, and how each is addressed here.
 - `docs/plans/2026-11-05-next-steps.md` — **plan and proposal**: more Sonnet seeds for `compact=sjc` (running), and a realistic coding benchmark on SWE-bench Verified (Django) workdays, with cost estimates (≈ $95–215 together).
 - `docs/new_methods.md` — the eight methods from the 2026-11 scan (Strands, CADOC, ReFold, SJC, AKV, raw-history RAG, CORAL, SelfCompact), plus NVIDIA's end-of-conversation handoff compaction (EoCC, `eocc`, AutoMemory `compact=handoff`): sources and deviations.
@@ -12,19 +13,19 @@ agents that call LLMs through **Amazon Bedrock** (no self-hosted models). Goal: 
 - `docs/papers/` — deep-reading notes for individual papers.
 - `docs/methodology.md` — tasks, environment rules, metric definitions, procedure.
 - `docs/automem.md` — **AutoMemory v1**, the combined memory skill: bench technique, framework-agnostic library (`eam/memory_skill.py`), MCP server (`python -m eam.mcp_server`).
-- **Presets** (`eam/presets.py`): `automem_v2` (default; multi-session work that builds on earlier results), `automem_v2_strong` (strong agent models), `automem_v2_slim` (smallest working context), `automem_v2_lean` (independent tasks such as coding issues: no note workspace).
+- **Presets** (`eam/presets.py`): `automem_v2` (default; multi-session work that builds on earlier results), `automem_v2_strong` (strong agent models), `automem_v2_slim` (smallest working context), `automem_v2_lean` (independent tasks such as coding issues: no note workspace), `automem_v2_lean_handoff` (the same with NVIDIA's handoff recap: accuracy first under a tight window).
 - `docs/backends.md` — how to run: Claude Code CLI (no Bedrock), Bedrock Converse, LiteLLM, Bedrock OpenAI-compatible endpoints, and a local gateway for third-party repos.
 - `eam/` — harness: Bedrock Converse client, offline mock backend with a prompt-cache simulator, cost meter, agent loop with technique hooks, scored sample tasks.
 - `papers/` — local PDF copies (git-ignored).
 
 Status:
 - Phase 1 (each method alone) has been measured on the Claude Code CLI route.
-- Phase 2 (combinations, AutoMemory v1/v2, the 2026-11 methods, SWE-bench Verified workdays) has been measured too. Result reports, raw rows and logs are kept locally and are not part of the repository (`docs/results/`, `results/` are git-ignored).
+- Phase 2 (combinations, AutoMemory v1/v2, the 2026-11 methods, NVIDIA's handoff compaction, SWE-bench Verified workdays on 100 Django issues) has been measured too. Result reports, raw rows and logs are kept locally and are not part of the repository (`docs/results/`, `results/` are git-ignored).
 - Each technique carries a provenance label: official prompt/algorithm, ported, baseline, or provisional (`eam/techniques/__init__.py`).
 
 ## Results
 
-**Coverage:** about 2,300 benchmark runs on the Claude Code CLI route (Claude Haiku and Sonnet), measured up to 2026-11-05.
+**Coverage:** about 2,800 benchmark runs on the Claude Code CLI route (Claude Haiku and Sonnet), measured up to 2026-11-06.
 
 **The question:** which method gives the fewest tokens and dollars per solved task at full accuracy?
 
@@ -68,6 +69,9 @@ Each cell is the mean over the four tasks: **score · cost vs ceiling · runs fu
 | **AutoMemory v2** (`automem_v2`) | this repo | **0.88 · 85% · 11/16** · 35% | 0.99 · **58%** · 13/16 · 37% |
 | **AutoMemory v2 strong** (`automem_v2_strong`) | this repo | 0.81 · 114% · 7/16 · 35% | **1.00 · 61% · 16/16** · 37% |
 | AutoMemory v2 slim (`automem_v2_slim`) | this repo | 0.87 · 90% · 6/16 · **30%** | 1.00 · 78% · 7/8 · **30%** |
+| EoCC handoff compaction alone (`eocc`) | NVIDIA | 0.73 · 89% · 6/16 · 42% | 0.91 · 126% · 9/16 · 46% |
+| AutoMemory v2 with the handoff recap (`compact=handoff`) | this repo + NVIDIA | 0.83 · 79% · 8/16 · 35% | 1.00 · 66% · 13/16 · 37% |
+| … recap written by the Haiku summariser (`compact=handoff_aux`) | this repo + NVIDIA | — | 0.99 · 58% · 12/16 · 38% |
 
 Notes on the table:
 - On Sonnet, AutoMemory uses Haiku as its summariser.
@@ -76,25 +80,30 @@ Notes on the table:
 ### 2. Real repositories: SWE-bench Verified workdays
 
 **Setup:**
-- 40 real Django issues (SWE-bench Verified, Django 4.2/5.0), grouped into 8 workdays of 5 consecutive sessions.
+- 100 real Django issues (SWE-bench Verified, Django 4.0–5.0, all difficulties), grouped into 20 workdays of 5 consecutive sessions.
 - Each session starts from a fresh checkout at its issue's commit.
-- Each issue is graded with its official FAIL_TO_PASS and PASS_TO_PASS tests.
-- 160 runs.
+- Grading follows SWE-bench: the test modules touched by the issue's test patch are run, the log is parsed with SWE-bench's Django parser, and the issue is resolved iff every FAIL_TO_PASS and PASS_TO_PASS test passes.
+- Two emulated windows from the NVIDIA paper (16K with compaction at 12K; 32K with compaction at 24K), plus the model's own window. 400 runs.
 
-Each cell: **issues resolved · cost vs ceiling · $ per resolved issue**.
+Each cell: **issues resolved of 100 · cost vs ceiling · $ per resolved issue**.
 
 | Setting | Window | Haiku | Sonnet |
 |---|---|---|---|
-| Ceiling: full history, no cache | own | 35/40 · 100% · $0.011 | 37/40 · 100% · $0.125 |
-| Full history, cached (no memory layer) | own | 35/40 · **76%** · $0.008 | 37/40 · 106% · $0.133 |
-| AutoMemory v2 | own | 35/40 · 158% · $0.017 | 35/40 · 118% · $0.156 |
-| **AutoMemory v2 lean** (`automem_v2_lean`) | own | 35/40 · 95% · $0.010 | 36/40 · **76%** · $0.098 |
-| No memory | 16K | 31/40 · 87% · $0.011 | 32/40 · 113% · $0.163 |
-| Full history, cached | 16K | 31/40 · 95% · $0.012 | 33/40 · 85% · $0.119 |
-| AutoMemory v1 | 16K | 34/40 · 228% · $0.026 | 36/40 · 116% · $0.150 |
-| AutoMemory v2 | 16K | 33/40 · 240% · $0.028 | 37/40 · 90% · $0.113 |
-| AutoMemory v2 strong | 16K | — | 35/40 · 123% · $0.163 |
-| **AutoMemory v2 lean** | 16K | **35/40 · 94%** · $0.010 | **36/40 · 60% · $0.077** |
+| Ceiling: full history, no cache | own | 82 · 100% · $0.015 | 88 · 100% · $0.165 |
+| Full history, cached (no memory layer) | own | 79 · 86% · $0.013 | 86 · 84% · $0.142 |
+| Full history, cached | 32K | 77 · **62%** · **$0.010** | 87 · 100% · $0.168 |
+| AutoMemory v2 lean (`automem_v2_lean`) | 32K | 78 · 98% · $0.015 | 87 · 92% · $0.154 |
+| AutoMemory v2 lean + handoff (`automem_v2_lean_handoff`) | 32K | 77 · 87% · $0.014 | **89 · 79% · $0.130** |
+| EoCC alone (`eocc`) | 32K | 82 · 88% · $0.013 | 84 · 87% · $0.151 |
+| AutoMemory v2 lean | 16K | 76 · 83% · $0.013 | 86 · **73% · $0.123** |
+| **AutoMemory v2 lean + handoff** | 16K | **81** · 89% · $0.013 | **88** · 89% · $0.147 |
+| … recap written by the Haiku summariser | 16K | — | 86 · 90% · $0.152 |
+| EoCC alone | 16K | 72 · 93% · $0.016 (15 overflows) | 83 · 100% · $0.175 (7 overflows) |
+
+Notes:
+- At 32K the window rarely binds (sessions peak at 16–21K; 3–9 compactions in 100 issues), so the settings there are within noise of each other.
+- At 16K, paired by issue, handoff resolves 7 issues ReSum misses and misses 2 it resolves (Haiku); 3 and 1 (Sonnet). The direction is consistent but not yet certain.
+- An earlier 40-issue run (Django 4.2/5.0) graded only the tests whose ids name a test method, 63% of the official tests; every setting was graded the same way, so its comparisons hold, and it is superseded by this table.
 
 ### What the results show
 
@@ -105,21 +114,23 @@ Each cell: **issues resolved · cost vs ceiling · $ per resolved issue**.
    - CORAL's tools were barely used.
    - ReFold's Haiku recovery was 0.25.
 3. **Plain notes beat engineered memory systems.** MemoryOS, LightMem and Nemori scored 0.2–0.5 lower than a note workspace with the same compaction.
-4. **Match the memory layer to the work.**
+4. **On coding work under a tight window, NVIDIA's handoff recap beats ReSum's summary.** Its fields (applied changes and whether verified, dead ends, the next command) are what a coding session needs after a reset: at 16K it brings both models to the ceiling's accuracy or within one issue of it (81/100 against 82; 88/100 against 88) for 6–16 points more cost, because the agent writes about 45% more after a reset. On the synthetic multi-session tasks it only ties ReSum. The paper's method on its own, without AutoMemory's guard, previews and notes, overflowed the window and resolved the fewest issues.
+5. **Match the memory layer to the work.**
    - **Sessions that build on earlier results** (synthetic multi-session tasks): the note workspace is essential, and `automem_v2` / `automem_v2_strong` are best.
-   - **Independent tasks** (one coding issue per session): the workspace's note-taking is overhead, about 50% more tool calls. `automem_v2_lean` (previews, guard and compaction only) matches the ceiling's accuracy at 60–95% of its cost.
+   - **Independent tasks** (one coding issue per session): the workspace's note-taking is overhead, about 50% more tool calls. `automem_v2_lean` (previews, guard and compaction only) is the cheapest memory layer (73% of the ceiling's cost on Sonnet at 16K); `automem_v2_lean_handoff` is the accuracy-first choice.
 
 | Work | Preset |
 |---|---|
 | Multi-session work that builds on earlier results | `automem_v2`; `automem_v2_strong` for strong agent models, with a cheaper summariser (`#aux=`) |
-| Independent tasks (coding issues, tickets) | `automem_v2_lean` |
+| Independent tasks (coding issues, tickets), cost first | `automem_v2_lean` |
+| Independent tasks, accuracy first, tight window or long sessions | `automem_v2_lean_handoff` |
 | Smallest working context first | `automem_v2_slim` |
 | Short sessions on a large window | full history with provider caching may be enough |
 
 **Limitations:**
 - All runs use the Claude Code CLI route at list prices. Bedrock validation is blocked on credentials, and Codex/OpenAI pricing has not been re-priced.
 - The synthetic tasks emulate small windows to create memory pressure.
-- The SWE-bench set is 40 issues from one repository.
+- The SWE-bench set is 100 issues from one repository (Django).
 
 Quick start with your Claude Code CLI (no Bedrock needed):
 

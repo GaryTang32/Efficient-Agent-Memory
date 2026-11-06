@@ -104,6 +104,13 @@ def test_automem_handoff_keeps_notes_and_recent_steps():
     assert text.startswith("Task: audit task") and "<recap>" in text and "remember 7" in text
 
 
+def test_lean_handoff_preset():
+    from eam.techniques.auto_memory import AutoMemory
+
+    (t,) = build("automem_v2_lean_handoff")
+    assert isinstance(t, AutoMemory) and not t.workspace and t.compact == "handoff" and t.handoff_variant == "swe"
+
+
 def test_build_registers_eocc():
     (t,) = build("eocc:threshold=0.6,writer=aux,variant=swe")
     assert isinstance(t, HandoffCompaction) and t.writer == "aux" and t.variant == "swe"
