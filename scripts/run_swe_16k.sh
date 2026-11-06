@@ -14,4 +14,9 @@ sleep 3
 nohup .venv/bin/python scripts/run_swe.py --model cc-sonnet --aux-model cc-haiku --specs "${SPECS[@]}" --workdays "$N" \
   --issues 5 --window 16000 --workers 2 --validation "$V" --out results/swe_16k-sonnet.jsonl \
   > results/swe_16k-sonnet.log 2>&1 &
+sleep 3
+# Sonnet with the recap written by the Haiku summariser (Sonnet's own recap is billed at its output price)
+nohup .venv/bin/python scripts/run_swe.py --model cc-sonnet --aux-model cc-haiku \
+  --specs "$LEAN,compact=handoff_aux,handoff_variant=swe" --workdays "$N" --issues 5 --window 16000 --workers 2 \
+  --validation "$V" --out results/swe_16k-sonnet-aux.jsonl > results/swe_16k-sonnet-aux.log 2>&1 &
 wait
