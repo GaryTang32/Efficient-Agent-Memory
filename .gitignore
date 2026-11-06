@@ -12,5 +12,4 @@ papers/**/*.pdf
 
 # Experiment results, logs and analyses stay local
 docs/results/
-docs/overview.html
 scripts/docs_gen/overview_data.json
