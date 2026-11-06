@@ -1,0 +1,25 @@
+[project]
+name = "efficient-agent-memory"
+version = "0.1.0"
+description = "Test bench for agent memory and context-management techniques on Amazon Bedrock"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+bedrock = ["boto3>=1.35"]
+compression = ["llmlingua>=0.2"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+eam-bench = "eam.bench.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["eam*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
