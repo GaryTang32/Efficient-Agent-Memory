@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Efficient Agent Memory: a measured test bench and memory layer for long-running LLM agents"
+authors:
+  - family-names: Tang
+    given-names: Gary
+version: 0.1.0
+date-released: 2026-11-06
+license: MIT
+repository-code: "https://github.com/GaryTang32/Efficient-Agent-Memory"
+keywords:
+  - LLM agents
+  - agent memory
+  - context management
+  - prompt caching
+  - SWE-bench
