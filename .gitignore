@@ -6,8 +6,8 @@ __pycache__/
 *.egg-info/
 config/models.json
 
-# Downloaded papers (local reading copies; not redistributed)
-papers/**/*.pdf
+# Downloaded papers and anything derived from them (PDFs, sources, text extracts): local reading copies, never redistributed
+/papers/
 .venv-memory/
 
 # Experiment results, logs and analyses stay local
