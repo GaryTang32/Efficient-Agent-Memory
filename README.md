@@ -162,12 +162,14 @@ Windows follow NVIDIA's "You don't need long context": 16K (compaction at 12K) a
 | AutoMemory v2 lean | 16K | 76 · 83% · $0.013 | 86 · **73% · $0.123** |
 | **AutoMemory v2 lean + handoff** | 16K | **81** · 89% · $0.013 | **88** · 89% · $0.147 |
 | … recap written by the Haiku summariser | 16K | — | 86 · 90% · $0.152 |
+| … brief recap (`handoff_variant=brief`) | 16K | 78 · **79%** · **$0.012** | 84 · 77% · $0.134 |
 | EoCC alone | 16K | 72 · 93% · $0.016 (15 overflows) | 83 · 100% · $0.175 (7 overflows) |
 
 - At 32K the window rarely binds (sessions peak at 16–21K; 3–9 compactions in 100 issues), so the settings there
   are within noise of each other.
 - At 16K, paired by issue, handoff resolves 7 issues that ReSum misses and misses 2 that it resolves (Haiku); 3 and
   1 (Sonnet). The direction is consistent but not yet certain.
+- The brief recap (the same six fields as terse bullets, pointers instead of copied code, at most 150 words) cuts handoff's cost from 89% to 79% (Haiku) and 77% (Sonnet) and its agent output by 11–19%. On Haiku it gives the lowest cost per resolved issue of any setting; on Sonnet it loses handoff's accuracy gain (84 vs 88), so ReSum stays the cost-first choice there.
 - An earlier 40-issue run graded only the tests whose ids name a test method (63% of the official tests); it is
   superseded by this table.
 

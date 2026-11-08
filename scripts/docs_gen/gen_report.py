@@ -277,8 +277,8 @@ BLOCKED = [
 NEXT = [
     ("Decide the plugin's role", "Next", "med", "no API cost",
      "Both pilots (short and long sessions) found the plugin neutral in Claude Code, which already caches, compacts and filters output. Keep it as an optional, harmless add-on; aim further work at agents without these built-ins (custom loops on Bedrock, other CLIs)."),
-    ("Fewer agent tokens after a handoff reset", "Next", "med", "≈ $20–30",
-     "After a handoff reset the agent writes about 45% more output, which is the 6–16 points the recap costs. Cutting that would make the accurate preset cheap as well."),
+    ("Cheaper handoff recap", "Done", "low", "$25",
+     "A brief recap (six fields as terse bullets, pointers instead of code, at most 150 words) cut handoff's cost from 89% to 79% (Haiku) and 77% (Sonnet). On Haiku it has the lowest cost per resolved issue of any setting (78/100); on Sonnet it lost handoff's accuracy gain (84 vs 88 of 100), so ReSum stays cost-first there. Kept as an option: handoff_variant=brief."),
     ("Adaptive workspace", "Next", "med", "small",
      "Turn the note workspace on only when the task refers to earlier sessions, so one preset fits both multi-session and independent work."),
     ("More SWE-bench evidence for handoff", "Next", "low", "≈ $50–60",
@@ -377,6 +377,7 @@ def build():
       <tr><th>Same, strong agent model</th><td><code>automem_v2_strong</code></td><td>Sonnet solved 16/16 runs at 61%</td></tr>
       <tr><th>Independent coding issues, cost first</th><td><code>automem_v2_lean</code></td><td>Sonnet $0.123 per resolved issue at 16K</td></tr>
       <tr><th>Independent coding issues, accuracy first</th><td><code>automem_v2_lean_handoff</code></td><td>81 / 88 of 100 resolved at 16K</td></tr>
+      <tr><th>Independent coding issues on Haiku-class models, cost per solve</th><td><code>…,handoff_variant=brief</code></td><td>Haiku $0.0122 per resolved issue, the lowest; 78/100</td></tr>
       <tr><th>Short sessions on a large window</th><td>cached full history</td><td>Haiku 77/100 at 62% at 32K</td></tr>
     </tbody></table></div>''')}
 
