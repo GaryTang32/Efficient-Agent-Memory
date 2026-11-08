@@ -221,6 +221,14 @@ flowchart TD
 | `automem_v2_lean` | `automem:workspace=false,ingest=0.1` | Independent tasks (coding issues, tickets), cost first |
 | `automem_v2_lean_handoff` | `…,compact=handoff,handoff_variant=swe` | Independent tasks, accuracy first under a tight window |
 
+Choose by whether later sessions reuse what earlier ones learn (the same small codebase, running totals, an audit
+over rounds): then `automem_v2`; a backlog of unrelated tickets: `automem_v2_lean`. When unsure, `automem_v2`: its
+mistake (extra note-taking) cost about 40–60 points in our runs, the opposite one about twice as much. An automatic
+choice (`automem_v2_adaptive`, a short question to the summariser at each session start) was tested and not adopted:
+it matched lean's accuracy on the Django issues at about 10 points more cost, and on the synthetic tasks it judged
+`repo_debug`'s second session independent (new bug reports in the same small library), which raised its cost from
+126% to 255% (Haiku) and from 50% to 175% (Sonnet) of the ceiling.
+
 ---
 
 ## Quick start
