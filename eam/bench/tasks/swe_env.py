@@ -1,4 +1,4 @@
-"""Real-repository environment for the SWE workday task: SWE-bench Verified issues on Django.
+"""Real-repository environment for the SWE workday task: SWE-bench Verified issues on Django (and SymPy).
 
 Data: SWE-bench Verified (Jimenez et al., ICLR 2024; Chowdhury et al., OpenAI 2024), downloaded at run time from the
 Hugging Face datasets server into ``~/.cache/eam/swe`` (not redistributed). Repository: a blobless clone of
@@ -13,6 +13,11 @@ Many of SWE-bench's Django test ids are the first line of a test's docstring (un
 name at verbosity 2), so they are matched in the log, not turned into labels. Names are compared without the
 method suffix that Python 3.11 adds ("test_x (mod.Class.test_x)" = "test_x (mod.Class)"): the dataset uses the
 older form for Django < 5.0, and every version runs on Python 3.11 here.
+
+SymPy (the out-of-sample repository) follows SWE-bench's SymPy spec: Python 3.9 with mpmath 1.3.0, the test files
+the test patch touches run with ``bin/test -C --verbose``, and the log is read with SWE-bench's ``parse_log_sympy``
+(ported below). Every function takes the repository name (default Django); `evaluate` and `resolved` read it from
+the instance.
 """
 
 from __future__ import annotations
@@ -29,14 +34,37 @@ from pathlib import Path
 CACHE = Path(os.environ.get("EAM_SWE_CACHE", Path.home() / ".cache" / "eam" / "swe"))
 REPO = CACHE / "django.git"
 VENV_PY = CACHE / "venv-django" / "bin" / "python"
+DJANGO = "django/django"
+PROFILES = {
+    DJANGO: {"name": "django", "python": "3.11", "deps": ["asgiref>=3.7", "sqlparse>=0.3.1", "pytz"]},
+    "sympy/sympy": {"name": "sympy", "python": "3.9", "deps": ["mpmath==1.3.0"]},
+}
 DATA = CACHE / "verified.json"
 ROWS_URL = ("https://datasets-server.huggingface.co/rows?dataset=princeton-nlp/SWE-bench_Verified&config=default"
             "&split=test&offset={offset}&length=100")
 _TEST_ID = re.compile(r"^(\w+) \(([\w.]+)\)")
 
 
-def ensure_setup() -> None:
-    """Download the dataset, clone Django and create the test virtualenv (once)."""
+def repo_dir(repo: str = DJANGO) -> Path:
+    return CACHE / f"{PROFILES[repo]['name']}.git"
+
+
+def venv_py(repo: str = DJANGO) -> Path:
+    return CACHE / f"venv-{PROFILES[repo]['name']}" / "bin" / "python"
+
+
+def _interpreter(version: str) -> str:
+    """A `python<version>` on PATH, else one installed by uv (`uv python install <version>`)."""
+    found = shutil.which(f"python{version}")
+    if found:
+        return found
+    subprocess.run(["uv", "python", "install", version], check=True, capture_output=True)
+    return subprocess.run(["uv", "python", "find", version], check=True, capture_output=True,
+                          text=True).stdout.strip()
+
+
+def ensure_setup(repo: str = DJANGO) -> None:
+    """Download the dataset, clone the repository and create its test virtualenv (once)."""
     CACHE.mkdir(parents=True, exist_ok=True)
     if not DATA.exists():
         rows = []
@@ -44,29 +72,39 @@ def ensure_setup() -> None:
             with urllib.request.urlopen(ROWS_URL.format(offset=offset), timeout=120) as resp:
                 rows += [r["row"] for r in json.load(resp)["rows"]]
         DATA.write_text(json.dumps(rows))
-    if not REPO.exists():
+    prof, rdir, py = PROFILES[repo], repo_dir(repo), venv_py(repo)
+    if not rdir.exists():
         subprocess.run(["git", "clone", "-q", "--filter=blob:none", "--no-checkout",
-                        "https://github.com/django/django", str(REPO)], check=True)
-    if not VENV_PY.exists():
-        subprocess.run(["python3.11", "-m", "venv", str(VENV_PY.parent.parent)], check=True)
-        subprocess.run([str(VENV_PY), "-m", "pip", "-q", "install", "asgiref>=3.7", "sqlparse>=0.3.1", "pytz"], check=True)
+                        f"https://github.com/{repo}", str(rdir)], check=True)
+    if not py.exists():
+        subprocess.run([_interpreter(prof["python"]), "-m", "venv", str(py.parent.parent)], check=True)
+        subprocess.run([str(py), "-m", "pip", "-q", "install", *prof["deps"]], check=True)
 
 
 def instances() -> dict[str, dict]:
     return {r["instance_id"]: r for r in json.loads(DATA.read_text())}
 
 
-def worktree(commit: str) -> Path:
+def worktree(commit: str, repo: str = DJANGO) -> Path:
     """A fresh working copy at `commit` (remove with `drop_worktree`)."""
     d = Path(tempfile.mkdtemp(prefix="eam-swe-"))
     shutil.rmtree(d)
-    subprocess.run(["git", "-C", str(REPO), "worktree", "add", "-q", "--detach", str(d), commit], check=True,
-                   capture_output=True)
+    subprocess.run(["git", "-C", str(repo_dir(repo)), "worktree", "add", "-q", "--detach", str(d), commit],
+                   check=True, capture_output=True)
     return d
 
 
+def _main_repo(d: Path) -> Path:
+    """The clone a worktree belongs to (its `.git` file reads "gitdir: <clone>/worktrees/<name>")."""
+    try:
+        gitdir = Path((d / ".git").read_text().split("gitdir:", 1)[1].strip())
+        return gitdir.parent.parent
+    except (OSError, IndexError):
+        return REPO
+
+
 def drop_worktree(d: Path) -> None:
-    subprocess.run(["git", "-C", str(REPO), "worktree", "remove", "--force", str(d)], capture_output=True)
+    subprocess.run(["git", "-C", str(_main_repo(d)), "worktree", "remove", "--force", str(d)], capture_output=True)
     shutil.rmtree(d, ignore_errors=True)
 
 
@@ -91,11 +129,14 @@ _NON_TEST_EXTS = (".json", ".png", "csv", ".txt", ".md", ".jpg", ".jpeg", ".pkl"
 _PY311_NAME = re.compile(r"^(\w+) \(([\w.]+)\.\1\)$")
 
 
-def directives(test_patch: str) -> list[str]:
-    """SWE-bench's test directives for Django: the files the test patch touches, as runtests.py module labels."""
+def directives(test_patch: str, repo: str = DJANGO) -> list[str]:
+    """SWE-bench's test directives: the files the test patch touches (for Django as runtests.py module labels)."""
     out = []
     for f in re.findall(r"diff --git a/.* b/(.*)", test_patch):
         if any(f.endswith(ext) for ext in _NON_TEST_EXTS):
+            continue
+        if repo != DJANGO:
+            out.append(f)
             continue
         f = f[:-3] if f.endswith(".py") else f
         f = f[len("tests/"):] if f.startswith("tests/") else f
@@ -107,8 +148,27 @@ def canonical(name: str) -> str:
     return _PY311_NAME.sub(r"\1 (\2)", name.strip())
 
 
-def parse_log(log: str) -> dict[str, str]:
+def parse_log_sympy(log: str) -> dict[str, str]:
+    """SWE-bench's `parse_log_sympy` (harness/log_parsers), ported: test function name -> status."""
+    status: dict[str, str] = {}
+    for m in re.findall(r"(_*) (.*)\.py:(.*) (_*)", log):
+        status[f"{m[1]}.py:{m[2]}"] = "FAILED"
+    for line in log.split("\n"):
+        line = line.strip()
+        if line.startswith("test_"):
+            if line.endswith(" E"):
+                status[line.split()[0]] = "ERROR"
+            if line.endswith(" F"):
+                status[line.split()[0]] = "FAILED"
+            if line.endswith(" ok"):
+                status[line.split()[0]] = "PASSED"
+    return status
+
+
+def parse_log(log: str, repo: str = DJANGO) -> dict[str, str]:
     """SWE-bench's `parse_log_django` (harness/log_parsers), ported: test name or docstring line -> status."""
+    if repo != DJANGO:
+        return parse_log_sympy(log)
     status: dict[str, str] = {}
     prev = None
     for line in log.split("\n"):
@@ -157,11 +217,15 @@ def report(status: dict[str, str], inst: dict) -> dict[str, list[str]]:
     return out
 
 
-def run_tests(d: Path, selector: str | list[str] = "", timeout: int = 600) -> tuple[int, str]:
-    """Django's own test runner in working copy `d`; returns (exit code, output)."""
+def run_tests(d: Path, selector: str | list[str] = "", timeout: int = 600, repo: str = DJANGO) -> tuple[int, str]:
+    """The repository's own test runner in working copy `d`; returns (exit code, output)."""
     args = selector if isinstance(selector, list) else selector.split()
-    cmd = [str(VENV_PY), "tests/runtests.py", "--parallel", "1", "-v", "2", *args]
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(d)}
+    if repo == DJANGO:
+        cmd = [str(VENV_PY), "tests/runtests.py", "--parallel", "1", "-v", "2", *args]
+    else:  # SWE-bench's SymPy test command
+        cmd = [str(venv_py(repo)), "bin/test", "-C", "--verbose", *args]
+        env["PYTHONWARNINGS"] = "ignore::UserWarning,ignore::SyntaxWarning"
     try:
         r = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
@@ -174,11 +238,12 @@ def evaluate(d: Path, inst: dict, timeout: int = 1200) -> dict | None:
     (None if the patch does not apply)."""
     if not apply_patch(d, inst["test_patch"]):
         return None
-    mods = directives(inst["test_patch"])
+    repo = inst.get("repo", DJANGO)
+    mods = directives(inst["test_patch"], repo)
     if not mods:
         return {"f2p_failed": json.loads(inst["FAIL_TO_PASS"]), "p2p_failed": [], "f2p_passed": [], "log": ""}
-    code, out = run_tests(d, mods, timeout=timeout)
-    return {**report(parse_log(out), inst), "log": out[-3000:]}
+    code, out = run_tests(d, mods, timeout=timeout, repo=repo)
+    return {**report(parse_log(out, repo), inst), "log": out[-3000:]}
 
 
 def resolved(d: Path, inst: dict) -> tuple[bool, str]:

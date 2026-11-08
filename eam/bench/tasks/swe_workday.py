@@ -1,5 +1,5 @@
-"""swe_workday: a working day on a real repository. Consecutive real GitHub issues from SWE-bench Verified (Django;
-4.2 / 5.0 in the 40-issue set, 4.0–5.0 in the wider set), one session per issue; each session starts from a fresh working copy at that issue's base commit, and
+"""swe_workday: a working day on a real repository. Consecutive real GitHub issues from SWE-bench Verified (Django:
+4.2 / 5.0 in the 40-issue set, 4.0–5.0 in the wider set; SymPy as the out-of-sample repository), one session per issue; each session starts from a fresh working copy at that issue's base commit, and
 the conversation of earlier sessions is gone. Only the memory method's own store (notes, retrieved history) carries
 over, which is what a daily Codex or Claude Code user lives with.
 
@@ -23,14 +23,22 @@ from eam.llm.types import ToolSpec
 
 VALIDATION = Path(__file__).resolve().parents[3] / "results" / "swe_validation.jsonl"
 _ISSUE = re.compile(r"ISSUE (\d+) of (\d+)")
+PROFILES = {
+    "django/django": {"title": "Django", "runner": "Django's own test runner (tests/runtests.py)",
+                      "example": "'sitemaps_tests' or 'sitemaps_tests.test_http.HTTPSitemapTests'"},
+    "sympy/sympy": {"title": "SymPy", "runner": "SymPy's own test runner (bin/test)",
+                    "example": "'sympy/core/tests/test_basic.py' or 'sympy/core/tests/test_basic.py -k test_subs'"},
+}
 
 
 def validated(path: Path = VALIDATION) -> list[str]:
     if not path.exists():
         return []
     rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    ok = {r["instance_id"] for r in rows if r["fails_before"] and r["passes_with_gold"]}
+    ok = {r["instance_id"]: r for r in rows if r["fails_before"] and r["passes_with_gold"]}
     inst = E.instances()
+    if all("order" in r for r in ok.values()):  # an explicit order (scripts/swe_related.py)
+        return sorted(ok, key=lambda i: ok[i]["order"])
     return sorted(ok, key=lambda i: (inst[i]["created_at"], i))
 
 
@@ -43,6 +51,9 @@ def generate(seed: int, n_issues: int = 5, context_limit: int | None = 64_000,
     issues = ids[seed * n_issues: (seed + 1) * n_issues]
     if len(issues) < n_issues:
         raise ValueError(f"only {len(ids)} validated issues; workday {seed} needs {(seed + 1) * n_issues}")
+    repo = inst[issues[0]]["repo"]
+    prof = PROFILES[repo]
+    E.ensure_setup(repo)
     state: dict = {"k": None, "root": None, "roots": {}}
 
     def current(ctx) -> int:
@@ -52,7 +63,7 @@ def generate(seed: int, n_issues: int = 5, context_limit: int | None = 64_000,
     def root(ctx) -> Path:
         k = current(ctx)
         if k not in state["roots"]:
-            state["roots"][k] = E.worktree(inst[issues[k]]["base_commit"])
+            state["roots"][k] = E.worktree(inst[issues[k]]["base_commit"], repo)
         return state["roots"][k]
 
     def safe(ctx, path: str) -> Path:
@@ -115,12 +126,12 @@ def generate(seed: int, n_issues: int = 5, context_limit: int | None = 64_000,
     def run_tests(args, ctx):
         selector = str(args.get("labels", "") or "").strip()
         if not selector:
-            raise ValueError("give test labels, e.g. 'sitemaps_tests' or 'admin_views.tests.AdminViewBasicTest'")
-        code, out = E.run_tests(root(ctx), selector, timeout=600)
+            raise ValueError(f"give test labels, e.g. {prof['example']}")
+        code, out = E.run_tests(root(ctx), selector, timeout=600, repo=repo)
         return f"[exit code {code}]\n" + out[-12000:]
 
     tools = [
-        Tool(ToolSpec("list_files", "List one directory of the Django repository (directories end with '/').",
+        Tool(ToolSpec("list_files", f"List one directory of the {prof['title']} repository (directories end with '/').",
                       {"type": "object", "properties": {"path": {"type": "string", "description": "default: the root"}}}),
              list_files),
         Tool(ToolSpec("read_file", "Read a file with line numbers, at most 200 lines per call.",
@@ -135,12 +146,11 @@ def generate(seed: int, n_issues: int = 5, context_limit: int | None = 64_000,
                       {"type": "object", "properties": {"path": {"type": "string"}, "old": {"type": "string"},
                                                         "new": {"type": "string"}},
                        "required": ["path", "old", "new"]}), replace_in_file),
-        Tool(ToolSpec("run_tests", "Run Django's own test runner (tests/runtests.py) on test labels, e.g. "
-                      "'sitemaps_tests' or 'sitemaps_tests.test_http.HTTPSitemapTests'; returns the output.",
+        Tool(ToolSpec("run_tests", f"Run {prof['runner']} on test labels, e.g. {prof['example']}; returns the output.",
                       {"type": "object", "properties": {"labels": {"type": "string"}}, "required": ["labels"]}),
              run_tests),
     ]
-    intro = ("You are a maintainer of Django (the repository is checked out at the commit the issue was reported "
+    intro = (f"You are a maintainer of {prof['title']} (the repository is checked out at the commit the issue was reported "
              "against). Today you work through a queue of real issues, one per session. Each session is a separate "
              "conversation; the conversation of earlier sessions is not available. Fix the issue in the library code "
              "(do not edit or add tests; hidden tests will check the fix), check it with run_tests, and finish with "
