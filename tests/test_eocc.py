@@ -31,6 +31,13 @@ def test_prompt_is_the_papers_with_placeholders_filled():
     assert "Do not invent observations" in compaction_prompt("general")
 
 
+def test_brief_variant_is_short_and_capped():
+    p = compaction_prompt("brief")
+    assert "at most 150 words" in p and "6. Next" in p and "{" not in p
+    assert HandoffCompaction(variant="brief").recap_tokens == 600
+    assert HandoffCompaction(variant="swe").recap_tokens == 4096
+
+
 @pytest.mark.parametrize("writer", ["agent", "aux"])
 def test_handoff_resets_to_task_and_recap(writer):
     side = []
@@ -78,7 +85,8 @@ def test_handoff_skips_when_the_recap_is_empty():
 
 @pytest.mark.parametrize("family", ["research_corpus", "ops_stream", "ledger_audit", "repo_debug"])
 @pytest.mark.parametrize("spec", ["eocc", "eocc:writer=aux", "automem:ingest=0.1,compact=handoff",
-                                  "automem:workspace=false,ingest=0.1,compact=handoff_aux,handoff_variant=swe"])
+                                  "automem:workspace=false,ingest=0.1,compact=handoff_aux,handoff_variant=swe",
+                                  "automem:workspace=false,ingest=0.1,compact=handoff,handoff_variant=brief,keep_recent=0"])
 def test_handoff_runs_on_every_long_task(family, spec):
     out = run_instance(FAMILIES[family](0), spec, backend="mock", model=M, aux_model=M, models=MOCK_MODELS)
     assert "steps" in out
