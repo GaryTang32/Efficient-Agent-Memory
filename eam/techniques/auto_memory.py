@@ -5,6 +5,12 @@ can be ablated against the full skill.
 Components and the evidence behind them:
 
 * ``workspace`` — persistent notes across sessions (FS-Researcher's file-system workspace, our minimal port).
+  ``workspace="adaptive"`` decides per session: a short question to the summariser model at session start
+  ("does this work depend on other sessions?"), majority of three answers; once a session is judged dependent, the
+  workspace stays on for the rest of the job. Dependent sessions get the full workspace (note tools, the
+  instruction to save results, recall); independent ones run lean. Autosave stays on either way, since it costs no
+  calls. The note tools were essential for multi-session tasks and about 50% extra tool calls on independent coding
+  issues (docs/results/2026-11-05-swe-bench-workdays.md).
   The only model-robust method on the multi-session tasks, in combination with compaction.
 * ``recall`` — the notes are put into the first message of every session (and after every compaction), instead
   of trusting the model to call `read_notes`: Haiku re-read old files rather than its notes (0.34 vs Sonnet 0.99).
@@ -41,6 +47,15 @@ from eam.tokens import estimate_tokens
 GUARDED = ("[Output of {name} moved out of the context to keep it within the window ({tokens:,} tokens). "
            "It is stored at {pointer}; read it with read_artifact (offset/length to page), one item per step.]")
 REBUILDS = ("resum_rebuild", "openclaw_rebuild", "handoff_rebuild")
+ADAPTIVE_Q = ("Decide whether the work in this session depends on other sessions of the same job.\n\n"
+              "DEPENDENT: the job spans several sessions (days, rounds) and state carries between them: running totals, "
+              "stock or balances, a report that grows across rounds, corrections to earlier figures, findings a later "
+              "session must reuse. This holds from the first session on, because later sessions will need its "
+              "results.\n"
+              "INDEPENDENT: the session can be solved from its own task text and tools alone and nothing it produces "
+              "is needed later, for example one item of a numbered queue of separate issues, tickets or questions that "
+              "are each solvable on their own, even when they come one after another.\n\n"
+              "Answer with exactly one word: DEPENDENT or INDEPENDENT.\n\n<task>\n{task}\n</task>")
 RECALL = ("Your persistent workspace notes (saved in earlier sessions or before the conversation was "
           "compacted):\n\n{notes}\n\nUse them; keep them up to date with write_note.")
 
@@ -51,11 +66,12 @@ class AutoMemory(Technique):
     provenance = "this project (combination of measured methods; ReSum prompts official)"
     cache_safe = False  # compaction rewrites history (rarely)
 
-    def __init__(self, workspace: bool = True, recall: bool = True, autosave: bool = True, guard: float = 0.9,
+    def __init__(self, workspace: bool | str = True, recall: bool = True, autosave: bool = True, guard: float = 0.9,
                  compact: str = "resum", trigger: float = 0.75, default_window: int = 200_000,
                  token_ratio: float = 1.5, keep_recent: int = 2, fold: bool = False, ingest: float = 0.0,
                  ingest_preview: int = 750, handoff_variant: str = "general"):
-        self.workspace = bool(workspace)
+        self.adaptive = str(workspace).lower() == "adaptive"
+        self.workspace = self.adaptive or (workspace not in (False, "false", "False", 0, "0"))
         self.recall = bool(recall) and self.workspace
         self.autosave = bool(autosave) and self.workspace
         self.guard = float(guard)  # 0 disables the guard
@@ -73,6 +89,8 @@ class AutoMemory(Technique):
         self._refold = ReFold() if self.fold else None
         self._stash: dict[str, str] = {}
         self._ws = NoteWorkspace() if self.workspace else None
+        self._ws_on = self.workspace and not self.adaptive  # this session's choice (adaptive: decided in tools())
+        self._dependent = False
         self._compactor = None
         self._sessions = 0
 
@@ -113,8 +131,24 @@ class AutoMemory(Technique):
         return None
 
     # ---- hooks ---------------------------------------------------------------------------------------------
+    def _decide(self, ctx) -> bool:
+        """Adaptive workspace: one short side question per session (unclear answers keep the workspace on)."""
+        if self._dependent:  # sticky: once a session of this job depended on others, later sessions keep the notes
+            ctx.log("automem_adaptive", workspace=True, answer="sticky")
+            return True
+        # a majority of three short answers: single answers vary between calls
+        votes = [ctx.call_aux(ADAPTIVE_Q.format(task=ctx.task[:3000]), purpose="adaptive", max_tokens=8).strip().upper()
+                 for _ in range(3)]
+        independent = sum("INDEPENDENT" in v for v in votes)
+        on = independent < 2  # unclear answers count towards keeping the workspace
+        self._dependent = on
+        ctx.log("automem_adaptive", workspace=on, votes=[v[:12] for v in votes])
+        return on
+
     def tools(self, ctx):
-        tools = self._ws.tools(ctx) if self._ws else []
+        # called once per session, before the system prompt is built: the adaptive choice is made here
+        self._ws_on = self._decide(ctx) if self.adaptive else self.workspace
+        tools = self._ws.tools(ctx) if self._ws and self._ws_on else []
         if self._refold:
             tools += self._refold.tools(ctx)
         if self.ingest:
@@ -127,7 +161,7 @@ class AutoMemory(Technique):
 
     def system_addendum(self):
         parts = []
-        if self._ws:
+        if self._ws and self._ws_on:
             parts.append(self._ws.system_addendum())
         if self._refold:
             parts.append(self._refold.system_addendum())
@@ -149,7 +183,7 @@ class AutoMemory(Technique):
         self._stash.clear()
         if self._refold:
             self._refold.on_session_start(ctx)  # puts the PROGRESS/STALE protocol into the first message
-        if self.recall and self._notes_text():
+        if self.recall and self._ws_on and self._notes_text():
             ctx.preamble.append(RECALL.format(notes=self._notes_text()))
             ctx.log("automem_recall", chars=len(self._notes_text()))
 
@@ -175,7 +209,7 @@ class AutoMemory(Technique):
                 compacted = any(e["kind"] in REBUILDS for e in ctx.events[n_before:])
             if compacted:
                 ctx.state["automem_predicted"] = 0
-                if self.recall and self._notes_text():  # the reset message replaced the session's first message
+                if self.recall and self._ws_on and self._notes_text():  # the reset replaced the first message
                     ctx.messages[0]["content"].append({"text": RECALL.format(notes=self._notes_text())})
                 if self._refold:  # the rebuilt history starts a new step numbering; the protocol stays visible
                     self._refold._reset()
@@ -242,6 +276,6 @@ class AutoMemory(Technique):
             ctx.log("automem_autosave", chars=len(answer))
 
     def describe(self) -> str:
-        return (f"automem(workspace={self.workspace}, recall={self.recall}, autosave={self.autosave}, "
+        return (f"automem(workspace={'adaptive' if self.adaptive else self.workspace}, recall={self.recall}, autosave={self.autosave}, "
                 f"guard={self.guard}, compact={self.compact}, trigger={self.trigger}, keep_recent={self.keep_recent}, "
                 f"fold={self.fold}, ingest={self.ingest})")
