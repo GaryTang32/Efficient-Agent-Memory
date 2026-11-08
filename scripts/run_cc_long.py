@@ -118,7 +118,10 @@ def run_workday(w: int, setting: str, model: str, ids: list[str], inst: dict, bu
             r = s.pop("result")
             sid = s.pop("session_id") or sid
             u = r.get("usage") or {}
-            row["turns"].append({"issue": iid, **s, "cost_usd": r.get("total_cost_usd", 0.0),
+            # with --resume, total_cost_usd is the session's running total: a turn's own cost is the increase
+            cum = r.get("total_cost_usd", 0.0) or 0.0
+            prev = row["turns"][-1]["cum_cost_usd"] if row["turns"] else 0.0
+            row["turns"].append({"issue": iid, **s, "cum_cost_usd": cum, "cost_usd": max(0.0, cum - prev),
                                  "num_turns": r.get("num_turns"), "subtype": r.get("subtype"),
                                  "uncached": u.get("input_tokens", 0), "cache_read": u.get("cache_read_input_tokens", 0),
                                  "cache_write": u.get("cache_creation_input_tokens", 0),

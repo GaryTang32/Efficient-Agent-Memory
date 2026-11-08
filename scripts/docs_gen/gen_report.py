@@ -72,6 +72,51 @@ P = pilot()
 TARGET = 20
 
 
+def long_pilot():
+    """Long sessions (12 issues per Claude Code session) and the fresh-session control on the same issues."""
+    out = {}
+    for m in ("haiku", "sonnet"):
+        f, g = ROOT / "results" / f"cc_long-{m}.jsonl", ROOT / "results" / f"cc_short36-{m}.jsonl"
+        if not f.exists():
+            continue
+        rows = [json.loads(x) for x in f.read_text().splitlines() if x.strip()]
+        cell = {}
+        for s in ("plain", "plugin"):
+            rs = [r for r in rows if r["setting"] == s]
+            cell[s] = dict(n=sum(len(r["issues"]) for r in rs), resolved=sum(r["resolved"] for r in rs),
+                           cost=sum(r["cost_usd"] for r in rs), compactions=sum(r["compactions"] for r in rs),
+                           previews=sum(r["previews"] for r in rs), sessions=len(rs))
+        if g.exists():
+            ids = {i for r in rows for i in r["issues"]}
+            sh = [json.loads(x) for x in g.read_text().splitlines() if x.strip()]
+            sh = [r for r in sh if r["instance_id"] in ids]
+            cell["fresh"] = dict(n=len(sh), resolved=sum(bool(r["resolved"]) for r in sh),
+                                 cost=sum(r["cost_usd"] for r in sh), compactions=0, previews=0, sessions=len(sh))
+        out[m] = cell
+    return out
+
+
+L = long_pilot()
+
+
+def long_table():
+    if not L:
+        return '<p class="note">The long-session pilot has not run yet.</p>'
+    body = []
+    for m, c in L.items():
+        for key, label in (("fresh", "a fresh session per issue"), ("plain", "one session per 12 issues"),
+                           ("plugin", "one session per 12 issues + automem")):
+            v = c.get(key)
+            if not v:
+                continue
+            body.append(f'<tr><th>{m.capitalize()} · {label}</th><td class="nm">{v["resolved"]}/{v["n"]}</td>'
+                        f'<td class="nm">${v["cost"]:.2f}</td><td class="nm">${v["cost"] / max(v["n"], 1):.4f}</td>'
+                        f'<td class="nm">{v["compactions"]}</td><td class="nm">{v["previews"]}</td></tr>')
+    return ('<div class="tbl-wrap"><table><thead><tr><th>Setting (same 36 issues)</th><th>Resolved</th><th>Cost</th>'
+            '<th>$ / issue</th><th>Compactions</th><th>Long outputs previewed</th></tr></thead><tbody>'
+            + "".join(body) + "</tbody></table></div>")
+
+
 def pilot_table():
     if not P:
         return '<p class="note">The pilot is running; its results will appear here when the page is regenerated.</p>'
@@ -97,7 +142,7 @@ def pilot_table():
                    '<div class="bad"><span class="k">What it does not show</span><ul class="plain">'
                    '<li>A saving caused by the plugin<span class="ev">Sonnet was 10% cheaper with no preview fired: run-to-run variation, one run per issue</span></li>'
                    '<li>The handoff recap or recall in Claude Code<span class="ev">no session compacted; each issue was a new project</span></li>'
-                   '<li>Long sessions<span class="ev">the next pilot: several issues in one session, full test modules, earlier compaction</span></li></ul></div></div>')
+                   '<li>Long sessions<span class="ev">tested next (4.3): still neutral</span></li></ul></div></div>')
     return (f'<p class="note">Pilot status: {status}.</p><div class="tbl-wrap"><table><thead><tr><th>Setting</th>'
             '<th>Resolved</th><th>Cost</th><th>$ / resolved</th><th>Median peak</th><th>Median turns</th>'
             '<th>Long outputs previewed</th></tr></thead><tbody>' + "".join(body) + "</tbody></table></div>" + reading)
@@ -129,7 +174,7 @@ NAV_ITEMS = [
     ("wd", "01", "Work done", "wrench", [("wd-time", "Timeline"), ("wd-built", "What was built"), ("wd-spend", "Runs and spend")]),
     ("fd", "02", "Findings", "bulb", [("fd-key", "Key findings"), ("fd-works", "What works, what does not")]),
     ("rs", "03", "Results", "gauge", [("rs-synth", "Four long tasks"), ("rs-swe", "SWE-bench Verified"), ("rs-pick", "Which preset")]),
-    ("cc", "04", "Claude Code plugin", "layers", [("cc-how", "How it works"), ("cc-pilot", "Pilot in Claude Code"), ("cc-vs", "Versus other memory tools")]),
+    ("cc", "04", "Claude Code plugin", "layers", [("cc-how", "How it works"), ("cc-pilot", "Pilot in Claude Code"), ("cc-long", "Long sessions"), ("cc-vs", "Versus other memory tools")]),
     ("todo", "05", "To-do", "flag", [("todo-blocked", "Blocked"), ("todo-next", "Next steps"), ("todo-gaps", "Known gaps")]),
 ]
 
@@ -177,8 +222,9 @@ def pilot_headline():
         a, b = c["plain"], c["plugin"]
         bits.append(f'{m.capitalize()}: {b["resolved"]}/{b["n"]} resolved with the plugin vs {a["resolved"]}/{a["n"]} without, '
                     f'at {(b["cost"] / a["cost"] - 1) * 100:+.0f}% cost' if a["cost"] else m)
-    return ("Pilot inside Claude Code, 20 issues per model: " + "; ".join(bits)
-            + ". Neutral on short sessions: previews fired 3 times in 40 sessions, so the long-session benefit is still untested.")
+    return ("Pilots inside Claude Code: on single issues (" + "; ".join(bits)
+            + ") and in 12-issue sessions with compaction (cost −4% Haiku, +1% Sonnet, ±1 issue), the plugin is neutral."
+            " Claude Code already caches, compacts and filters long output itself.")
 
 
 TIMELINE_ROWS = [
@@ -188,7 +234,7 @@ TIMELINE_ROWS = [
     ("5 Nov", "Sonnet seeds; SWE-bench (40 issues)", "Decision rule fixed in advance; first real-repository workdays", "automem_v2_strong; lean wins on real code"),
     ("6 Nov", "NVIDIA handoff; 100 issues", "EoCC prompts; SWE-bench-faithful grading; 32K and 16K windows; 480 runs", "automem_v2_lean_handoff for accuracy-first coding"),
     ("6–7 Nov", "Front page and housekeeping", "README with charts and flowcharts; CONTRIBUTING, CITATION; papers folder ignored", "PRs #1–#3 merged"),
-    ("8 Nov", "Claude Code plugin and pilot", "Hooks: previews from Claude Code's saved output, handoff at compaction, recall, autosave", "Measured inside Claude Code (pilot)"),
+    ("8 Nov", "Claude Code plugin and pilots", "Hooks: previews from Claude Code's saved output, handoff at compaction, recall, autosave; short and 12-issue sessions", "Neutral inside Claude Code"),
 ]
 
 
@@ -206,7 +252,8 @@ SPEND = [("Phases 1–3 and the eight new methods", "≈ 1,900", 820), ("AutoMem
 
 def spend_table():
     pil = sum(c[s]["cost"] for c in P.values() for s in ("plain", "plugin")) if P else 0
-    rows = SPEND + ([("Claude Code pilot (so far)" if min(c["plain"]["n"] for c in P.values()) < TARGET else "Claude Code pilot",
+    lp = sum(c[k]["cost"] for c in L.values() for k in ("plain", "plugin", "fresh") if k in c) if L else 0
+    rows = SPEND + ([("Claude Code long sessions and fresh-session control", str(sum(c[k]["n"] for c in L.values() for k in c)), lp)] if L else []) + ([("Claude Code pilot (so far)" if min(c["plain"]["n"] for c in P.values()) < TARGET else "Claude Code pilot",
                       str(sum(c[s]["n"] for c in P.values() for s in ("plain", "plugin"))), pil)] if P else [])
     body = "".join(f'<tr><th>{E(a)}</th><td class="nm">{E(b)}</td><td class="nm">${c:,.0f}</td></tr>' for a, b, c in rows)
     tot = sum(c for _, _, c in rows)
@@ -228,8 +275,8 @@ BLOCKED = [
      "No non-Claude model has been measured. GPT-5.6 is reachable through Bedrock's OpenAI-compatible endpoints with the same key; prices go in config/models.json."),
 ]
 NEXT = [
-    ("Long-session pilot in Claude Code", "Next", "med", "≈ $30–50",
-     "The 20-issue pilot showed the plugin is neutral on short sessions (same accuracy, cost within ±10%, 3 previews in 40 sessions). Its benefit needs long sessions: several issues in one session, full test modules, compaction at 100K (CLAUDE_CODE_AUTO_COMPACT_WINDOW)."),
+    ("Decide the plugin's role", "Next", "med", "no API cost",
+     "Both pilots (short and long sessions) found the plugin neutral in Claude Code, which already caches, compacts and filters output. Keep it as an optional, harmless add-on; aim further work at agents without these built-ins (custom loops on Bedrock, other CLIs)."),
     ("Fewer agent tokens after a handoff reset", "Next", "med", "≈ $20–30",
      "After a handoff reset the agent writes about 45% more output, which is the 6–16 points the recap costs. Cutting that would make the accurate preset cheap as well."),
     ("Adaptive workspace", "Next", "med", "small",
@@ -343,8 +390,15 @@ def build():
       <tr><th>Stop</th><td>Saves each turn's final message as a project note.</td><td>Autosave</td></tr>
     </tbody></table></div>
     <p class="note">Checked live: with a 108 KB output, plain Claude Code showed the model lines 1–234; with the plugin the model saw the head and the real last line, and found a middle line in the saved file without re-running the command.</p>''')}
-  {section("cc-pilot", "4.2", "gauge", "Pilot inside Claude Code", f'''<p class="lead-in">Headless Claude Code with its own tools and agent loop, one fresh session per SWE-bench Verified issue, the same prompt and the same spending cap, with and without the plugin.</p>{pilot_table()}''')}
-  {section("cc-vs", "4.3", "grid", "Versus other memory tools", '''
+  {section("cc-pilot", "4.2", "gauge", "Pilot inside Claude Code: single issues", f'''<p class="lead-in">Headless Claude Code with its own tools and agent loop, one fresh session per SWE-bench Verified issue, the same prompt and the same spending cap, with and without the plugin.</p>{pilot_table()}''')}
+  {section("cc-long", "4.3", "trend", "Long sessions", f'''<p class="lead-in">One Claude Code session works through 12 issues, one turn per issue, with compaction at 100K tokens; three such sessions per model and setting. A fresh session per issue on the same 36 issues is the control.</p>{long_table()}
+    <div class="duo"><div class="good"><span class="k">What it shows</span><ul class="plain">
+      <li>The plugin acted<span class="ev">compaction fired 4–11 times per model with the handoff recap; 8 long outputs previewed</span></li>
+      <li>It still made no difference<span class="ev">cost −4% (Haiku) and +1% (Sonnet), within one issue</span></li>
+      <li>A fresh session per issue is a little cheaper<span class="ev">7% (Sonnet) and 27% (Haiku) less per issue than one long session, at similar accuracy</span></li></ul></div>
+    <div class="bad"><span class="k">Measurement note</span><ul class="plain">
+      <li>With <code>--resume</code>, Claude Code reports the session's running cost<span class="ev">a first summary added the running totals and overstated long sessions about 6×; corrected here</span></li></ul></div></div>''')}
+  {section("cc-vs", "4.4", "grid", "Versus other memory tools", '''
     <div class="tbl-wrap"><table><thead><tr><th></th><th>Claude Code's own memory</th><th>Memory services (fact extraction + retrieval)</th><th>Model-managed memory (memory tools)</th><th>This plugin</th></tr></thead><tbody>
       <tr><th>Who acts</th><td>Harness: CLAUDE.md and auto memory loaded each session; compaction near the context limit</td><td>An extra LLM extracts facts; embeddings retrieve them</td><td>The agent decides when to read and write memory</td><td>Harness hooks, no extra LLM calls</td></tr>
       <tr><th>Targets</th><td>Persistent instructions and facts</td><td>Long-term recall across chats</td><td>Long-term recall</td><td>Context size and cost per task, plus recall</td></tr>

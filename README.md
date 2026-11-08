@@ -312,8 +312,21 @@ prompt and spending cap, with and without the plugin):
 
 The plugin is neutral on short sessions: same accuracy, cost within ±10%, no errors. Claude Code solved most issues in
 4–6 turns with prompts of 37–41K tokens (mostly its own instructions), so long outputs were rare; Sonnet's 10% saving
-came with no preview fired and is run-to-run variation. The plugin's benefit is untested on long sessions (several
-issues in one session, full test modules, compaction), which is the next pilot.
+came with no preview fired and is run-to-run variation.
+
+**Long sessions** (one Claude Code session per 12 issues, compaction at 100K tokens, 3 sessions per model and setting;
+a fresh session per issue on the same 36 issues as the control):
+
+| | Fresh session per issue | One long session | One long session + plugin |
+|---|---|---|---|
+| Haiku: resolved · $ per issue | 32/36 · $0.0073 | 30/36 · $0.0093 | 29/36 · $0.0089 |
+| Sonnet: resolved · $ per issue | 31/36 · $0.0658 | 32/36 · $0.0706 | 33/36 · $0.0716 |
+
+Here the plugin acted (compaction fired 4–11 times per model with its handoff recap; 8 long outputs previewed) and
+still made no difference (−4% and +1% cost, within one issue). Claude Code already caches prompts, compacts, saves long
+outputs, and its agent filters test logs itself (`| tail`, `| grep FAIL`), so these memory steps find little left to
+do. A fresh session per unrelated task was 7–27% cheaper per issue than one long session. The plugin stays a safe,
+optional add-on; the memory layer pays off in agents without these built-ins and in multi-session work (section above).
 
 ---
 
@@ -405,7 +418,7 @@ git-ignored); every experiment's run script is in `scripts/`.
   `scripts/run_bedrock_validation.sh`); Codex / OpenAI pricing has not been re-priced.
 - The synthetic tasks emulate small windows to create memory pressure.
 - The SWE-bench set is 100 issues from one repository (Django).
-- Next: a long-session pilot of the Claude Code plugin, an adaptive workspace (on only when a task refers to earlier results), and fewer agent tokens after a handoff
+- Next: an adaptive workspace (on only when a task refers to earlier results), and fewer agent tokens after a handoff
   reset, which is the remaining cost of the handoff recap.
 
 ---
