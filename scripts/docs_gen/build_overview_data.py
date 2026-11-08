@@ -31,7 +31,11 @@ for f in FILES:
         g[k[:3]].append(r)
 out = {}
 for (m, f, s), rs in g.items():
-    ref, fl = g[(m, f, "naive@native")], g[(m, f, "naive")]
+    # references on the method's own instances (paired), so a method run on fewer instances is not compared with
+    # the ceiling's mean over different ones
+    mine = {r["instance"] for r in rs}
+    ref = [r for r in g[(m, f, "naive@native")] if r["instance"] in mine] or g[(m, f, "naive@native")]
+    fl = [r for r in g[(m, f, "naive")] if r["instance"] in mine] or g[(m, f, "naive")]
     rc = st.median(r["cost_usd"] for r in ref)
     rt = st.median(r["prompt_tokens"] for r in ref)
     rp = st.median(r["peak_prompt_tokens"] for r in ref)

@@ -119,9 +119,12 @@ def run_workday(w: int, setting: str, model: str, ids: list[str], inst: dict, bu
             sid = s.pop("session_id") or sid
             u = r.get("usage") or {}
             # with --resume, total_cost_usd is the session's running total: a turn's own cost is the increase
-            cum = r.get("total_cost_usd", 0.0) or 0.0
+            # (a turn without a result event, e.g. a timeout, carries the last total forward and is marked unknown)
             prev = row["turns"][-1]["cum_cost_usd"] if row["turns"] else 0.0
+            known = r.get("total_cost_usd") is not None
+            cum = float(r["total_cost_usd"]) if known else prev
             row["turns"].append({"issue": iid, **s, "cum_cost_usd": cum, "cost_usd": max(0.0, cum - prev),
+                                 "cost_unknown": not known,
                                  "num_turns": r.get("num_turns"), "subtype": r.get("subtype"),
                                  "uncached": u.get("input_tokens", 0), "cache_read": u.get("cache_read_input_tokens", 0),
                                  "cache_write": u.get("cache_creation_input_tokens", 0),
@@ -130,8 +133,10 @@ def run_workday(w: int, setting: str, model: str, ids: list[str], inst: dict, bu
                 row.setdefault("errors", []).append(f"issue {k}: no session id")
                 break
         for k, (iid, d) in enumerate(zip(ids, dirs), 1):
+            if k > len(row["turns"]):  # the session stopped before this issue
+                break
             ok, _ = E.resolved(d, inst[iid])
-            row["turns"][k - 1]["resolved"] = ok if k <= len(row["turns"]) else False
+            row["turns"][k - 1]["resolved"] = ok
     except Exception as exc:
         row.setdefault("errors", []).append(f"{type(exc).__name__}: {exc}")
     finally:

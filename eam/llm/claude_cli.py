@@ -23,6 +23,7 @@ import time
 from typing import Any
 
 from eam.llm.text_tools import parse_tool_calls, render_message_blocks, tool_instructions, transcript_preamble
+from eam.cost import usage_cost
 from eam.llm.types import Request, Response, Usage
 
 
@@ -87,61 +88,102 @@ class ClaudeCLIClient:
         cap = max(int(os.environ.get("EAM_CLAUDE_MAX_OUTPUT", 32000)), max_tokens)
         env = {**os.environ, "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(cap), **(self.env or {})}
         last = ""
+        # what failed attempts used: error results (usage and reported cost) and timed-out calls (usage of the
+        # assistant messages streamed before the timeout, priced from usage); added to the returned result
+        failed = dict(self._NO_FAILURES)
         for attempt in range(self.retries + 1):
             try:
                 proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
                                       timeout=self.timeout_s, env=env)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as exc:
                 last = f"timed out after {self.timeout_s}s"
+                out = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+                failed["_failed_attempts"] += 1
+                failed["_unpriced_usage"] = failed["_unpriced_usage"] + self._scan(out)[2]
                 continue
-            result = None
-            for line in proc.stdout.splitlines():
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if obj.get("type") == "result":
-                    result = obj
+            result, first_prompt, _ = self._scan(proc.stdout)
+            if result is not None:
+                result = {**result, "_first_prompt": first_prompt}
             if result and not result.get("is_error"):
-                return result
+                return {**result, **failed}
             if result and "output token maximum" in str(result.get("result", "")):
                 # A runaway reply hit the output cap. Hand back an empty, truncated reply (its usage is still
                 # billed) so the agent loop handles it like any other malformed turn instead of failing the run.
-                return {**result, "result": "", "is_error": False, "stop_reason": "max_tokens"}
+                return {**result, "result": "", "is_error": False, "stop_reason": "max_tokens", **failed}
+            if result:
+                failed["_failed_attempts"] += 1
+                failed["_failed_usage"] = failed["_failed_usage"] + self._usage(result)
+                failed["_failed_cost"] += float(result.get("total_cost_usd") or 0.0)
             last = (result or {}).get("result") or proc.stderr[-500:] or proc.stdout[-500:]
             wait = self._seconds_until_reset(str(last))
             if wait is not None and self.wait_for_limit and wait < 6 * 3600:
                 # usage-limit window: sleep until the stated reset and try again (not counted as an attempt), so a
                 # batch pauses instead of turning every queued run into an error row
                 time.sleep(wait + 120)
-                return self._run(cmd, stdin, max_tokens)
+                again = self._run(cmd, stdin, max_tokens)
+                return {**again, "_failed_attempts": again["_failed_attempts"] + failed["_failed_attempts"] - 1,
+                        "_failed_usage": again["_failed_usage"] + failed["_failed_usage"],
+                        "_failed_cost": again["_failed_cost"] + failed["_failed_cost"],
+                        "_unpriced_usage": again["_unpriced_usage"] + failed["_unpriced_usage"]}
             if attempt < self.retries:
                 time.sleep(2 * (attempt + 1))
         raise ClaudeCLIError(f"claude -p failed: {last}")
 
+    _NO_FAILURES = {"_failed_attempts": 0, "_failed_usage": Usage(), "_failed_cost": 0.0, "_unpriced_usage": Usage()}
+
+    @classmethod
+    def _scan(cls, stdout: str) -> tuple[dict[str, Any] | None, int | None, Usage]:
+        """The stream's result event; the prompt size of its first request (from the first assistant message's
+        usage); and the summed usage of its assistant messages (one per message id)."""
+        result, first_prompt, per_message = None, None, {}
+        for line in stdout.splitlines():
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("type") == "result":
+                result = obj
+            elif obj.get("type") == "assistant" and isinstance(obj.get("message"), dict):
+                msg = obj["message"]
+                u = cls._usage({"usage": msg.get("usage")})
+                per_message[msg.get("id") or len(per_message)] = u
+                if first_prompt is None and u.prompt_tokens:
+                    first_prompt = u.prompt_tokens
+        total = Usage()
+        for u in per_message.values():
+            total = total + u
+        return result, first_prompt, total
+
     def converse(self, req: Request) -> Response:
         cmd, stdin = self.build_command(req)
         t0 = time.perf_counter()
-        result = self._run(cmd, stdin, req.max_tokens)
+        result = {**self._NO_FAILURES, **self._run(cmd, stdin, req.max_tokens)}
         text = result.get("result") or ""
         visible, uses = self._parse(req, text)
-        usage = self._usage(result)
+        usage = self._usage(result) + result["_failed_usage"] + result["_unpriced_usage"]
         context_tokens = self._context_size(result)
-        retries = int(result.get("num_turns") or 1) - 1  # internal continuation turns count as retries
-        cost = result.get("total_cost_usd") or 0.0
+        # internal continuation turns and failed attempts count as retries
+        retries = int(result.get("num_turns") or 1) - 1 + result["_failed_attempts"]
+        reported = result.get("total_cost_usd")  # None (not 0) when absent, so the meter prices the usage
+        cost = (None if reported is None else
+                float(reported) + result["_failed_cost"] + usage_cost(result["_unpriced_usage"], req.model))
         if req.tools and not uses and not visible:
             # Empty or unparseable reply (rare): ask once more instead of ending the run with no answer.
             cmd2 = list(cmd)
             i = cmd2.index("--system-prompt") + 1
             cmd2[i] += ("\n\nYour previous reply could not be parsed. Reply with either <tool_call> blocks "
                         "in the exact format above, or your final answer as plain text.")
-            result = self._run(cmd2, stdin, req.max_tokens)
+            result = {**self._NO_FAILURES, **self._run(cmd2, stdin, req.max_tokens)}
             text = result.get("result") or ""
             visible, uses = self._parse(req, text)
             context_tokens = self._context_size(result)
-            retries += int(result.get("num_turns") or 1)
-            usage = usage + self._usage(result)
-            cost += result.get("total_cost_usd") or 0.0
+            retries += int(result.get("num_turns") or 1) + result["_failed_attempts"]
+            extra = self._usage(result) + result["_failed_usage"] + result["_unpriced_usage"]
+            reported2 = result.get("total_cost_usd")
+            cost2 = (usage_cost(extra, req.model) if reported2 is None else float(reported2) + result["_failed_cost"]
+                     + usage_cost(result["_unpriced_usage"], req.model))
+            cost = (usage_cost(usage, req.model) if cost is None else cost) + cost2
+            usage = usage + extra
         wall_ms = (time.perf_counter() - t0) * 1000
         content: list[dict[str, Any]] = ([{"text": visible}] if visible else []) + uses
         if not content:
@@ -161,8 +203,11 @@ class ClaudeCLIClient:
 
     @classmethod
     def _context_size(cls, result: dict[str, Any]) -> int:
-        """Prompt size of the request itself. With T internal turns Claude Code reports
-        T·P + (earlier turns' output) prompt tokens, so P ≈ (prompt − output) / T."""
+        """Prompt size of the request itself: the first assistant message's prompt usage when the stream has it.
+        Otherwise, with T internal turns Claude Code reports T·P + (earlier turns' output) prompt tokens, so
+        P ≈ (prompt − output) / T (biased when the last turn's output is large)."""
+        if result.get("_first_prompt"):
+            return int(result["_first_prompt"])
         u = cls._usage(result)
         turns = max(1, int(result.get("num_turns") or 1))
         if turns == 1:

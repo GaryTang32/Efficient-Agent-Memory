@@ -233,9 +233,22 @@ def run_tests(d: Path, selector: str | list[str] = "", timeout: int = 600, repo:
     return r.returncode, (r.stdout + r.stderr)
 
 
+def reset_test_files(d: Path, inst: dict) -> None:
+    """As SWE-bench does before applying the test patch: the files it touches go back to the base commit (and the
+    ones it creates are removed), so edits the agent made to them neither block the patch nor stay in the run."""
+    for f in dict.fromkeys(re.findall(r"diff --git a/.* b/(.*)", inst["test_patch"])):
+        tracked = subprocess.run(["git", "-C", str(d), "ls-tree", "--name-only", inst["base_commit"], "--", f],
+                                 capture_output=True, text=True).stdout.strip()
+        if tracked:
+            subprocess.run(["git", "-C", str(d), "checkout", inst["base_commit"], "--", f], capture_output=True)
+        else:
+            (d / f).unlink(missing_ok=True)
+
+
 def evaluate(d: Path, inst: dict, timeout: int = 1200) -> dict | None:
     """Apply the test patch to `d` (modifies it), run the touched test modules, return SWE-bench's report
     (None if the patch does not apply)."""
+    reset_test_files(d, inst)
     if not apply_patch(d, inst["test_patch"]):
         return None
     repo = inst.get("repo", DJANGO)

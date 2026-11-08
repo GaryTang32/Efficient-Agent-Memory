@@ -93,6 +93,7 @@ class SelfCompact(Technique):
                       tools=[t.spec for t in tools], max_tokens=max_tokens, tag=tag)
         resp = ctx.llm.converse(req)
         ctx.meter.record(tag, ctx.model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
+        ctx.own_history_response(resp)  # over the window: the session ends after this hook
         return resp
 
     def before_call(self, ctx):
@@ -115,6 +116,8 @@ class SelfCompact(Technique):
                 return
             st["last_probe"] = iteration
             resp = self._call(ctx, P.SELFCHECK_PROMPT, self.probe_tokens, "selfcompact:probe")
+            if ctx.stop_reason:
+                return
             answers = parse_rubric(resp.text) if not resp.tool_uses else dict.fromkeys(FIELDS)
             v, reason = verdict(answers)
             ctx.log("selfcompact_probe", answers=answers, verdict=v, reason=reason, tokens=tokens,
@@ -125,6 +128,8 @@ class SelfCompact(Technique):
         for _ in range(3):
             resp = self._call(ctx, f"{P.SUMMARIZE_PROMPT}\n\nQuestion being researched: {ctx.task}",
                               self.summary_tokens, "selfcompact:summary")
+            if ctx.stop_reason:
+                return
             raw = re.sub(r"<think>.*?</think>", "", resp.text or "", flags=re.DOTALL).strip()
             m = re.search(r"<summary>\s*(.*?)\s*</summary>", raw, flags=re.DOTALL | re.IGNORECASE)
             summary = m.group(1).strip() if m else raw

@@ -175,4 +175,5 @@ def generate(seed: int, n_issues: int = 5, context_limit: int | None = 64_000,
         family="swe_workday", instance_id=f"swe-{seed}", prompt=rounds[-1], tools=tools, check=lambda a: False,
         gold=", ".join(issues), oracle=oracle, max_steps=60, rounds=rounds, round_score=round_score,
         context_limit=context_limit, step_observation_budget=step_observation_budget, disclose_limit=disclose_limit,
+        grade_unfinished=True,
     )
