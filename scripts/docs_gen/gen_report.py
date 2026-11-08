@@ -88,9 +88,19 @@ def pilot_table():
                     f'with the plugin {c["only_plugin"]}, only without it {c["only_plain"]}.</td></tr>')
     done = min(c["plain"]["n"] for c in P.values())
     status = ("complete" if done >= TARGET and len(P) == 2 else f"partial: {done} of {TARGET} issues paired so far")
+    reading = ""
+    if status == "complete":
+        reading = ('<div class="duo"><div class="good"><span class="k">What the pilot shows</span><ul class="plain">'
+                   '<li>The plugin is safe to install<span class="ev">same accuracy on both models; no errors; cost within ±10%</span></li>'
+                   '<li>Claude Code sessions on single issues are short<span class="ev">median 4–6 turns; prompts of 37–41K tokens, almost all Claude Code\'s own instructions and tools</span></li>'
+                   '<li>Long outputs are rare there<span class="ev">3 previews in 20 Haiku sessions, none in 20 Sonnet sessions; Claude Code\'s own output saving never triggered</span></li></ul></div>'
+                   '<div class="bad"><span class="k">What it does not show</span><ul class="plain">'
+                   '<li>A saving caused by the plugin<span class="ev">Sonnet was 10% cheaper with no preview fired: run-to-run variation, one run per issue</span></li>'
+                   '<li>The handoff recap or recall in Claude Code<span class="ev">no session compacted; each issue was a new project</span></li>'
+                   '<li>Long sessions<span class="ev">the next pilot: several issues in one session, full test modules, earlier compaction</span></li></ul></div></div>')
     return (f'<p class="note">Pilot status: {status}.</p><div class="tbl-wrap"><table><thead><tr><th>Setting</th>'
             '<th>Resolved</th><th>Cost</th><th>$ / resolved</th><th>Median peak</th><th>Median turns</th>'
-            '<th>Long outputs previewed</th></tr></thead><tbody>' + "".join(body) + "</tbody></table></div>")
+            '<th>Long outputs previewed</th></tr></thead><tbody>' + "".join(body) + "</tbody></table></div>" + reading)
 
 
 # ---- page pieces --------------------------------------------------------------------------------------------
@@ -167,7 +177,8 @@ def pilot_headline():
         a, b = c["plain"], c["plugin"]
         bits.append(f'{m.capitalize()}: {b["resolved"]}/{b["n"]} resolved with the plugin vs {a["resolved"]}/{a["n"]} without, '
                     f'at {(b["cost"] / a["cost"] - 1) * 100:+.0f}% cost' if a["cost"] else m)
-    return "Pilot inside Claude Code (same issues, same prompt): " + "; ".join(bits) + "."
+    return ("Pilot inside Claude Code, 20 issues per model: " + "; ".join(bits)
+            + ". Neutral on short sessions: previews fired 3 times in 40 sessions, so the long-session benefit is still untested.")
 
 
 TIMELINE_ROWS = [
@@ -217,8 +228,8 @@ BLOCKED = [
      "No non-Claude model has been measured. GPT-5.6 is reachable through Bedrock's OpenAI-compatible endpoints with the same key; prices go in config/models.json."),
 ]
 NEXT = [
-    ("Finish and extend the Claude Code pilot", "Running" if P and min(c["plain"]["n"] for c in P.values()) < TARGET else "Next", "med", "$60–100 for 100 issues",
-     "20 issues per model first; if the plugin holds accuracy at lower cost, run all 100 issues on both models to make the result firm."),
+    ("Long-session pilot in Claude Code", "Next", "med", "≈ $30–50",
+     "The 20-issue pilot showed the plugin is neutral on short sessions (same accuracy, cost within ±10%, 3 previews in 40 sessions). Its benefit needs long sessions: several issues in one session, full test modules, compaction at 100K (CLAUDE_CODE_AUTO_COMPACT_WINDOW)."),
     ("Fewer agent tokens after a handoff reset", "Next", "med", "≈ $20–30",
      "After a handoff reset the agent writes about 45% more output, which is the 6–16 points the recap costs. Cutting that would make the accurate preset cheap as well."),
     ("Adaptive workspace", "Next", "med", "small",
