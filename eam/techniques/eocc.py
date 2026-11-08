@@ -13,6 +13,9 @@ conversation, so the whole history is read from the prompt cache and only the re
 ``writer="aux"`` is this project's variant: the run's summariser (``--aux-model``) gets the conversation as a
 transcript plus the same prompt, as AutoMemory does with ReSum (a cheaper model summarising for a stronger agent).
 
+Variants: ``swe`` and ``general`` are the paper's prompts; ``brief`` is this project's: the same six fields as terse
+bullets, pointers instead of copied code or output, at most 150 words (600 output tokens).
+
 Deviations (this project's, documented): the paper gives the prompts as outlines; the texts that fill
 ``{persistence}``, ``{handoff_details}``, ``{submission_reminder}`` and the recap section are ours (below). The
 paper's harness counts tokens with the provider's usage; ours uses the last real prompt size, as every other method
@@ -40,9 +43,30 @@ RECAP_SECTION = ("You are continuing this task from the compacted state of the p
                  "<recap>\n{recap}\n</recap>")
 
 
+# This project's brief variant: the paper's six fields, asked for as terse bullets with pointers instead of copied code
+# or output, and capped. The full recap cost 1,200-1,800 output tokens per reset on Sonnet and stayed in every later
+# prompt (docs/results/2026-11-06-handoff-and-swe-100.md).
+BRIEF_PROMPT = """Stop work. Write only a brief handoff recap, at most 150 words; do not call tools.
+The conversation will reset to the system prompt, the task and this recap. {persistence}
+
+Use terse bullets under six headings:
+1. Objective - one line.
+2. Facts - paths, symbols, values, errors (observed, not guessed).
+3. Changes - file: what changed; verified or not.
+4. Checks - command: result.
+5. Dead ends - what failed and should not be repeated.
+6. Next - the immediate next command or edit, and when the task is done.
+
+Name files, line numbers and commands instead of copying code or output. {handoff_details}
+{submission_reminder}"""
+VARIANTS = (*P.PROMPTS, "brief")
+RECAP_TOKENS = {"brief": 600}
+
+
 def compaction_prompt(variant: str = "general") -> str:
-    return P.PROMPTS[variant].format(persistence=PERSISTENCE, handoff_details=HANDOFF_DETAILS,
-                                     submission_reminder=SUBMISSION_REMINDER)
+    template = BRIEF_PROMPT if variant == "brief" else P.PROMPTS[variant]
+    return template.format(persistence=PERSISTENCE, handoff_details=HANDOFF_DETAILS,
+                           submission_reminder=SUBMISSION_REMINDER)
 
 
 def _is_gauge(block) -> bool:
@@ -60,12 +84,12 @@ class HandoffCompaction(Technique):
                  trigger_tokens: float | None = None):
         if writer not in ("agent", "aux"):
             raise ValueError("writer must be 'agent' or 'aux'")
-        if variant not in P.PROMPTS:
-            raise ValueError(f"variant must be one of {sorted(P.PROMPTS)}")
+        if variant not in VARIANTS:
+            raise ValueError(f"variant must be one of {sorted(VARIANTS)}")
         self.threshold = float(threshold)
         self.writer = writer
         self.variant = variant
-        self.recap_tokens = int(recap_tokens)
+        self.recap_tokens = min(int(recap_tokens), RECAP_TOKENS.get(variant, int(recap_tokens)))
         self.first = first
         self.default_window = int(default_window)
         self._trigger_tokens = trigger_tokens  # absolute override (AutoMemory passes its own trigger)
