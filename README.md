@@ -10,13 +10,13 @@ OpenAI-compatible endpoint.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-2a78d6.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-2a78d6.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-235%20passing-1baf7a.svg)](tests)
+[![Tests](https://img.shields.io/badge/tests-242%20passing-1baf7a.svg)](tests)
 [![Benchmark runs](https://img.shields.io/badge/benchmark%20runs-%E2%89%882%2C800-52514e.svg)](#results)
 [![SWE-bench Verified](https://img.shields.io/badge/SWE--bench%20Verified-100%20Django%20issues-52514e.svg)](#real-repositories-swe-bench-verified)
 [![MCP server](https://img.shields.io/badge/MCP-server-52514e.svg)](#mcp-server)
 
 [Results](#results) · [How it works](#how-automemory-works) · [Which preset?](#which-preset-should-i-use) ·
-[Quick start](#quick-start) · [Methods](#methods-tested) · [Interactive overview](docs/overview.html) ·
+[Quick start](#quick-start) · [Claude Code plugin](#claude-code-plugin) · [Methods](#methods-tested) · [Interactive overview](docs/overview.html) ·
 [Contributing](#contributing)
 
 </div>
@@ -30,7 +30,7 @@ OpenAI-compatible endpoint.
 | 🎯 **Ceiling accuracy below its cost** | AutoMemory v2 matches the unoptimised agent's accuracy on four long tasks at **85%** (Claude Haiku) and **58%** (Claude Sonnet) of its cost. |
 | 🧪 **27 methods and variants, measured the same way** | Faithful ports of published methods (ReSum, AgentDiet, ReFold, SJC, CADOC, AKV, CORAL, SelfCompact, NVIDIA EoCC, MemoryOS, LightMem, Nemori, …), each placed between the same floor and ceiling. |
 | 🛠️ **Real repositories** | On 100 SWE-bench Verified Django issues, `automem_v2_lean` costs **$0.123 per resolved issue** on Sonnet (ceiling: $0.165); with NVIDIA's handoff recap it reaches the ceiling's accuracy. |
-| 📦 **Installable** | One memory layer, three ways: a bench technique, a framework-agnostic Python library, and an MCP server for Claude Code and other MCP clients. |
+| 📦 **Installable** | One memory layer, four ways: a bench technique, a framework-agnostic Python library, an MCP server, and a Claude Code plugin. |
 
 > **The core lesson:** fewer tokens is not fewer dollars. Re-sent history is cheap while it stays in the prompt cache
 > (0.05–0.1× the input price); rewriting it is billed as cache writes (1.25–2×). The methods that pay off act at
@@ -286,6 +286,37 @@ Tools: `recall`, `write_note`, `read_notes`, `save_session`, `offload`, `read_ar
 
 ---
 
+## Claude Code plugin
+
+[`plugins/automem`](plugins/automem) runs the measured harness steps as Claude Code hooks. It makes no extra model calls,
+never rewrites cached history, and leaves your permission rules alone.
+
+```bash
+claude --plugin-dir plugins/automem
+```
+
+| Hook | What it does |
+|---|---|
+| `PostToolUse` (Bash) | Long output reaches the model as head + tail. When Claude Code has cut the output to its own head-only preview, the tail is read from Claude Code's saved copy, so test summaries and failures at the end stay visible. |
+| `PreCompact` | Compaction keeps NVIDIA's six-field handoff recap. |
+| `SessionStart` | Recalls this project's notes at startup, resume, `/clear` and after compaction. |
+| `Stop` | Saves each turn's final message as a project note. |
+
+**Pilot inside Claude Code** (headless Claude Code with its own tools, 20 SWE-bench Verified issues per model, same
+prompt and spending cap, with and without the plugin):
+
+| | Resolved | Cost | Long outputs previewed |
+|---|---|---|---|
+| Haiku: plain / plugin | 16 / 16 | $0.115 / $0.121 (+5%) | — / 3 |
+| Sonnet: plain / plugin | 15 / 16 | $1.288 / $1.153 (−10%) | — / 0 |
+
+The plugin is neutral on short sessions: same accuracy, cost within ±10%, no errors. Claude Code solved most issues in
+4–6 turns with prompts of 37–41K tokens (mostly its own instructions), so long outputs were rare; Sonnet's 10% saving
+came with no preview fired and is run-to-run variation. The plugin's benefit is untested on long sessions (several
+issues in one session, full test modules, compaction), which is the next pilot.
+
+---
+
 ## Methods tested
 
 Every technique follows its official code or prompts where they exist, and each module's docstring lists its
@@ -351,8 +382,10 @@ flowchart TB
 | Path | What is there |
 |---|---|
 | [`eam/`](eam/) | Harness: backends, agent loop with technique hooks, cost meter, techniques, tasks, library, MCP server |
-| [`tests/`](tests/) | 235 offline tests, including a mock run of every method on every long task |
+| [`tests/`](tests/) | 242 offline tests, including a mock run of every method on every long task and the Claude Code plugin's hooks |
+| [`plugins/automem/`](plugins/automem/) | The Claude Code plugin: hooks, skill, `/automem:handoff` |
 | [`scripts/`](scripts/) | Run scripts for every experiment, SWE-bench validation, docs generators |
+| [`docs/report.html`](docs/report.html) | The work report: work done, findings, results, the plugin and its pilot, to-do list ([rendered](https://claude.ai/artifact/89QC8QvXU4E3zCszkrnx2h)) |
 | [`docs/overview.html`](docs/overview.html) | The interactive overview: each method's mechanism, diagrams, charts ([rendered](https://claude.ai/artifact/JVkigqm5XYpmwbN2F11xdF)) |
 | [`docs/problem_statement.md`](docs/problem_statement.md) | Why this matters for everyday coding agents (Codex, Claude Code) |
 | [`docs/methodology.md`](docs/methodology.md) | Tasks, environment rules, metric definitions, procedure |
@@ -372,7 +405,7 @@ git-ignored); every experiment's run script is in `scripts/`.
   `scripts/run_bedrock_validation.sh`); Codex / OpenAI pricing has not been re-priced.
 - The synthetic tasks emulate small windows to create memory pressure.
 - The SWE-bench set is 100 issues from one repository (Django).
-- Next: an adaptive workspace (on only when a task refers to earlier results), and fewer agent tokens after a handoff
+- Next: a long-session pilot of the Claude Code plugin, an adaptive workspace (on only when a task refers to earlier results), and fewer agent tokens after a handoff
   reset, which is the remaining cost of the handoff recap.
 
 ---
