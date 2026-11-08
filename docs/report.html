@@ -1,0 +1,1011 @@
+<title>Efficient Agent Memory Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap">
+<style>
+  /* Layout: light-only technical brief, fluid to 1280px. Skim path = headings, summaries, charts, conclusion;
+     depth sits in step cards, tabs and the verification ladder. Diagrams follow diagram-design rules with this brief's tokens. */
+  :root {
+    color-scheme: light;
+    --bg: #FFFFFF;
+    --paper: #FFFFFF;
+    --surface: #EEF1F6;
+    --ink: #151A26;
+    --muted: #556074;
+    --soft: #6B7487;
+    --rule: #D8DDE6;
+    --rule-strong: #B4BCCA;
+    --accent: #2D4BC8;
+    --accent-tint: #E7EBFC;
+    --check: #0D7266;
+    --check-tint: #DFF1EC;
+    --warn: #B3261E;
+    --warn-tint: #F9E5E2;
+    --amber: #8A5A00;
+    --amber-tint: #FBEFD5;
+    --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-cond: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --violet: #5B3FB0;
+    --violet-tint: #EEEAFA;
+    --part: var(--accent);
+    --part-tint: var(--accent-tint);
+    --motion-fast: 160ms;
+    --motion-step: 480ms;
+    --motion-hold: 720ms;
+    --motion-total: 7200ms;
+    --motion-ease: cubic-bezier(.2,.8,.2,1);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body);
+    font-size: clamp(15px, 14px + 0.2vw, 16.5px); line-height: 1.55;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px;
+  }
+  main { width: 100%; max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: clamp(24px, 2.6vw, 34px); }
+  section, header { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  p { margin: 0; max-width: 100ch; }
+  a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  strong { font-weight: 600; }
+
+  /* Part colours: K3 blue, AREX teal, Evidence amber, Adoption violet */
+  [id^="k3"] { --part: var(--accent); --part-tint: var(--accent-tint); }
+  [id^="arex"] { --part: var(--check); --part-tint: var(--check-tint); }
+  #evidence, [id^="ev-"] { --part: var(--amber); --part-tint: var(--amber-tint); }
+  #adopt, [id^="ad-"] { --part: var(--violet); --part-tint: var(--violet-tint); }
+
+  .eyebrow { font-family: var(--font-cond); font-weight: 600; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  .hero { background: var(--accent-tint); border-top: 4px solid var(--accent); padding: 16px 22px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .hero .eyebrow { color: var(--accent); }
+  .hero-meta { margin: 2px 0 0; display: flex; flex-wrap: wrap; font-family: var(--font-cond); font-weight: 500; font-size: 0.84rem; color: var(--muted); }
+  .hero-meta span + span::before { content: "·"; margin: 0 10px; color: var(--rule-strong); }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+  h1 { font-size: clamp(2rem, 3.4vw, 2.75rem); line-height: 1.08; }
+  h2 { font-size: clamp(1.55rem, 2.4vw, 2rem); line-height: 1.15; }
+  h3 { font-size: clamp(1.2rem, 1.6vw, 1.4rem); line-height: 1.25; display: flex; gap: 10px; align-items: center; }
+  h3 .no { font-family: var(--font-mono); font-size: 0.82rem; font-weight: 500; color: var(--part); }
+  h4 { margin: 4px 0 0; font-family: var(--font-cond); font-weight: 600; font-size: 0.84rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+  h4:not(.sd-h) { display: flex; align-items: center; gap: 8px; }
+  h4:not(.sd-h)::before { content: ""; flex: none; width: 16px; height: 3px; border-radius: 1px; background: var(--part); }
+  .dek { font-family: var(--font-display); font-size: 1.16rem; line-height: 1.45; color: #2A3142; max-width: 100ch; }
+  .lead-in { color: #3B4354; font-family: var(--font-display); font-style: italic; font-size: 1.08rem; line-height: 1.45; }
+  .meta { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .note { font-size: 0.82rem; color: var(--muted); }
+  ul.plain { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 5px; max-width: 90ch; }
+  ul.plain li::marker { color: var(--muted); }
+
+  .brief { background: var(--surface); border-left: 3px solid var(--accent); border-radius: 2px; padding: 10px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .brief .rec strong { color: var(--accent); }
+  .brief .k { font-family: var(--font-cond); font-weight: 600; font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+  .brief .rec { font-size: 0.94rem; padding-top: 7px; border-top: 1px solid var(--rule-strong); }
+
+  details.glossary { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 7px 14px; }
+  details.glossary summary { cursor: pointer; font-family: var(--font-cond); font-weight: 600; font-size: 0.9rem; letter-spacing: 0.05em; text-transform: uppercase; }
+  details.glossary dl { margin: 8px 0 0; display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 6px 18px; font-size: 0.92rem; }
+  details.glossary dt { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+  details.glossary dd { margin: 0; color: var(--muted); }
+
+  .toc { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--rule); }
+  .toc > div { padding: 10px 14px; display: flex; flex-direction: column; gap: 3px; min-width: 0; border-left: 1px solid var(--rule); border-top: 3px solid var(--part); }
+  .toc > div:first-child { border-left: 0; padding-left: 0; }
+  .toc > div:nth-child(2) { --part: var(--check); --part-tint: var(--check-tint); }
+  .toc > div:nth-child(3) { --part: var(--amber); --part-tint: var(--amber-tint); }
+  .toc > div:nth-child(4) { --part: var(--violet); --part-tint: var(--violet-tint); }
+  .toc .part { font-family: var(--font-cond); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--part); }
+  .toc .ttl { font-family: var(--font-display); font-weight: 600; font-size: 1.24rem; line-height: 1.2; color: var(--ink); text-decoration: none; }
+  .toc .ttl:hover { color: var(--part); }
+  .toc .gist { font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .toc ol { list-style: none; margin: 3px 0 0; padding: 6px 0 0; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 1px; font-size: 0.86rem; }
+  .toc li { display: flex; gap: 8px; }
+  .toc li span { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); min-width: 2em; padding-top: 1px; }
+
+  .banner { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 18px; row-gap: 2px; border-top: 4px solid var(--part); padding-top: 12px; }
+  .banner::before { content: attr(data-pn); grid-column: 1; grid-row: 1 / span 3; align-self: center; font-family: var(--font-display); font-weight: 600; font-size: clamp(2.6rem, 4.2vw, 3.6rem); line-height: 0.9; letter-spacing: -0.03em; color: var(--part); }
+  .banner > * { grid-column: 2; }
+  .banner .tag { font-family: var(--font-cond); font-weight: 600; font-size: 0.82rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--part); }
+
+  .summary { margin: 0; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; display: grid; grid-template-columns: minmax(130px, 160px) minmax(0, 1fr); }
+  .summary dt, .summary dd { margin: 0; padding: 7px 14px; border-bottom: 1px solid var(--rule); }
+  .summary dt { font-family: var(--font-cond); font-weight: 600; font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--part); background: var(--part-tint); padding-top: 8px; }
+  .summary dd { font-size: 0.94rem; }
+  .summary dt:last-of-type, .summary dd:last-of-type { border-bottom: 0; }
+  .summary dd.bottom { font-family: var(--font-display); font-size: 1.08rem; font-weight: 600; color: var(--part); }
+
+  /* ---------- Diagram skin ---------- */
+  figure { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .diagram { overflow-x: auto; background: var(--paper); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 8px 0; }
+  svg.dg { display: block; width: 100%; height: auto; margin-inline: 0; }
+  figcaption { font-size: 0.8rem; color: var(--muted); line-height: 1.45; max-width: 110ch; }
+  .hint { display: none; font-style: italic; }
+  .bgp, .mk { fill: var(--paper); }
+  .nb { fill: var(--paper); stroke: var(--rule-strong); stroke-width: 1; }
+  .nb-check { fill: var(--check-tint); stroke: var(--check); stroke-width: 1; }
+  .nb-focal { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.2; }
+  .nb-dash { fill: var(--paper); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 5 4; }
+  .tg { fill: none; stroke: var(--rule-strong); stroke-width: 0.8; }
+  .tg-t { fill: var(--muted); font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.08em; }
+  .n-name { fill: var(--ink); font-family: var(--font-body); font-size: 13px; font-weight: 600; }
+  .n-sub { fill: var(--muted); font-family: var(--font-mono); font-size: 10.5px; }
+  .n-body { fill: var(--ink); font-family: var(--font-body); font-size: 12.5px; }
+  .lane-t { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.14em; }
+  .lane-s { fill: var(--soft); font-family: var(--font-mono); font-size: 10px; }
+  .a-lab { fill: var(--soft); font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.06em; }
+  .a-lab-acc { fill: var(--accent); font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.06em; }
+  .a-lab-warn { fill: var(--warn); font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.06em; }
+  .t-acc { fill: var(--accent); font-family: var(--font-mono); font-size: 11px; }
+  .t-check { fill: var(--check); font-family: var(--font-body); font-size: 13px; font-weight: 600; }
+  .t-warn { fill: var(--warn); font-family: var(--font-body); font-size: 13px; font-weight: 600; }
+  .ar { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+  .ar-acc { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .ar-dash { stroke: var(--muted); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .ar-warn { stroke: var(--warn); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .ar-thick { stroke: var(--accent); stroke-width: 5; fill: none; stroke-linecap: round; }
+  .rule-line { stroke: var(--rule); stroke-width: 1; }
+  .hd { fill: var(--muted); } .hd-acc { fill: var(--accent); } .hd-warn { fill: var(--warn); }
+  .dot { fill: var(--ink); }
+  .pill-real { fill: var(--check); }
+  .pill-real-t { fill: var(--paper); font-family: var(--font-mono); font-size: 10.5px; }
+  .pill-demo { fill: var(--paper); stroke: var(--muted); stroke-dasharray: 4 3; }
+  .pill-demo-t { fill: var(--muted); font-family: var(--font-mono); font-size: 10.5px; }
+  .chip-ok { fill: var(--check-tint); stroke: var(--check); stroke-width: 1; }
+  .chip-no { fill: var(--warn-tint); stroke: var(--warn); stroke-width: 1; }
+  .chip-ok-t { fill: var(--check); font-family: var(--font-body); font-size: 12px; font-weight: 600; }
+  .chip-no-t { fill: var(--warn); font-family: var(--font-body); font-size: 12px; font-weight: 600; }
+
+  /* Charts */
+  .chart { position: relative; }
+  .grid-l { stroke: var(--rule); stroke-width: 1; }
+  .base-l { stroke: var(--rule-strong); stroke-width: 1; }
+  .tick { fill: var(--soft); font-family: var(--font-mono); font-size: 10.5px; }
+  .bar-mut { fill: var(--muted); fill-opacity: 0.38; }
+  .bar-hi { fill: var(--check); }
+  .bar-acc { fill: var(--accent); }
+  .bar-warn { fill: var(--warn); fill-opacity: 0.85; }
+  .val { fill: var(--ink); font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+  .row { outline: none; }
+  .row .hit { fill: transparent; }
+  .row:hover .hit, .row:focus .hit { fill: var(--surface); }
+  .row:focus-visible .hit { stroke: var(--accent); stroke-width: 1.5; }
+  .tip { position: absolute; z-index: 5; transform: translate(-50%, -100%); pointer-events: none; background: var(--ink); color: var(--paper); font-family: var(--font-mono); font-size: 0.78rem; padding: 6px 10px; border-radius: 4px; max-width: 280px; line-height: 1.4; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .stat { display: flex; flex-direction: column; gap: 1px; padding-top: 6px; border-top: 2px solid var(--part); min-width: 0; }
+  .num { font-family: var(--font-display); font-size: 1.7rem; font-weight: 600; color: var(--part); font-variant-numeric: lining-nums tabular-nums; line-height: 1.1; }
+  .lbl { font-size: 0.8rem; color: var(--muted); line-height: 1.35; }
+
+  /* Buttons */
+  .btn { min-height: 36px; padding: 6px 12px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper); color: var(--ink); font: 600 0.85rem/1 var(--font-body); cursor: pointer; }
+  .btn:hover { border-color: var(--accent); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+  .btn-primary:hover { background: #2440B0; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .counter { font-family: var(--font-mono); font-size: 0.82rem; color: var(--muted); }
+
+  /* MoE explorer */
+  .moe { display: grid; grid-template-columns: minmax(0, 520px) minmax(0, 1fr); gap: 20px; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 14px; align-items: start; }
+  .moe-grid { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; }
+  .moe-grid .cell { aspect-ratio: 1; background: var(--surface); border-radius: 2px; transition: background 240ms var(--motion-ease); }
+  .moe-grid .cell.on { background: var(--accent); }
+  .moe-bar { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .moe-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .kv { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; font-size: 0.92rem; }
+  .kv dt { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); padding-top: 2px; }
+  .kv dd { margin: 0; font-family: var(--font-mono); font-weight: 500; }
+  .share { display: flex; flex-direction: column; gap: 4px; }
+  .share-track { height: 12px; background: var(--surface); border-radius: 2px; overflow: hidden; }
+  .share-fill { height: 100%; background: var(--accent); }
+  .why { font-size: 0.88rem; background: var(--accent-tint); border-radius: 2px; padding: 8px 12px; }
+  .why strong { color: var(--accent); }
+
+  /* ---------- Step walkthrough ---------- */
+  .stepper { display: flex; flex-direction: column; gap: 8px; }
+  .chips { display: none; flex-wrap: wrap; gap: 6px; }
+  .motion-ready .chips { display: flex; }
+  .motion-ready[data-frame="static"] .chips { display: none; }
+  .chips button { min-height: 32px; padding: 5px 10px; border: 1px solid var(--rule-strong); border-radius: 999px; background: var(--paper); color: var(--muted); font: 500 0.8rem/1 var(--font-mono); cursor: pointer; }
+  .chips button:hover { border-color: var(--accent); color: var(--ink); }
+  .motion-ready[data-step-current="0"] .chips [data-goto="0"],
+  .motion-ready[data-step-current="1"] .chips [data-goto="1"],
+  .motion-ready[data-step-current="2"] .chips [data-goto="2"],
+  .motion-ready[data-step-current="3"] .chips [data-goto="3"],
+  .motion-ready[data-step-current="4"] .chips [data-goto="4"],
+  .motion-ready[data-step-current="5"] .chips [data-goto="5"],
+  .motion-ready[data-step-current="6"] .chips [data-goto="6"] { background: var(--part); border-color: var(--part); color: var(--paper); }
+  .stepdetail { display: flex; flex-direction: column; gap: 8px; }
+  .stepdetail article { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 16px; background: var(--paper); border: 1px solid var(--rule); border-left: 3px solid var(--part); border-radius: 2px; padding: 10px 14px; }
+  .motion-ready .stepdetail article { display: none; }
+  .motion-ready[data-step-current="0"] .stepdetail article[data-n="0"],
+  .motion-ready[data-step-current="1"] .stepdetail article[data-n="1"],
+  .motion-ready[data-step-current="2"] .stepdetail article[data-n="2"],
+  .motion-ready[data-step-current="3"] .stepdetail article[data-n="3"],
+  .motion-ready[data-step-current="4"] .stepdetail article[data-n="4"],
+  .motion-ready[data-step-current="5"] .stepdetail article[data-n="5"],
+  .motion-ready[data-step-current="6"] .stepdetail article[data-n="6"],
+  .motion-ready[data-frame="static"] .stepdetail article { display: grid; }
+  .sd-k { font-family: var(--font-cond); font-weight: 600; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--part); margin-bottom: 2px; }
+  .sd-h { font-family: var(--font-display); font-size: 1.24rem; line-height: 1.25; margin: 0 0 4px; font-weight: 600; text-transform: none; letter-spacing: -0.005em; color: var(--ink); }
+  .sd-main p { font-size: 0.94rem; }
+  .sd-facts { margin: 0; display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 4px 12px; font-size: 0.9rem; align-content: start; }
+  .sd-facts dt { font-family: var(--font-cond); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+  .sd-facts dd { margin: 0; }
+  .sd-list { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+
+  /* Motion contract (diagram-design template, re-skinned). Overview frame shows the whole diagram. */
+  .motion-ready [data-motion-item] {
+    opacity: .2; transform: translateY(8px); transform-box: fill-box; transform-origin: center;
+    transition: opacity var(--motion-step) var(--motion-ease), transform var(--motion-step) var(--motion-ease);
+  }
+  .motion-ready [data-motion-item].is-visible,
+  .motion-ready[data-frame="start"] [data-motion-item],
+  .motion-ready[data-frame="end"] [data-motion-item],
+  .motion-ready[data-frame="static"] [data-motion-item] { opacity: 1; transform: none; }
+  .motion-ready:is([data-frame="step"], [data-frame="end"]) [data-motion-item].is-current :is(.nb, .nb-check, .nb-focal) { stroke: var(--accent); stroke-width: 2.6; }
+  [data-motion-controls] { display: none; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .motion-ready [data-motion-controls] { display: flex; }
+  [data-motion-controls][hidden] { display: none !important; }
+  [data-motion-controls] button { min-width: 44px; min-height: 38px; padding: 6px 12px; border: 1px solid var(--rule-strong); border-radius: 4px; color: var(--ink); background: var(--paper); font: 600 0.82rem/1 var(--font-body); cursor: pointer; }
+  [data-motion-controls] button:hover { border-color: var(--accent); }
+  [data-motion-controls] button[data-motion-action="next"] { background: var(--part); border-color: var(--part); color: var(--paper); }
+  [data-motion-controls] button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  [data-motion-controls] button:disabled { cursor: not-allowed; opacity: .45; }
+  .keyboard-help { font-family: var(--font-mono); font-size: 0.74rem; color: var(--soft); }
+  [data-motion-status-visible] { margin-left: auto; color: var(--muted); font: 500 0.8rem/1.4 var(--font-mono); }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  html[data-motion="static"] [data-motion-controls] { display: none !important; }
+  html[data-motion="static"] [data-motion-item] { opacity: 1 !important; transform: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
+    [data-motion-item] { opacity: 1 !important; transform: none !important; }
+    [data-motion-controls] { display: none !important; }
+  }
+  @media print {
+    .diagram { overflow-x: visible; }
+    svg.dg { min-width: 0 !important; }
+    [data-motion-controls], .chips { display: none !important; }
+    [data-motion-item] { opacity: 1 !important; transform: none !important; transition: none !important; }
+    .stepdetail article { display: grid !important; }
+  }
+
+  /* Tabs */
+  .tabs { display: flex; flex-direction: column; gap: 8px; }
+  .tablist { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--rule); }
+  .tablist button { min-height: 38px; padding: 6px 12px; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--muted); font: 600 0.95rem/1.2 var(--font-cond); cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+  .tablist button span { font-family: var(--font-mono); font-size: 0.76rem; }
+  .tablist button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--part); }
+  .tablist button:hover { color: var(--ink); }
+  .tabpanel { display: flex; flex-direction: column; gap: 8px; }
+  .spec { margin: 0; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 4px 16px; max-width: 100ch; }
+  .spec dt { font-family: var(--font-cond); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+  .spec dd { margin: 0; font-size: 0.94rem; }
+
+  /* Evidence strength */
+  .str { font-family: var(--font-mono); font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; margin-right: 6px; }
+  .str-strong { background: var(--check-tint); color: var(--check); }
+  .str-outcome { background: var(--accent-tint); color: var(--accent); }
+  .str-qual { background: var(--amber-tint); color: var(--amber); }
+  .str-none { background: var(--warn-tint); color: var(--warn); }
+
+  /* Tables */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 0.86rem; }
+  th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th { font-family: var(--font-cond); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--paper); font-weight: 600; background: var(--ink); }
+  tbody th { font-weight: 600; }
+  tbody tr:nth-child(even) > * { background: #F7F8FB; }
+  tr:last-child td, tr:last-child th { border-bottom: 0; }
+  .sub { display: block; font-weight: 400; font-size: 0.82rem; color: var(--muted); }
+  .lvl { font-family: var(--font-mono); font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; margin-bottom: 4px; }
+  .lvl-low { background: var(--check-tint); color: var(--check); }
+  .lvl-med { background: var(--amber-tint); color: var(--amber); }
+  .lvl-high { background: var(--warn-tint); color: var(--warn); }
+
+  /* Simulator */
+  .sim { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: 4px; overflow: hidden; align-self: flex-start; flex-wrap: wrap; }
+  .seg button { min-height: 34px; padding: 6px 12px; border: 0; background: var(--paper); color: var(--muted); font: 600 0.85rem/1 var(--font-body); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .sim-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .sim-k { font-family: var(--font-cond); font-weight: 600; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .conds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .cond { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 10px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper); color: var(--ink); font: 500 0.92rem/1.3 var(--font-body); text-align: left; cursor: pointer; }
+  .cond:hover { border-color: var(--accent); }
+  .cond-state { font-family: var(--font-mono); font-size: 0.72rem; padding: 3px 8px; border-radius: 999px; }
+  .cond[aria-pressed="true"] .cond-state { background: var(--check-tint); color: var(--check); }
+  .cond[aria-pressed="false"] .cond-state { background: var(--warn-tint); color: var(--warn); }
+  .cond:disabled { cursor: not-allowed; opacity: 0.6; }
+  .verdict { border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
+  .v-label { font-family: var(--font-mono); font-size: 1.2rem; font-weight: 500; letter-spacing: 0.04em; }
+  .sim[data-decision="accept"] .verdict { background: var(--check-tint); }
+  .sim[data-decision="accept"] .v-label { color: var(--check); }
+  .sim[data-decision="refine"] .verdict { background: var(--accent-tint); }
+  .sim[data-decision="refine"] .v-label { color: var(--accent); }
+  .sim[data-decision="restart"] .verdict { background: var(--amber-tint); }
+  .sim[data-decision="restart"] .v-label { color: var(--amber); }
+  .v-act { font-weight: 600; }
+  .ops { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.85rem; color: var(--muted); }
+  .pips { display: inline-flex; gap: 4px; }
+  .pip { width: 18px; height: 10px; border-radius: 2px; background: var(--paper); border: 1px solid var(--rule-strong); }
+  .pip.used { background: var(--ink); border-color: var(--ink); }
+  .sim-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sim-msg { font-size: 0.86rem; color: var(--ink); min-height: 1.4em; }
+
+  /* Verification ladder */
+  .ladder { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 12px; align-items: start; }
+  .ladder-list { display: flex; flex-direction: column; gap: 6px; }
+  .ladder-list button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper); color: var(--ink); cursor: pointer; font: inherit; }
+  .ladder-list button:hover { border-color: var(--accent); }
+  .ladder-list button[aria-selected="true"] { border-color: var(--part); background: var(--part-tint); }
+  .ladder-list button strong { font-family: var(--font-display); font-size: 1.04rem; }
+  .lv-n { font-family: var(--font-cond); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  .rbar { display: block; height: 6px; background: var(--surface); border-radius: 2px; overflow: hidden; }
+  .rbar span { display: block; height: 100%; background: var(--check); }
+  .ladder-panel { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .ladder-panel .sd-h { margin: 0; }
+
+  /* Small multiples */
+  .minis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .mini { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .mini .diagram { border: 0; padding: 0; }
+  .mini svg.dg { max-width: 420px; }
+  .mini-h { font-family: var(--font-display); font-weight: 600; font-size: 1.08rem; line-height: 1.25; }
+  .mini-s { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); }
+  .mini-t { font-size: 0.86rem; color: var(--muted); }
+  .pattern { align-self: flex-start; font-family: var(--font-mono); font-size: 0.7rem; padding: 2px 8px; border-radius: 999px; }
+  .p-bad { background: var(--warn-tint); color: var(--warn); }
+  .p-mid { background: var(--amber-tint); color: var(--amber); }
+  .p-good { background: var(--check-tint); color: var(--check); }
+
+  /* Two-column comparisons */
+  .duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .duo > div { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .duo .k { font-family: var(--font-cond); font-weight: 600; font-size: 0.86rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  .duo .good { border-top: 3px solid var(--check); }
+  .duo .bad { border-top: 3px solid var(--warn); }
+  .duo .good .k { color: var(--check); }
+  .duo .bad .k { color: var(--warn); }
+  .duo ul.plain { font-size: 0.9rem; list-style: none; padding-left: 0; }
+  .duo ul.plain li { position: relative; padding-left: 1.4em; }
+  .duo ul.plain li::before { position: absolute; left: 0; top: 0; font-weight: 700; }
+  .duo .good li::before { content: "✓"; color: var(--check); }
+  .duo .bad li::before { content: "✗"; color: var(--warn); }
+  .duo .ev { display: block; font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); }
+
+  .message { display: flex; flex-direction: column; gap: 10px; }
+  .lead { font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: clamp(1.3rem, 2vw, 1.6rem); line-height: 1.28; padding-left: 14px; border-left: 4px solid var(--part); max-width: 60ch; }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .tiles div { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; border-top: 3px solid var(--part); }
+  .tiles strong { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; line-height: 1.25; }
+  .tiles p { font-size: 0.88rem; color: var(--muted); }
+  .implication { font-size: 0.94rem; background: var(--part-tint); border-radius: 2px; padding: 8px 12px; }
+  .implication strong { color: var(--part); font-family: var(--font-cond); font-size: 0.84rem; letter-spacing: 0.06em; text-transform: uppercase; margin-right: 4px; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .cards div { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 9px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; border-top: 2px solid var(--part); }
+  .cards strong { font-family: var(--font-cond); font-weight: 600; font-size: 1rem; }
+  .cards p { font-size: 0.86rem; color: var(--muted); }
+
+  .endnote { border-top: 2px solid var(--ink); padding-top: 10px; }
+  .endnote > p:not(.note) { font-family: var(--font-display); font-size: 1.12rem; line-height: 1.5; }
+  .refs a { font-weight: 500; }
+  .refs-group { display: flex; flex-direction: column; gap: 4px; }
+  .refs { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 5px; font-size: 0.86rem; }
+  .refs li { overflow-wrap: anywhere; }
+  .refs .src { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); }
+  .refs .desc { display: block; color: var(--muted); font-size: 0.82rem; }
+
+  /* ---------- Icons, side panel, reading progress ---------- */
+  html { scroll-behavior: smooth; }
+  [id] { scroll-margin-top: 16px; }
+  .ic { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.14em; }
+  .hic { width: 30px; height: 30px; padding: 6px; border-radius: 7px; background: var(--part-tint); color: var(--part); }
+  .readbar { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 50; pointer-events: none; }
+  .readbar span { display: block; height: 100%; width: 0; background: var(--now, var(--accent)); transition: width 120ms linear; }
+  .layout { display: grid; grid-template-columns: 228px minmax(0, 1fr); gap: 32px; max-width: 1540px; margin: 0 auto; align-items: start; }
+  .sidenav { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; padding: 0 12px 24px 0; border-right: 1px solid var(--rule); font-size: 0.84rem; scrollbar-width: thin; }
+  .sn-top { position: sticky; top: 0; z-index: 1; background: var(--paper); display: flex; flex-direction: column; gap: 8px; padding: 10px 0; }
+  .sn-title { font-family: var(--font-display); font-weight: 600; font-size: 1.12rem; line-height: 1.2; color: var(--ink); text-decoration: none; }
+  .sn-toggle { display: none; align-items: center; gap: 6px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper); color: var(--ink); font: 600 0.85rem/1 var(--font-cond); letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; flex: none; }
+  .sn-now { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; background: var(--surface); border-left: 3px solid var(--now, var(--accent)); border-radius: 2px; min-width: 0; }
+  .sn-now-k { font-family: var(--font-cond); font-weight: 600; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .sn-cur-part { font-family: var(--font-cond); font-weight: 600; font-size: 0.8rem; color: var(--now, var(--accent)); }
+  .sn-cur-part:empty { display: none; }
+  .sn-current { font-weight: 600; color: var(--ink); line-height: 1.3; }
+  .sn-progress { height: 4px; background: var(--surface); border-radius: 2px; overflow: hidden; }
+  .sn-progress span { display: block; height: 100%; width: 0; background: var(--now, var(--accent)); transition: width 120ms linear; }
+  .sn-list, .sn-list ol { list-style: none; margin: 0; padding: 0; }
+  .sn-list { display: flex; flex-direction: column; gap: 4px; }
+  .sn-list a { text-decoration: none; }
+  .sn-part > a { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 4px; color: var(--ink); font-family: var(--font-cond); font-weight: 600; font-size: 0.93rem; }
+  .sn-part > a b { font-family: var(--font-mono); font-weight: 500; font-size: 0.74rem; color: var(--part); margin-right: 2px; }
+  .sn-ic { width: 24px; height: 24px; padding: 4px; border-radius: 6px; background: var(--part-tint); color: var(--part); }
+  .sn-part ol { margin: 2px 0 4px 17px; padding-left: 9px; border-left: 2px solid var(--part-tint); display: flex; flex-direction: column; gap: 1px; }
+  .sn-part ol a { display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 3px; color: var(--muted); line-height: 1.3; }
+  .sn-part ol a .ic { width: 14px; height: 14px; color: var(--part); }
+  .sn-part ol a i { font-style: normal; font-family: var(--font-mono); font-size: 0.72rem; color: var(--part); margin-right: 2px; }
+  .sn-list a:hover { background: var(--surface); color: var(--ink); }
+  .sn-list a.is-active { background: var(--part-tint); color: var(--part); }
+  .sn-part ol a.is-active { font-weight: 600; box-shadow: inset 2px 0 0 var(--part); }
+  .sn-part.is-active > a { color: var(--part); }
+  .sn-p0 { --part: var(--ink); --part-tint: var(--surface); }
+  .sn-p1 { --part: var(--accent); --part-tint: var(--accent-tint); }
+  .sn-p2 { --part: var(--check); --part-tint: var(--check-tint); }
+  .sn-p3 { --part: var(--amber); --part-tint: var(--amber-tint); }
+  .sn-p4 { --part: var(--violet); --part-tint: var(--violet-tint); }
+  .sn-p5 { --part: var(--muted); --part-tint: var(--surface); }
+  .sn-sep { height: 1px; background: var(--rule); margin: 4px 0; }
+
+  /* ---------- Colour accents ---------- */
+  .banner { background: linear-gradient(90deg, var(--part-tint) 0%, rgba(255, 255, 255, 0) 72%); padding: 12px 14px; }
+  .banner .tag, .toc .part, .brief .k { display: inline-flex; align-items: center; gap: 6px; }
+  .banner .tag .ic, .toc .part .ic { width: 16px; height: 16px; }
+  .brief .k .ic { width: 16px; height: 16px; }
+  .stat { background: color-mix(in srgb, var(--part-tint) 65%, white); border-top: 0; border-left: 3px solid var(--part); padding: 8px 12px; border-radius: 2px; }
+  .tiles div, .cards div { background: color-mix(in srgb, var(--part-tint) 38%, white); }
+  .duo .good { background: #F2FAF7; }
+  .duo .bad { background: #FDF5F4; }
+  .ladder-panel { border-left: 3px solid var(--part); }
+  .why .ic { color: var(--accent); margin-right: 6px; }
+  .implication .ic { color: var(--part); margin-right: 6px; }
+  details.glossary summary .ic { color: var(--accent); margin-right: 6px; }
+  .endnote h2 { display: flex; align-items: center; gap: 10px; }
+  #references { --part: var(--muted); --part-tint: var(--surface); }
+
+  /* Step-order badges in the step-by-step diagrams */
+  .stepno { fill: var(--part); }
+  .stepno-t { fill: var(--paper); font-family: var(--font-mono); font-size: 11px; font-weight: 500; }
+
+  /* Side panel stays on the left at every width: narrower below 1280px, icon rail below 760px */
+  @media (max-width: 1279px) {
+    .layout { grid-template-columns: 196px minmax(0, 1fr); gap: 20px; }
+    .sidenav { font-size: 0.8rem; padding-right: 8px; }
+    .sn-part > a { font-size: 0.88rem; }
+  }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 46px minmax(0, 1fr); gap: 10px; }
+    .sidenav { padding-right: 6px; }
+    .sn-title, .sn-now { display: none; }
+    .sn-top { padding: 8px 0 6px; }
+    .sn-list a > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .sn-part > a, .sn-part ol a { justify-content: center; padding: 4px 2px; }
+    .sn-part ol { margin: 2px 0 4px; padding-left: 0; border-left: 0; }
+    .sn-part ol a .ic { width: 16px; height: 16px; }
+  }
+  @media print { .sidenav, .readbar { display: none !important; } .layout { display: block; } }
+
+  @media (max-width: 1100px) {
+    .moe, .ladder { grid-template-columns: 1fr; }
+    .minis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .toc { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .toc > div:nth-child(3) { border-left: 0; padding-left: 0; }
+  }
+  @media (max-width: 900px) {
+    .cards, .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sim-body, .duo { grid-template-columns: 1fr; }
+    .stepdetail article { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .toc { grid-template-columns: 1fr; }
+    .toc > div { border-left: 0; padding-left: 0; }
+  }
+  @media (max-width: 720px) {
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .summary { grid-template-columns: 1fr; }
+    .summary dt { border-bottom: 0; padding-bottom: 2px; }
+    .spec, .sd-facts { grid-template-columns: 1fr; gap: 0; }
+    .spec dd, .sd-facts dd { margin-bottom: 8px; }
+    details.glossary dl { grid-template-columns: 1fr; gap: 2px; }
+    details.glossary dd { margin-bottom: 8px; }
+    .minis { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) { .hint { display: inline; } }
+  @media (max-width: 480px) {
+    body { padding-block: 32px 64px; }
+    .cards, .tiles { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- Interactive additions ---------- */
+  .sim2 { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .sim2-top { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .sim2-k { font-family: var(--font-cond); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .sim2 .seg button { font-size: 0.82rem; }
+  .sim2-out { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .sim2-out div { border-left: 3px solid var(--part); background: var(--part-tint); padding: 6px 10px; border-radius: 2px; display: flex; flex-direction: column; min-width: 0; }
+  .sim2-out b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; color: var(--part); font-variant-numeric: tabular-nums; }
+  .sim2-out span { font-size: 0.78rem; color: var(--muted); }
+  .sim2-ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .sim2-ctl input[type=range] { flex: 1 1 200px; accent-color: var(--part); }
+  .sim2-why { font-size: 0.88rem; background: var(--surface); border-radius: 2px; padding: 8px 12px; min-height: 2.6em; }
+  .bar-read { fill: var(--check); fill-opacity: 0.75; } .bar-write { fill: var(--warn); fill-opacity: 0.8; } .bar-unc { fill: var(--amber); fill-opacity: 0.85; }
+  .bar-sum { fill: var(--violet); fill-opacity: 0.9; }
+  .win-l { stroke: var(--warn); stroke-width: 1.4; stroke-dasharray: 5 4; }
+  .sel-l { stroke: var(--ink); stroke-width: 1.2; }
+  .sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+  .scatter .pt { cursor: default; }
+  .scatter .pt circle { stroke: var(--paper); stroke-width: 1.5; }
+  .scatter .pt:hover circle, .scatter .pt:focus circle { stroke: var(--ink); stroke-width: 2; }
+  .pt-anc circle { fill: var(--muted); } .pt-pub circle { fill: var(--accent); } .pt-new circle { fill: var(--amber); } .pt-ours circle { fill: var(--violet); }
+  .pt-lab { fill: var(--ink); font-family: var(--font-body); font-size: 10.5px; }
+  .zone { fill: var(--check-tint); }
+  .zone-t { fill: var(--check); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; }
+  .scatter-wrap[data-model="haiku"] .m-sonnet, .scatter-wrap[data-model="sonnet"] .m-haiku { display: none; }
+
+  .map-chip { cursor: pointer; }
+  .map-chip rect { stroke-width: 1; }
+  .map-chip.ok rect { fill: var(--check-tint); stroke: var(--check); }
+  .map-chip.mid rect { fill: var(--amber-tint); stroke: var(--amber); }
+  .map-chip.bad rect { fill: var(--warn-tint); stroke: var(--warn); }
+  .map-chip.us rect { fill: var(--violet-tint); stroke: var(--violet); stroke-width: 1.6; }
+  .map-chip text { fill: var(--ink); font-family: var(--font-body); font-size: 11.5px; font-weight: 500; }
+  .map-chip:hover rect, .map-chip:focus rect { stroke-width: 2.4; }
+  .map-col { fill: var(--surface); }
+
+  .chooser { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .q { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--rule); }
+  .q:last-of-type { border-bottom: 0; }
+  .q p { font-weight: 600; font-size: 0.92rem; }
+  .q .seg button { min-height: 32px; font-size: 0.82rem; }
+  .q.off { opacity: 0.4; pointer-events: none; }
+  .fc .fn rect { fill: var(--paper); stroke: var(--rule-strong); stroke-width: 1; transition: fill var(--motion-fast), stroke var(--motion-fast); }
+  .fc .fn.on rect { fill: var(--violet-tint); stroke: var(--violet); stroke-width: 2; }
+  .fc .fn.res rect { stroke-dasharray: 4 3; }
+  .fc .fn.res.on rect { fill: var(--check-tint); stroke: var(--check); stroke-dasharray: none; stroke-width: 2.2; }
+  .fc .fe { stroke: var(--rule-strong); stroke-width: 1.4; fill: none; transition: stroke var(--motion-fast); }
+  .fc .fe.on { stroke: var(--violet); stroke-width: 2.4; }
+  .fc .fl { fill: var(--soft); font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; }
+  .fc .fl.on { fill: var(--violet); }
+  .pick { border: 1px solid var(--rule); border-left: 3px solid var(--check); border-radius: 2px; padding: 10px 14px; background: #F2FAF7; display: flex; flex-direction: column; gap: 4px; }
+  .pick code { font-size: 0.95rem; }
+  .tl-dot { fill: var(--part); }
+  @media (max-width: 900px) { .chooser { grid-template-columns: 1fr; } .sim2-out { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  .layout main section + section { margin-top: 0; }
+  table td.nm, table th.nm { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  table tr.sub td { font-size: 0.8rem; color: var(--muted); background: transparent !important; padding-top: 0; }
+  .chart { border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); padding: 8px; overflow-x: auto; }
+  .chart svg { display: block; width: 100%; height: auto; min-width: 640px; }
+  .todo { display: grid; gap: 8px; }
+  .todo .it { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; border: 1px solid var(--rule); border-radius: 4px; padding: 10px 14px; background: var(--paper); }
+  .todo .it > * { min-width: 0; }
+  .todo .it h4 { margin: 0; font-size: 1rem; }
+  .todo .it p { margin: 0; grid-column: 1 / -1; font-size: 0.9rem; color: var(--muted); }
+  .todo .it .cost { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .kv > div { border: 1px solid var(--rule); border-radius: 4px; padding: 10px 14px; background: var(--paper); min-width: 0; }
+  .kv strong { display: block; font-family: var(--font-display); font-size: 1.05rem; margin-bottom: 2px; }
+  .kv p { margin: 0; font-size: 0.88rem; color: var(--muted); }
+  .toc { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .banner .meta span { overflow-wrap: anywhere; min-width: 0; }
+  @media (max-width: 640px) { .todo .it { grid-template-columns: minmax(0, 1fr); } }
+</style>
+<svg class="sprite" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="0.5"/><path d="M9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></symbol>
+  <symbol id="i-audit" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/><path d="M7.8 10.6l2 2 3.6-3.8"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7.5 15v3M12 10v8M16.5 6v12"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 17l9 5 9-5"/></symbol>
+  <symbol id="i-steps" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5.5 3.5-5.5 3.5z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/><path d="M4 17h2M18 17h2M12 9v1.5"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v0.5"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24"><path d="M12 4v16M7.5 20h9"/><path d="M5 7h14"/><path d="M5 7l-3 6.5a3 3 0 0 0 6 0z"/><path d="M19 7l-3 6.5a3 3 0 0 0 6 0z"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="18.5" r="2.5"/><circle cx="18" cy="5.5" r="2.5"/><path d="M8.5 18.5H16a3.25 3.25 0 0 0 0-6.5H8a3.25 3.25 0 0 1 0-6.5h7.5"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5"/><path d="M12 17.3v0.2"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16.5 9.5"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></symbol>
+  <symbol id="i-brief" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 12.5h18"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h0.01M3.5 12h0.01M3.5 18h0.01"/></symbol>
+</svg>
+<div class="readbar" aria-hidden="true"><span></span></div>
+<div class="layout">
+<nav class="sidenav" id="sidenav" aria-label="Sections"><div class="sn-top"><button type="button" class="sn-toggle" aria-expanded="false" aria-controls="sn-list"><svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>Contents</button><a class="sn-title" href="#top">Efficient Agent Memory</a><div class="sn-now"><span class="sn-now-k">Now reading</span><span class="sn-cur-part"></span><span class="sn-current">Overview</span></div><div class="sn-progress" aria-hidden="true"><span></span></div></div><ol class="sn-list" id="sn-list"><li class="sn-part sn-p0" data-name="Overview"><a href="#top"><svg class="ic sn-ic" aria-hidden="true"><use href="#i-home"/></svg><span>Overview</span></a></li><li class="sn-part sn-p1" data-name="01 Work done"><a href="#wd"><svg class="ic sn-ic" aria-hidden="true"><use href="#i-wrench"/></svg><span><b>01</b> Work done</span></a><ol><li><a href="#wd-time"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>1.1</i> Timeline</span></a></li><li><a href="#wd-built"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>1.2</i> What was built</span></a></li><li><a href="#wd-spend"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>1.3</i> Runs and spend</span></a></li></ol></li><li class="sn-part sn-p2" data-name="02 Findings"><a href="#fd"><svg class="ic sn-ic" aria-hidden="true"><use href="#i-bulb"/></svg><span><b>02</b> Findings</span></a><ol><li><a href="#fd-key"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>2.1</i> Key findings</span></a></li><li><a href="#fd-works"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>2.2</i> What works, what does not</span></a></li></ol></li><li class="sn-part sn-p3" data-name="03 Results"><a href="#rs"><svg class="ic sn-ic" aria-hidden="true"><use href="#i-gauge"/></svg><span><b>03</b> Results</span></a><ol><li><a href="#rs-synth"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>3.1</i> Four long tasks</span></a></li><li><a href="#rs-swe"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>3.2</i> SWE-bench Verified</span></a></li><li><a href="#rs-pick"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>3.3</i> Which preset</span></a></li></ol></li><li class="sn-part sn-p4" data-name="04 Claude Code plugin"><a href="#cc"><svg class="ic sn-ic" aria-hidden="true"><use href="#i-layers"/></svg><span><b>04</b> Claude Code plugin</span></a><ol><li><a href="#cc-how"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>4.1</i> How it works</span></a></li><li><a href="#cc-pilot"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>4.2</i> Pilot in Claude Code</span></a></li><li><a href="#cc-vs"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>4.3</i> Versus other memory tools</span></a></li></ol></li><li class="sn-part sn-p4" data-name="05 To-do"><a href="#todo"><svg class="ic sn-ic" aria-hidden="true"><use href="#i-flag"/></svg><span><b>05</b> To-do</span></a><ol><li><a href="#todo-blocked"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>5.1</i> Blocked</span></a></li><li><a href="#todo-next"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>5.2</i> Next steps</span></a></li><li><a href="#todo-gaps"><svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span><i>5.3</i> Known gaps</span></a></li></ol></li><li class="sn-sep" role="presentation"></li><li class="sn-part sn-p5" data-name="Links"><a href="#links"><svg class="ic sn-ic" aria-hidden="true"><use href="#i-book"/></svg><span>Links</span></a></li></ol></nav>
+<main>
+  <header id="top">
+    <div class="hero">
+      <p class="eyebrow">Work report · 8 November 2026</p>
+      <h1>Efficient Agent Memory</h1>
+      <p class="dek">What was built, what the measurements show, how the memory layer now ships as a Claude Code plugin, and what is left to do.</p>
+      <p class="hero-meta"><span>≈ 3,000 benchmark runs</span><span>27 methods and variants</span><span>Claude Haiku and Sonnet</span><span>SWE-bench Verified: 100 Django issues</span><span>PRs #1–#3 merged</span></p>
+    </div>
+    <div class="brief">
+      <span class="k"><svg class="ic" aria-hidden="true"><use href="#i-brief"/></svg>Key points</span>
+      <ul class="plain">
+        <li><strong>Fewer tokens is not fewer dollars.</strong> Re-sent history is cheap while it stays in the prompt cache; methods that rewrite it every step cost more than they save (AKV: 93% of the ceiling's cost dropping every turn, 22% in blocks of 8).</li>
+        <li><strong>Let the harness remember.</strong> Previews at ingestion, automatic recall and compaction at a fixed trigger worked on Haiku and Sonnet; methods that need the model to manage its memory failed on Haiku.</li>
+        <li><strong>AutoMemory v2</strong> matches the unoptimised ceiling on four long tasks at 85% (Haiku) and 58% (Sonnet) of its cost; no newer published method beats it across the board.</li>
+        <li><strong>On 100 real Django issues</strong> at a 16K window, <code>automem_v2_lean</code> is the cheapest ($0.123 per resolved issue on Sonnet), and NVIDIA's handoff recap brings both models to the ceiling's accuracy for 6–16 points more cost.</li>
+        <li><strong>Pilot inside Claude Code (same issues, same prompt): Haiku: 4/4 resolved with the plugin vs 4/4 without, at +1% cost; Sonnet: 7/9 resolved with the plugin vs 6/9 without, at -4% cost.</strong></li>
+      </ul>
+      <p class="rec"><strong>Recommendation:</strong> use the plugin's harness steps (previews, handoff at compaction, recall) rather than instructions in CLAUDE.md; pick <code>automem_v2</code> for multi-session work and <code>automem_v2_lean</code> for independent coding issues.</p>
+    </div>
+    <nav class="toc" aria-label="Contents"><div><span class="part"><svg class="ic" aria-hidden="true"><use href="#i-wrench"/></svg>Part 1</span><a class="ttl" href="#wd">Work done</a><ol><li><span>1.1</span><a href="#wd-time">Timeline</a></li><li><span>1.2</span><a href="#wd-built">What was built</a></li><li><span>1.3</span><a href="#wd-spend">Runs and spend</a></li></ol></div><div><span class="part"><svg class="ic" aria-hidden="true"><use href="#i-bulb"/></svg>Part 2</span><a class="ttl" href="#fd">Findings</a><ol><li><span>2.1</span><a href="#fd-key">Key findings</a></li><li><span>2.2</span><a href="#fd-works">What works, what does not</a></li></ol></div><div><span class="part"><svg class="ic" aria-hidden="true"><use href="#i-gauge"/></svg>Part 3</span><a class="ttl" href="#rs">Results</a><ol><li><span>3.1</span><a href="#rs-synth">Four long tasks</a></li><li><span>3.2</span><a href="#rs-swe">SWE-bench Verified</a></li><li><span>3.3</span><a href="#rs-pick">Which preset</a></li></ol></div><div><span class="part"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg>Part 4</span><a class="ttl" href="#cc">Claude Code plugin</a><ol><li><span>4.1</span><a href="#cc-how">How it works</a></li><li><span>4.2</span><a href="#cc-pilot">Pilot in Claude Code</a></li><li><span>4.3</span><a href="#cc-vs">Versus other memory tools</a></li></ol></div><div><span class="part"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg>Part 5</span><a class="ttl" href="#todo">To-do</a><ol><li><span>5.1</span><a href="#todo-blocked">Blocked</a></li><li><span>5.2</span><a href="#todo-next">Next steps</a></li><li><span>5.3</span><a href="#todo-gaps">Known gaps</a></li></ol></div></nav>
+  </header>
+
+  <div class="banner" id="wd" data-pn="01"><span class="tag"><svg class="ic" aria-hidden="true"><use href="#i-wrench"/></svg>Part 1 · What</span><h2>Work done</h2><div class="meta"><span>github.com/GaryTang32/Efficient-Agent-Memory</span><span>main @ PR #3</span></div></div>
+  <section id="wd-time" aria-labelledby="h-wd-time"><h3 id="h-wd-time"><svg class="ic hic" aria-hidden="true"><use href="#i-trend"/></svg><span class="no">1.1</span>Timeline</h3><div class="tbl-wrap"><table><thead><tr><th>When</th><th>Work</th><th>Outcome</th></tr></thead><tbody><tr><th>22 Oct</th><td><strong>Phase 1: single methods</strong><br><span class="desc">ReSum, masking, AgentDiet, Context-Folding, turn control, workspace on two tasks</span></td><td>No single method solves multi-session work</td></tr><tr><th>23–26 Oct</th><td><strong>Long tasks, AutoMemory v1</strong><br><span class="desc">Four long tasks, model-normalised protocol; MemoryOS, LightMem, Nemori</span></td><td>Workspace + compaction is model-robust; memory systems 0.2–0.5 lower</td></tr><tr><th>4 Nov</th><td><strong>Eight new methods; v2 and v3</strong><br><span class="desc">Strands, CADOC, ReFold, SJC, AKV, raw RAG, CORAL, SelfCompact; previews, folding</span></td><td>AutoMemory v2 becomes the default</td></tr><tr><th>5 Nov</th><td><strong>Sonnet seeds; SWE-bench (40 issues)</strong><br><span class="desc">Decision rule fixed in advance; first real-repository workdays</span></td><td>automem_v2_strong; lean wins on real code</td></tr><tr><th>6 Nov</th><td><strong>NVIDIA handoff; 100 issues</strong><br><span class="desc">EoCC prompts; SWE-bench-faithful grading; 32K and 16K windows; 480 runs</span></td><td>automem_v2_lean_handoff for accuracy-first coding</td></tr><tr><th>6–7 Nov</th><td><strong>Front page and housekeeping</strong><br><span class="desc">README with charts and flowcharts; CONTRIBUTING, CITATION; papers folder ignored</span></td><td>PRs #1–#3 merged</td></tr><tr><th>8 Nov</th><td><strong>Claude Code plugin and pilot</strong><br><span class="desc">Hooks: previews from Claude Code&#x27;s saved output, handoff at compaction, recall, autosave</span></td><td>Measured inside Claude Code (pilot)</td></tr></tbody></table></div></section>
+  <section id="wd-built" aria-labelledby="h-wd-built"><h3 id="h-wd-built"><svg class="ic hic" aria-hidden="true"><use href="#i-box"/></svg><span class="no">1.2</span>What was built</h3>
+    <div class="kv">
+      <div><strong>Benchmark harness</strong><p>ReAct loop with technique hooks, emulated windows, a cache-aware cost meter; Claude Code CLI, Bedrock, LiteLLM and mock backends.</p></div>
+      <div><strong>27 methods and variants</strong><p>Faithful ports of published methods, each with its source and deviations documented, from ReSum to NVIDIA's EoCC.</p></div>
+      <div><strong>Tasks</strong><p>Four long synthetic tasks and SWE-bench Verified workdays on 100 Django issues, graded as SWE-bench grades them.</p></div>
+      <div><strong>AutoMemory</strong><p>The combined memory layer as a bench technique, a Python library and an MCP server, with five presets.</p></div>
+      <div><strong>Claude Code plugin</strong><p><code>plugins/automem</code>: four hooks, a skill and a handoff command; standard library only.</p></div>
+      <div><strong>Docs</strong><p>README with charts and flowcharts, the interactive overview, paper notes, methodology, CONTRIBUTING and CITATION.</p></div>
+    </div></section>
+  <section id="wd-spend" aria-labelledby="h-wd-spend"><h3 id="h-wd-spend"><svg class="ic hic" aria-hidden="true"><use href="#i-chart"/></svg><span class="no">1.3</span>Runs and spend</h3><div class="tbl-wrap"><table><thead><tr><th>Run set</th><th class="nm">Runs</th><th class="nm">Cost</th></tr></thead><tbody><tr><th>Phases 1–3 and the eight new methods</th><td class="nm">≈ 1,900</td><td class="nm">$820</td></tr><tr><th>AutoMemory v2, v3 ablation, Sonnet seeds</th><td class="nm">≈ 250</td><td class="nm">$102</td></tr><tr><th>SWE-bench, 40 issues</th><td class="nm">164</td><td class="nm">$56</td></tr><tr><th>Earlier pilots and calibration</th><td class="nm">—</td><td class="nm">$162</td></tr><tr><th>NVIDIA handoff: synthetic tasks</th><td class="nm">80</td><td class="nm">$69</td></tr><tr><th>SWE-bench, 100 issues at 32K and the own window</th><td class="nm">260</td><td class="nm">$98</td></tr><tr><th>SWE-bench, 100 issues at 16K</th><td class="nm">140</td><td class="nm">$54</td></tr><tr><th>Claude Code pilot (so far)</th><td class="nm">26</td><td class="nm">$1</td></tr><tr><th>Total</th><td class="nm">≈ 3,000</td><td class="nm"><strong>$1,362</strong></td></tr></tbody></table></div><p class="note">Claude Code CLI route at list prices. The first four rows are rounded from the phase reports.</p></section>
+
+  <div class="banner" id="fd" data-pn="02"><span class="tag"><svg class="ic" aria-hidden="true"><use href="#i-bulb"/></svg>Part 2 · Why it matters</span><h2>Findings</h2><div class="meta"><span>Evidence from the result reports</span><span>Claude Code CLI route, list prices</span></div></div>
+  <section id="fd-key" aria-labelledby="h-fd-key"><h3 id="h-fd-key"><svg class="ic hic" aria-hidden="true"><use href="#i-bulb"/></svg><span class="no">2.1</span>Key findings</h3>
+    <div class="tbl-wrap"><table><thead><tr><th>Finding</th><th>Evidence</th></tr></thead><tbody>
+      <tr><th>Fewer tokens is not fewer dollars</th><td>Rewritten history is billed as cache writes (2× on the CLI, 1.25× on Bedrock). Masking cost up to 608% and AgentDiet 410% of full context on Haiku.</td></tr>
+      <tr><th>Automatic beats model-managed</th><td>CORAL's memory tools were barely used (Haiku 7 of 56 sessions); ReFold's Haiku recovery was 0.25. Harness-applied previews, recall and compaction held on both models.</td></tr>
+      <tr><th>Plain notes beat memory systems</th><td>MemoryOS, LightMem and Nemori scored 0.2–0.5 lower than a note workspace with the same compaction.</td></tr>
+      <tr><th>Match the layer to the work</th><td>Notes were essential for multi-session tasks and pure overhead (about 50% more tool calls) on independent coding issues.</td></tr>
+      <tr><th>A structured recap helps coding sessions</th><td>NVIDIA's handoff fields (applied changes, dead ends, next command): 81 vs 76 (Haiku) and 88 vs 86 (Sonnet) resolved at 16K; ties ReSum on synthetic tasks.</td></tr>
+      <tr><th>Real coding sessions fit in short contexts</th><td>Django issue sessions peaked at 16–21K tokens; at 32K compaction fired 3–9 times in 100 issues.</td></tr>
+      <tr><th>Grading must follow SWE-bench exactly</th><td>The first 40-issue run checked 63% of the official tests (docstring-named tests were dropped); fixed and superseded.</td></tr>
+    </tbody></table></div></section>
+  <section id="fd-works" aria-labelledby="h-fd-works"><h3 id="h-fd-works"><svg class="ic hic" aria-hidden="true"><use href="#i-check"/></svg><span class="no">2.2</span>What works, what does not</h3>
+    <div class="duo">
+      <div class="good"><span class="k">Works on both models</span><ul class="plain">
+        <li>Shrinking outputs when they arrive, with retrieval<span class="ev">Haiku 11/16 runs solved vs 7/16</span></li>
+        <li>Automatic recall and autosave of notes<span class="ev">beats engineered memory systems by 0.2–0.5</span></li>
+        <li>Compaction at a fixed trigger, keeping recent steps<span class="ev">without it: 0.04–0.62</span></li>
+        <li>A cheaper model writing summaries<span class="ev">Sonnet: same accuracy, 20–40% cheaper</span></li></ul></div>
+      <div class="bad"><span class="k">Fails or depends on the model</span><ul class="plain">
+        <li>Editing history every step<span class="ev">masking 608%, AgentDiet 410%</span></li>
+        <li>Asking the model to manage its memory<span class="ev">CORAL tools barely used</span></li>
+        <li>A compaction method alone, without guard or notes<span class="ev">EoCC alone: 15 Haiku sessions overflowed at 16K</span></li>
+        <li>Notes on independent tasks<span class="ev">+50% tool calls</span></li></ul></div>
+    </div></section>
+
+  <div class="banner" id="rs" data-pn="03"><span class="tag"><svg class="ic" aria-hidden="true"><use href="#i-gauge"/></svg>Part 3 · How much</span><h2>Results</h2><div class="meta"><span>Floor and ceiling on the same instances</span><span>Cost relative to the ceiling</span></div></div>
+  <section id="rs-synth" aria-labelledby="h-rs-synth"><h3 id="h-rs-synth"><svg class="ic hic" aria-hidden="true"><use href="#i-chart"/></svg><span class="no">3.1</span>Four long synthetic tasks</h3><p class="lead-in">Mean score against cost relative to the unoptimised ceiling. Top left is best.</p><div class="chart"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" width="960" height="440" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-labelledby="t d"><title id="t">Accuracy against cost on four long agent tasks</title><desc id="d">Scatter plots for Claude Haiku and Claude Sonnet: each method's mean score against its cost relative to the unoptimised ceiling. AutoMemory v2 sits at the top left: the ceiling's accuracy at 85% (Haiku) and 58% (Sonnet) of its cost.</desc><circle cx="76.0" cy="22.0" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>This project (AutoMemory)</title></circle><text x="88" y="26" fill="#52514e" font-size="12.5">This project (AutoMemory)</text><rect x="278.5" y="17.0" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>Published methods</title></rect><text x="295.5" y="26" fill="#52514e" font-size="12.5">Published methods</text><path d="M434.2 15.5 L440.7 22.0 L434.2 28.5 L427.7 22.0 Z" fill="#898781" stroke="#ffffff" stroke-width="2"><title>Floor and ceiling</title></path><text x="446.2" y="26" fill="#52514e" font-size="12.5">Floor and ceiling</text><text x="78" y="64" fill="#0b0b0b" font-size="14" font-weight="600">Claude Haiku</text><line x1="78" x2="458" y1="378.0" y2="378.0" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="382.0" fill="#6f6d68" font-size="11.5" text-anchor="end">0.00</text><line x1="78" x2="458" y1="306.6" y2="306.6" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="310.6" fill="#6f6d68" font-size="11.5" text-anchor="end">0.25</text><line x1="78" x2="458" y1="235.1" y2="235.1" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="239.1" fill="#6f6d68" font-size="11.5" text-anchor="end">0.50</text><line x1="78" x2="458" y1="163.7" y2="163.7" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="167.7" fill="#6f6d68" font-size="11.5" text-anchor="end">0.75</text><line x1="78" x2="458" y1="92.3" y2="92.3" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="96.3" fill="#6f6d68" font-size="11.5" text-anchor="end">1.00</text><text x="78.0" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">0%</text><text x="168.5" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">50%</text><text x="259.0" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">100%</text><text x="349.4" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">150%</text><text x="439.9" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">200%</text><line x1="78" x2="458" y1="378" y2="378" stroke="#c3c2b7" stroke-width="1"/><line x1="259.0" x2="259.0" y1="78" y2="378" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="3 4"/><text x="268.0" y="416" fill="#52514e" font-size="12" text-anchor="middle">Cost vs the unoptimised ceiling (lower is cheaper)</text><text transform="translate(34 228.0) rotate(-90)" fill="#52514e" font-size="12" text-anchor="middle">Mean score over 4 tasks</text><path d="M126.9 311.5 L133.4 318.0 L126.9 324.5 L120.4 318.0 Z" fill="#898781" stroke="#ffffff" stroke-width="2"><title>No memory (floor): 0.21 at 27% of the ceiling's cost</title></path><text x="134.9" y="322.0" fill="#0b0b0b" font-size="12" text-anchor="start">No memory (floor)</text><path d="M259.0 120.1 L265.5 126.6 L259.0 133.1 L252.5 126.6 Z" fill="#898781" stroke="#ffffff" stroke-width="2"><title>Ceiling: 0.88 at 100% of the ceiling's cost</title></path><text x="259.0" y="115.6" fill="#0b0b0b" font-size="12" text-anchor="middle">Ceiling</text><rect x="301.0" y="118.7" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>Workspace + ReSum: 0.89 at 126% of the ceiling's cost</title></rect><text x="314.0" y="127.7" fill="#0b0b0b" font-size="12" text-anchor="start">Workspace + ReSum</text><rect x="299.2" y="204.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>Strands: 0.59 at 125% of the ceiling's cost</title></rect><rect x="266.6" y="250.1" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>CADOC: 0.43 at 107% of the ceiling's cost</title></rect><rect x="174.3" y="250.1" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>ReFold: 0.43 at 56% of the ceiling's cost</title></rect><text x="170.3" y="259.1" fill="#0b0b0b" font-size="12" text-anchor="end">ReFold</text><rect x="319.1" y="144.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>SJC on ReSum: 0.80 at 136% of the ceiling's cost</title></rect><rect x="235.9" y="121.6" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>OpenClaw + SJC: 0.88 at 90% of the ceiling's cost</title></rect><rect x="219.6" y="244.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>AKV rolling drop: 0.45 at 81% of the ceiling's cost</title></rect><rect x="263.0" y="224.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>Raw-history RAG: 0.52 at 105% of the ceiling's cost</title></rect><rect x="192.4" y="330.1" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>CORAL: 0.15 at 66% of the ceiling's cost</title></rect><text x="205.4" y="339.1" fill="#0b0b0b" font-size="12" text-anchor="start">CORAL</text><rect x="396.9" y="158.7" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>SelfCompact: 0.75 at 179% of the ceiling's cost</title></rect><text x="393.9" y="179.7" fill="#0b0b0b" font-size="12" text-anchor="end">SelfCompact</text><rect x="234.0" y="164.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>EoCC (NVIDIA): 0.73 at 89% of the ceiling's cost</title></rect><circle cx="233.6" cy="140.9" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory v1: 0.83 at 86% of the ceiling's cost</title></circle><circle cx="231.8" cy="126.6" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory v2: 0.88 at 85% of the ceiling's cost</title></circle><text x="222.8" y="118.6" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="end">AutoMemory v2</text><circle cx="284.3" cy="146.6" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>v2 strong: 0.81 at 114% of the ceiling's cost</title></circle><circle cx="240.9" cy="129.4" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>v2 slim: 0.87 at 90% of the ceiling's cost</title></circle><text x="548" y="64" fill="#0b0b0b" font-size="14" font-weight="600">Claude Sonnet</text><line x1="548" x2="928" y1="378.0" y2="378.0" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="382.0" fill="#6f6d68" font-size="11.5" text-anchor="end">0.00</text><line x1="548" x2="928" y1="306.6" y2="306.6" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="310.6" fill="#6f6d68" font-size="11.5" text-anchor="end">0.25</text><line x1="548" x2="928" y1="235.1" y2="235.1" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="239.1" fill="#6f6d68" font-size="11.5" text-anchor="end">0.50</text><line x1="548" x2="928" y1="163.7" y2="163.7" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="167.7" fill="#6f6d68" font-size="11.5" text-anchor="end">0.75</text><line x1="548" x2="928" y1="92.3" y2="92.3" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="96.3" fill="#6f6d68" font-size="11.5" text-anchor="end">1.00</text><text x="548.0" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">0%</text><text x="638.5" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">50%</text><text x="729.0" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">100%</text><text x="819.4" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">150%</text><text x="909.9" y="396" fill="#6f6d68" font-size="11.5" text-anchor="middle">200%</text><line x1="548" x2="928" y1="378" y2="378" stroke="#c3c2b7" stroke-width="1"/><line x1="729.0" x2="729.0" y1="78" y2="378" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="3 4"/><text x="738.0" y="416" fill="#52514e" font-size="12" text-anchor="middle">Cost vs the unoptimised ceiling (lower is cheaper)</text><text transform="translate(504 228.0) rotate(-90)" fill="#52514e" font-size="12" text-anchor="middle">Mean score over 4 tasks</text><path d="M616.8 322.9 L623.3 329.4 L616.8 335.9 L610.3 329.4 Z" fill="#898781" stroke="#ffffff" stroke-width="2"><title>No memory (floor): 0.17 at 38% of the ceiling's cost</title></path><text x="624.8" y="333.4" fill="#0b0b0b" font-size="12" text-anchor="start">No memory (floor)</text><path d="M729.0 100.1 L735.5 106.6 L729.0 113.1 L722.5 106.6 Z" fill="#898781" stroke="#ffffff" stroke-width="2"><title>Ceiling: 0.95 at 100% of the ceiling's cost</title></path><text x="729.0" y="124.6" fill="#0b0b0b" font-size="12" text-anchor="middle">Ceiling</text><rect x="671.5" y="104.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>Workspace + ReSum: 0.94 at 71% of the ceiling's cost</title></rect><rect x="810.8" y="121.6" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>Strands: 0.88 at 148% of the ceiling's cost</title></rect><text x="823.8" y="130.6" fill="#0b0b0b" font-size="12" text-anchor="start">Strands</text><rect x="693.2" y="127.3" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>CADOC: 0.86 at 83% of the ceiling's cost</title></rect><rect x="734.8" y="95.9" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>ReFold: 0.97 at 106% of the ceiling's cost</title></rect><rect x="687.8" y="104.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>SJC on ReSum: 0.94 at 80% of the ceiling's cost</title></rect><rect x="666.0" y="124.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>OpenClaw + SJC: 0.87 at 68% of the ceiling's cost</title></rect><rect x="666.0" y="201.6" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>AKV rolling drop: 0.60 at 68% of the ceiling's cost</title></rect><text x="679.0" y="210.6" fill="#0b0b0b" font-size="12" text-anchor="start">AKV rolling drop</text><rect x="903.1" y="90.1" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>Raw-history RAG: 0.99 at 199% of the ceiling's cost</title></rect><text x="900.1" y="111.1" fill="#0b0b0b" font-size="12" text-anchor="end">Raw-history RAG</text><rect x="624.4" y="264.4" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>CORAL: 0.38 at 45% of the ceiling's cost</title></rect><text x="637.4" y="273.4" fill="#0b0b0b" font-size="12" text-anchor="start">CORAL</text><rect x="778.2" y="107.3" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>SelfCompact: 0.93 at 130% of the ceiling's cost</title></rect><rect x="771.0" y="113.0" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>EoCC (NVIDIA): 0.91 at 126% of the ceiling's cost</title></rect><circle cx="671.0" cy="98.0" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory v1: 0.98 at 68% of the ceiling's cost</title></circle><circle cx="653.0" cy="95.1" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory v2: 0.99 at 58% of the ceiling's cost</title></circle><text x="644.0" y="87.1" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="end">AutoMemory v2</text><circle cx="658.4" cy="92.3" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>v2 strong: 1.00 at 61% of the ceiling's cost</title></circle><circle cx="689.1" cy="92.3" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>v2 slim: 1.00 at 78% of the ceiling's cost</title></circle></svg>
+</div></section>
+  <section id="rs-swe" aria-labelledby="h-rs-swe"><h3 id="h-rs-swe"><svg class="ic hic" aria-hidden="true"><use href="#i-cpu"/></svg><span class="no">3.2</span>SWE-bench Verified: 100 Django issues</h3><p class="lead-in">One fresh session per issue, graded with the official FAIL_TO_PASS and PASS_TO_PASS tests. The board shows every setting; the charts show the 16K window and Sonnet's dollars per resolved issue.</p>
+    <div class="board" role="table" aria-label="SWE-bench workdays: issues resolved and cost per setting"><div class="board-row head" role="row"><span role="columnheader">Setting · window</span><span role="columnheader">Haiku · resolved (cost vs ceiling · $/resolved)</span><span role="columnheader">Sonnet · resolved (cost vs ceiling · $/resolved)</span></div><div class="board-row grp" role="row"><span role="cell">The model's own window</span><span></span><span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">Ceiling: full history, no cache</span><span class="bcell" role="cell" title="Ceiling: full history, no cache (own) · haiku: 82/100 resolved, cost 100% of the ceiling, $0.015 per resolved issue, median peak 21.2K, 0 compactions"><span class="btrack"><span class="bfill g-anc" style="width:82%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">82/100 <span class="c ">(100% · $0.015)</span></span></span><span class="bcell" role="cell" title="Ceiling: full history, no cache (own) · sonnet: 88/100 resolved, cost 100% of the ceiling, $0.165 per resolved issue, median peak 19.2K, 0 compactions"><span class="btrack"><span class="bfill g-anc" style="width:88%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">88/100 <span class="c ">(100% · $0.165)</span></span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">Full history, cached (everyday default)</span><span class="bcell" role="cell" title="Full history, cached (everyday default) (own) · haiku: 79/100 resolved, cost 86% of the ceiling, $0.013 per resolved issue, median peak 18.8K, 0 compactions"><span class="btrack"><span class="bfill g-pub" style="width:79%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">79/100 <span class="c cheap">(86% · $0.013)</span></span></span><span class="bcell" role="cell" title="Full history, cached (everyday default) (own) · sonnet: 86/100 resolved, cost 84% of the ceiling, $0.142 per resolved issue, median peak 19.7K, 0 compactions"><span class="btrack"><span class="bfill g-pub" style="width:86%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">86/100 <span class="c cheap">(84% · $0.142)</span></span></span></div><div class="board-row grp" role="row"><span role="cell">32K window (compaction at 24K)</span><span></span><span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">Full history, cached</span><span class="bcell" role="cell" title="Full history, cached (32K) · haiku: 77/100 resolved, cost 62% of the ceiling, $0.010 per resolved issue, median peak 18.9K, 0 compactions, 2 sessions overflowed"><span class="btrack"><span class="bfill g-pub" style="width:77%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">77/100 <span class="c cheap">(62% · $0.010)</span></span></span><span class="bcell" role="cell" title="Full history, cached (32K) · sonnet: 87/100 resolved, cost 100% of the ceiling, $0.168 per resolved issue, median peak 20.5K, 0 compactions, 1 sessions overflowed"><span class="btrack"><span class="bfill g-pub" style="width:87%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">87/100 <span class="c ">(100% · $0.168)</span></span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">AutoMemory v2 lean (ReSum)</span><span class="bcell" role="cell" title="AutoMemory v2 lean (ReSum) (32K) · haiku: 78/100 resolved, cost 98% of the ceiling, $0.015 per resolved issue, median peak 20.8K, 9 compactions"><span class="btrack"><span class="bfill g-ours" style="width:78%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">78/100 <span class="c ">(98% · $0.015)</span></span></span><span class="bcell" role="cell" title="AutoMemory v2 lean (ReSum) (32K) · sonnet: 87/100 resolved, cost 92% of the ceiling, $0.154 per resolved issue, median peak 18.8K, 3 compactions"><span class="btrack"><span class="bfill g-ours" style="width:87%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">87/100 <span class="c ">(92% · $0.154)</span></span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">AutoMemory v2 lean + handoff</span><span class="bcell" role="cell" title="AutoMemory v2 lean + handoff (32K) · haiku: 77/100 resolved, cost 87% of the ceiling, $0.014 per resolved issue, median peak 19.1K, 7 compactions"><span class="btrack"><span class="bfill g-ours" style="width:77%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">77/100 <span class="c cheap">(87% · $0.014)</span></span></span><span class="bcell" role="cell" title="AutoMemory v2 lean + handoff (32K) · sonnet: 89/100 resolved, cost 79% of the ceiling, $0.130 per resolved issue, median peak 16.3K, 3 compactions"><span class="btrack"><span class="bfill g-ours" style="width:89%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">89/100 <span class="c cheap">(79% · $0.130)</span></span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">… recap written by Haiku (Sonnet only)</span><span class="bcell" role="cell"><span class="btrack"></span><span class="bval"><span class="c">not run</span></span></span><span class="bcell" role="cell" title="… recap written by Haiku (Sonnet only) (32K) · sonnet: 86/100 resolved, cost 89% of the ceiling, $0.150 per resolved issue, median peak 17.5K, 6 compactions"><span class="btrack"><span class="bfill g-ours" style="width:86%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">86/100 <span class="c cheap">(89% · $0.150)</span></span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">EoCC alone (NVIDIA)</span><span class="bcell" role="cell" title="EoCC alone (NVIDIA) (32K) · haiku: 82/100 resolved, cost 88% of the ceiling, $0.013 per resolved issue, median peak 18.3K, 3 compactions"><span class="btrack"><span class="bfill g-new" style="width:82%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">82/100 <span class="c cheap">(88% · $0.013)</span></span></span><span class="bcell" role="cell" title="EoCC alone (NVIDIA) (32K) · sonnet: 84/100 resolved, cost 87% of the ceiling, $0.151 per resolved issue, median peak 16.7K, 3 compactions"><span class="btrack"><span class="bfill g-new" style="width:84%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">84/100 <span class="c cheap">(87% · $0.151)</span></span></span></div><div class="board-row grp" role="row"><span role="cell">Tight 16K window (compaction at 12K)</span><span></span><span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">AutoMemory v2 lean (ReSum)</span><span class="bcell" role="cell" title="AutoMemory v2 lean (ReSum) (16K) · haiku: 76/100 resolved, cost 83% of the ceiling, $0.013 per resolved issue, median peak 11.5K, 39 compactions"><span class="btrack"><span class="bfill g-ours" style="width:76%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">76/100 <span class="c cheap">(83% · $0.013)</span></span></span><span class="bcell" role="cell" title="AutoMemory v2 lean (ReSum) (16K) · sonnet: 86/100 resolved, cost 73% of the ceiling, $0.123 per resolved issue, median peak 10.8K, 28 compactions"><span class="btrack"><span class="bfill g-ours" style="width:86%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">86/100 <span class="c cheap">(73% · $0.123)</span></span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">AutoMemory v2 lean + handoff</span><span class="bcell" role="cell" title="AutoMemory v2 lean + handoff (16K) · haiku: 81/100 resolved, cost 89% of the ceiling, $0.013 per resolved issue, median peak 11.8K, 50 compactions"><span class="btrack"><span class="bfill g-ours" style="width:81%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">81/100 <span class="c cheap">(89% · $0.013)</span></span></span><span class="bcell" role="cell" title="AutoMemory v2 lean + handoff (16K) · sonnet: 88/100 resolved, cost 89% of the ceiling, $0.147 per resolved issue, median peak 11.6K, 25 compactions"><span class="btrack"><span class="bfill g-ours" style="width:88%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">88/100 <span class="c cheap">(89% · $0.147)</span></span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">… recap written by Haiku (Sonnet only)</span><span class="bcell" role="cell"><span class="btrack"></span><span class="bval"><span class="c">not run</span></span></span><span class="bcell" role="cell" title="… recap written by Haiku (Sonnet only) (16K) · sonnet: 86/100 resolved, cost 90% of the ceiling, $0.152 per resolved issue, median peak 11.3K, 32 compactions"><span class="btrack"><span class="bfill g-ours" style="width:86%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">86/100 <span class="c ">(90% · $0.152)</span></span></span></div><div class="board-row" role="row"><span class="bname" role="rowheader">EoCC alone (NVIDIA)</span><span class="bcell" role="cell" title="EoCC alone (NVIDIA) (16K) · haiku: 72/100 resolved, cost 93% of the ceiling, $0.016 per resolved issue, median peak 14.4K, 34 compactions, 15 sessions overflowed"><span class="btrack"><span class="bfill g-new" style="width:72%"></span><span class="bmark" style="left:82%"></span></span><span class="bval">72/100 <span class="c ">(93% · $0.016)</span></span></span><span class="bcell" role="cell" title="EoCC alone (NVIDIA) (16K) · sonnet: 83/100 resolved, cost 100% of the ceiling, $0.175 per resolved issue, median peak 13.1K, 18 compactions, 7 sessions overflowed"><span class="btrack"><span class="bfill g-new" style="width:83%"></span><span class="bmark" style="left:88%"></span></span><span class="bval">83/100 <span class="c ">(100% · $0.175)</span></span></span></div></div><div class="chart"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 390" width="960" height="390" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-labelledby="t d"><title id="t">SWE-bench Verified: 100 Django issues at a 16K window</title><desc id="d">Issues resolved against cost relative to the ceiling, for Haiku and Sonnet. AutoMemory lean with ReSum is the cheapest; with NVIDIA's handoff recap it reaches the ceiling's accuracy for more cost; EoCC alone resolves the fewest.</desc><circle cx="76.0" cy="22.0" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory</title></circle><text x="88" y="26" fill="#52514e" font-size="12.5">AutoMemory</text><rect x="172.0" y="17.0" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>NVIDIA EoCC alone</title></rect><text x="189.0" y="26" fill="#52514e" font-size="12.5">NVIDIA EoCC alone</text><path d="M327.7 15.5 L334.2 22.0 L327.7 28.5 L321.2 22.0 Z" fill="#898781" stroke="#ffffff" stroke-width="2"><title>Ceiling</title></path><text x="339.7" y="26" fill="#52514e" font-size="12.5">Ceiling</text><text x="78" y="64" fill="#0b0b0b" font-size="14" font-weight="600">Claude Haiku</text><line x1="78" x2="458" y1="328.0" y2="328.0" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="332.0" fill="#6f6d68" font-size="11.5" text-anchor="end">70</text><line x1="78" x2="458" y1="271.2" y2="271.2" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="275.2" fill="#6f6d68" font-size="11.5" text-anchor="end">75</text><line x1="78" x2="458" y1="214.4" y2="214.4" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="218.4" fill="#6f6d68" font-size="11.5" text-anchor="end">80</text><line x1="78" x2="458" y1="157.5" y2="157.5" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="161.5" fill="#6f6d68" font-size="11.5" text-anchor="end">85</text><line x1="78" x2="458" y1="100.7" y2="100.7" stroke="#e1e0d9" stroke-width="1"/><text x="70" y="104.7" fill="#6f6d68" font-size="11.5" text-anchor="end">90</text><text x="78.0" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">60%</text><text x="162.4" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">70%</text><text x="246.9" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">80%</text><text x="331.3" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">90%</text><text x="415.8" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">100%</text><line x1="78" x2="458" y1="328" y2="328" stroke="#c3c2b7" stroke-width="1"/><line x1="415.8" x2="415.8" y1="78" y2="328" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="3 4"/><text x="268.0" y="366" fill="#52514e" font-size="12" text-anchor="middle">Cost vs the ceiling (lower is cheaper)</text><text transform="translate(34 203.0) rotate(-90)" fill="#52514e" font-size="12" text-anchor="middle">Issues resolved of 100</text><path d="M415.8 185.1 L422.3 191.6 L415.8 198.1 L409.3 191.6 Z" fill="#898781" stroke="#ffffff" stroke-width="2"><title>Ceiling (own window): 82 at 100% of the ceiling's cost</title></path><text x="406.8" y="181.6" fill="#0b0b0b" font-size="12" text-anchor="end">Ceiling (own window)</text><circle cx="272.2" cy="259.8" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory lean (ReSum): 76 at 83% of the ceiling's cost</title></circle><text x="263.2" y="263.8" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="end">AutoMemory lean (ReSum)</text><circle cx="322.9" cy="203.0" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory lean + handoff: 81 at 89% of the ceiling's cost</title></circle><text x="313.9" y="207.0" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="end">AutoMemory lean + handoff</text><rect x="351.7" y="300.3" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>EoCC alone (NVIDIA): 72 at 93% of the ceiling's cost</title></rect><text x="347.7" y="309.3" fill="#0b0b0b" font-size="12" text-anchor="end">EoCC alone (NVIDIA)</text><text x="548" y="64" fill="#0b0b0b" font-size="14" font-weight="600">Claude Sonnet</text><line x1="548" x2="928" y1="328.0" y2="328.0" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="332.0" fill="#6f6d68" font-size="11.5" text-anchor="end">70</text><line x1="548" x2="928" y1="271.2" y2="271.2" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="275.2" fill="#6f6d68" font-size="11.5" text-anchor="end">75</text><line x1="548" x2="928" y1="214.4" y2="214.4" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="218.4" fill="#6f6d68" font-size="11.5" text-anchor="end">80</text><line x1="548" x2="928" y1="157.5" y2="157.5" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="161.5" fill="#6f6d68" font-size="11.5" text-anchor="end">85</text><line x1="548" x2="928" y1="100.7" y2="100.7" stroke="#e1e0d9" stroke-width="1"/><text x="540" y="104.7" fill="#6f6d68" font-size="11.5" text-anchor="end">90</text><text x="548.0" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">60%</text><text x="632.4" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">70%</text><text x="716.9" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">80%</text><text x="801.3" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">90%</text><text x="885.8" y="346" fill="#6f6d68" font-size="11.5" text-anchor="middle">100%</text><line x1="548" x2="928" y1="328" y2="328" stroke="#c3c2b7" stroke-width="1"/><line x1="885.8" x2="885.8" y1="78" y2="328" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="3 4"/><text x="738.0" y="366" fill="#52514e" font-size="12" text-anchor="middle">Cost vs the ceiling (lower is cheaper)</text><text transform="translate(504 203.0) rotate(-90)" fill="#52514e" font-size="12" text-anchor="middle">Issues resolved of 100</text><path d="M885.8 117.0 L892.3 123.5 L885.8 130.0 L879.3 123.5 Z" fill="#898781" stroke="#ffffff" stroke-width="2"><title>Ceiling (own window): 88 at 100% of the ceiling's cost</title></path><text x="876.8" y="143.5" fill="#0b0b0b" font-size="12" text-anchor="end">Ceiling (own window)</text><circle cx="657.8" cy="146.2" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory lean (ReSum): 86 at 73% of the ceiling's cost</title></circle><text x="666.8" y="164.2" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="start">AutoMemory lean (ReSum)</text><circle cx="792.9" cy="123.5" r="5.5" fill="#2a78d6" stroke="#ffffff" stroke-width="2"><title>AutoMemory lean + handoff: 88 at 89% of the ceiling's cost</title></circle><text x="783.9" y="127.5" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="end">AutoMemory lean + handoff</text><rect x="880.8" y="175.3" width="10" height="10" rx="1.5" fill="#eb6834" stroke="#ffffff" stroke-width="2"><title>EoCC alone (NVIDIA): 83 at 100% of the ceiling's cost</title></rect><text x="876.8" y="184.3" fill="#0b0b0b" font-size="12" text-anchor="end">EoCC alone (NVIDIA)</text></svg>
+</div><div class="chart"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 286" width="900" height="286" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" role="img" aria-labelledby="t d"><title id="t">Dollars per resolved issue (Sonnet)</title><desc id="d">Horizontal bars: AutoMemory lean at a 16K window is the cheapest per resolved issue ($0.123); the unoptimised ceiling costs $0.165 and EoCC alone $0.175.</desc><text x="20" y="24" fill="#0b0b0b" font-size="14" font-weight="600">Claude Sonnet: dollars per resolved issue, 100 SWE-bench Verified issues (lower is better)</text><line x1="250.0" x2="250.0" y1="42" y2="252" stroke="#e1e0d9" stroke-width="1"/><text x="250.0" y="270" fill="#6f6d68" font-size="11.5" text-anchor="middle">$0.00</text><line x1="390.0" x2="390.0" y1="42" y2="252" stroke="#e1e0d9" stroke-width="1"/><text x="390.0" y="270" fill="#6f6d68" font-size="11.5" text-anchor="middle">$0.05</text><line x1="530.0" x2="530.0" y1="42" y2="252" stroke="#e1e0d9" stroke-width="1"/><text x="530.0" y="270" fill="#6f6d68" font-size="11.5" text-anchor="middle">$0.10</text><line x1="670.0" x2="670.0" y1="42" y2="252" stroke="#e1e0d9" stroke-width="1"/><text x="670.0" y="270" fill="#6f6d68" font-size="11.5" text-anchor="middle">$0.15</text><line x1="810.0" x2="810.0" y1="42" y2="252" stroke="#e1e0d9" stroke-width="1"/><text x="810.0" y="270" fill="#6f6d68" font-size="11.5" text-anchor="middle">$0.20</text><text x="238" y="67" fill="#0b0b0b" font-size="12.5" text-anchor="end">AutoMemory lean, 16K</text><path d="M250 54 h340.4 a4 4 0 0 1 4 4 v12 a4 4 0 0 1 -4 4 h-340.4 Z" fill="#2a78d6"><title>AutoMemory lean, 16K: $0.123 per resolved issue</title></path><text x="602.4" y="67" fill="#52514e" font-size="12.5">$0.123</text><text x="238" y="101" fill="#0b0b0b" font-size="12.5" text-anchor="end">AutoMemory lean + handoff, 32K</text><path d="M250 88 h360.0 a4 4 0 0 1 4 4 v12 a4 4 0 0 1 -4 4 h-360.0 Z" fill="#2a78d6"><title>AutoMemory lean + handoff, 32K: $0.130 per resolved issue</title></path><text x="622.0" y="101" fill="#52514e" font-size="12.5">$0.130</text><text x="238" y="135" fill="#0b0b0b" font-size="12.5" text-anchor="end">Cached full history, own window</text><path d="M250 122 h393.6 a4 4 0 0 1 4 4 v12 a4 4 0 0 1 -4 4 h-393.6 Z" fill="#898781"><title>Cached full history, own window: $0.142 per resolved issue</title></path><text x="655.6" y="135" fill="#52514e" font-size="12.5">$0.142</text><text x="238" y="169" fill="#0b0b0b" font-size="12.5" text-anchor="end">AutoMemory lean + handoff, 16K</text><path d="M250 156 h407.6 a4 4 0 0 1 4 4 v12 a4 4 0 0 1 -4 4 h-407.6 Z" fill="#2a78d6"><title>AutoMemory lean + handoff, 16K: $0.147 per resolved issue</title></path><text x="669.6" y="169" fill="#52514e" font-size="12.5">$0.147</text><text x="238" y="203" fill="#0b0b0b" font-size="12.5" text-anchor="end">Ceiling: full history, no cache</text><path d="M250 190 h458.0 a4 4 0 0 1 4 4 v12 a4 4 0 0 1 -4 4 h-458.0 Z" fill="#898781"><title>Ceiling: full history, no cache: $0.165 per resolved issue</title></path><text x="720.0" y="203" fill="#52514e" font-size="12.5">$0.165</text><text x="238" y="237" fill="#0b0b0b" font-size="12.5" text-anchor="end">EoCC alone, 16K</text><path d="M250 224 h486.0 a4 4 0 0 1 4 4 v12 a4 4 0 0 1 -4 4 h-486.0 Z" fill="#eb6834"><title>EoCC alone, 16K: $0.175 per resolved issue</title></path><text x="748.0" y="237" fill="#52514e" font-size="12.5">$0.175</text><line x1="250" x2="250" y1="42" y2="252" stroke="#c3c2b7" stroke-width="1"/></svg>
+</div></section>
+  <section id="rs-pick" aria-labelledby="h-rs-pick"><h3 id="h-rs-pick"><svg class="ic hic" aria-hidden="true"><use href="#i-route"/></svg><span class="no">3.3</span>Which preset</h3>
+    <div class="tbl-wrap"><table><thead><tr><th>Work</th><th>Preset</th><th>Why</th></tr></thead><tbody>
+      <tr><th>Multi-session work that builds on earlier results</th><td><code>automem_v2</code></td><td>Ceiling accuracy at 85% / 58% of its cost</td></tr>
+      <tr><th>Same, strong agent model</th><td><code>automem_v2_strong</code></td><td>Sonnet solved 16/16 runs at 61%</td></tr>
+      <tr><th>Independent coding issues, cost first</th><td><code>automem_v2_lean</code></td><td>Sonnet $0.123 per resolved issue at 16K</td></tr>
+      <tr><th>Independent coding issues, accuracy first</th><td><code>automem_v2_lean_handoff</code></td><td>81 / 88 of 100 resolved at 16K</td></tr>
+      <tr><th>Short sessions on a large window</th><td>cached full history</td><td>Haiku 77/100 at 62% at 32K</td></tr>
+    </tbody></table></div></section>
+
+  <div class="banner" id="cc" data-pn="04"><span class="tag"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg>Part 4 · For everyday users</span><h2>Claude Code plugin</h2><div class="meta"><span>plugins/automem</span><span>claude --plugin-dir plugins/automem</span></div></div>
+  <section id="cc-how" aria-labelledby="h-cc-how"><h3 id="h-cc-how"><svg class="ic hic" aria-hidden="true"><use href="#i-steps"/></svg><span class="no">4.1</span>How it works</h3>
+    <p>The plugin runs the measured harness steps as Claude Code hooks: no extra model calls, nothing rewritten in the cached history. Claude Code already caches prompts and cuts long Bash output to a 2 KB head-only preview with the full text saved to a file; the plugin builds on that.</p>
+    <div class="tbl-wrap"><table><thead><tr><th>Hook</th><th>What it does</th><th>Measured rule behind it</th></tr></thead><tbody>
+      <tr><th>PostToolUse (Bash)</th><td>Long output reaches the model as head + tail (1,500 characters each). For output Claude Code truncated, the tail is read from Claude Code's own saved copy, so test summaries and failures at the end stay visible.</td><td>Previews at ingestion (Haiku 11/16 vs 7/16)</td></tr>
+      <tr><th>PreCompact</th><td>Compaction keeps NVIDIA's six-field handoff recap.</td><td>81 vs 76 / 88 vs 86 at 16K</td></tr>
+      <tr><th>SessionStart</th><td>Recalls this project's notes at startup, resume, clear and after compaction.</td><td>Recall: Haiku 0.34 without, 0.99 with notes on Sonnet</td></tr>
+      <tr><th>Stop</th><td>Saves each turn's final message as a project note.</td><td>Autosave</td></tr>
+    </tbody></table></div>
+    <p class="note">Checked live: with a 108 KB output, plain Claude Code showed the model lines 1–234; with the plugin the model saw the head and the real last line, and found a middle line in the saved file without re-running the command.</p></section>
+  <section id="cc-pilot" aria-labelledby="h-cc-pilot"><h3 id="h-cc-pilot"><svg class="ic hic" aria-hidden="true"><use href="#i-gauge"/></svg><span class="no">4.2</span>Pilot inside Claude Code</h3><p class="lead-in">Headless Claude Code with its own tools and agent loop, one fresh session per SWE-bench Verified issue, the same prompt and the same spending cap, with and without the plugin.</p><p class="note">Pilot status: partial: 4 of 20 issues paired so far.</p><div class="tbl-wrap"><table><thead><tr><th>Setting</th><th>Resolved</th><th>Cost</th><th>$ / resolved</th><th>Median peak</th><th>Median turns</th><th>Long outputs previewed</th></tr></thead><tbody><tr><th>Haiku · Claude Code</th><td class="nm">4/4</td><td class="nm">$0.02</td><td class="nm">$0.005</td><td class="nm">40.9K</td><td class="nm">6</td><td class="nm">0</td></tr><tr><th>Haiku · Claude Code + automem</th><td class="nm">4/4</td><td class="nm">$0.02</td><td class="nm">$0.005</td><td class="nm">41.3K</td><td class="nm">6</td><td class="nm">1</td></tr><tr class="sub"><td colspan="7">Haiku: plugin cost +1% vs plain; resolved only with the plugin 0, only without it 0.</td></tr><tr><th>Sonnet · Claude Code</th><td class="nm">6/9</td><td class="nm">$0.62</td><td class="nm">$0.103</td><td class="nm">37.8K</td><td class="nm">5</td><td class="nm">0</td></tr><tr><th>Sonnet · Claude Code + automem</th><td class="nm">7/9</td><td class="nm">$0.59</td><td class="nm">$0.085</td><td class="nm">38.3K</td><td class="nm">4</td><td class="nm">0</td></tr><tr class="sub"><td colspan="7">Sonnet: plugin cost -4% vs plain; resolved only with the plugin 1, only without it 0.</td></tr></tbody></table></div></section>
+  <section id="cc-vs" aria-labelledby="h-cc-vs"><h3 id="h-cc-vs"><svg class="ic hic" aria-hidden="true"><use href="#i-grid"/></svg><span class="no">4.3</span>Versus other memory tools</h3>
+    <div class="tbl-wrap"><table><thead><tr><th></th><th>Claude Code's own memory</th><th>Memory services (fact extraction + retrieval)</th><th>Model-managed memory (memory tools)</th><th>This plugin</th></tr></thead><tbody>
+      <tr><th>Who acts</th><td>Harness: CLAUDE.md and auto memory loaded each session; compaction near the context limit</td><td>An extra LLM extracts facts; embeddings retrieve them</td><td>The agent decides when to read and write memory</td><td>Harness hooks, no extra LLM calls</td></tr>
+      <tr><th>Targets</th><td>Persistent instructions and facts</td><td>Long-term recall across chats</td><td>Long-term recall</td><td>Context size and cost per task, plus recall</td></tr>
+      <tr><th>Cost side effects</th><td>None added</td><td>Extraction calls per turn; retrieved text changes the prompt</td><td>Tool calls the model may skip</td><td>None added; edits only at ingestion and compaction</td></tr>
+      <tr><th>Measured here</th><td>Prompt caching and output persistence observed</td><td>MemoryOS, LightMem, Nemori: 0.2–0.5 lower than plain notes</td><td>CORAL: tools barely used on Haiku</td><td>Bench evidence above; Claude Code pilot in 4.2</td></tr>
+    </tbody></table></div>
+    <p class="note">Other memory services (for example mem0, Zep or Letta) have not been measured in this repository.</p></section>
+
+  <div class="banner" id="todo" data-pn="05"><span class="tag"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg>Part 5 · Next</span><h2>To-do</h2><div class="meta"><span>Status as of 8 November 2026</span></div></div>
+  <section id="todo-blocked" aria-labelledby="h-todo-blocked"><h3 id="h-todo-blocked"><svg class="ic hic" aria-hidden="true"><use href="#i-alert"/></svg><span class="no">5.1</span>Blocked</h3><div class="todo"><div class="it"><h4>Bedrock validation</h4><span><span class="lvl lvl-high">Blocked: credentials</span> <span class="cost">—</span></span><p>Every result uses the Claude Code CLI's list prices. Bedrock bills cache writes at 1.25× (not 2×) and uses explicit cache points, which could change the cost ranking. Needs AWS credentials or a Bedrock API key; runbook in scripts/run_bedrock_validation.sh.</p></div><div class="it"><h4>GPT and other non-Claude models</h4><span><span class="lvl lvl-high">Blocked: credentials</span> <span class="cost">—</span></span><p>No non-Claude model has been measured. GPT-5.6 is reachable through Bedrock's OpenAI-compatible endpoints with the same key; prices go in config/models.json.</p></div></div></section>
+  <section id="todo-next" aria-labelledby="h-todo-next"><h3 id="h-todo-next"><svg class="ic hic" aria-hidden="true"><use href="#i-route"/></svg><span class="no">5.2</span>Next steps</h3><div class="todo"><div class="it"><h4>Finish and extend the Claude Code pilot</h4><span><span class="lvl lvl-med">Running</span> <span class="cost">$60–100 for 100 issues</span></span><p>20 issues per model first; if the plugin holds accuracy at lower cost, run all 100 issues on both models to make the result firm.</p></div><div class="it"><h4>Fewer agent tokens after a handoff reset</h4><span><span class="lvl lvl-med">Next</span> <span class="cost">≈ $20–30</span></span><p>After a handoff reset the agent writes about 45% more output, which is the 6–16 points the recap costs. Cutting that would make the accurate preset cheap as well.</p></div><div class="it"><h4>Adaptive workspace</h4><span><span class="lvl lvl-med">Next</span> <span class="cost">small</span></span><p>Turn the note workspace on only when the task refers to earlier sessions, so one preset fits both multi-session and independent work.</p></div><div class="it"><h4>More SWE-bench evidence for handoff</h4><span><span class="lvl lvl-low">Next</span> <span class="cost">≈ $50–60</span></span><p>At 16K, handoff resolved 7 issues ReSum missed and missed 2 (Haiku; sign test p ≈ 0.18). More seeds or a second repository would settle it.</p></div><div class="it"><h4>Report cost on two price bases</h4><span><span class="lvl lvl-low">Next</span> <span class="cost">no API cost</span></span><p>List prices with caching (Bedrock and the CLI today) and context-length pricing (the NVIDIA paper's model) for self-hosted or long-context-tier users.</p></div></div></section>
+  <section id="todo-gaps" aria-labelledby="h-todo-gaps"><h3 id="h-todo-gaps"><svg class="ic hic" aria-hidden="true"><use href="#i-info"/></svg><span class="no">5.3</span>Known gaps</h3><div class="todo"><div class="it"><h4>One repository</h4><span><span class="lvl lvl-low">Gap</span> <span class="cost"></span></span><p>The SWE-bench set is 100 issues from Django; another repository would test generality.</p></div><div class="it"><h4>Emulated windows</h4><span><span class="lvl lvl-low">Gap</span> <span class="cost"></span></span><p>The synthetic tasks emulate small windows (16K–48K) to create memory pressure.</p></div><div class="it"><h4>Local-only reports</h4><span><span class="lvl lvl-low">Gap</span> <span class="cost"></span></span><p>Detailed reports in docs/results/ and the rows behind docs/overview.html are git-ignored, so a fresh clone cannot rebuild those pages; the README charts can be rebuilt.</p></div></div></section>
+
+  <section class="endnote" id="links" aria-labelledby="h-links">
+    <h2 id="h-links"><svg class="ic hic" aria-hidden="true"><use href="#i-book"/></svg>Links</h2>
+    <div class="refs-group"><ol class="refs">
+      <li><a href="https://github.com/GaryTang32/Efficient-Agent-Memory">Repository</a> <span class="desc">README with charts, flowcharts and quick start</span></li>
+      <li><a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/1">PR #1</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/2">PR #2</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/3">PR #3</a> <span class="desc">merged</span></li>
+      <li><a href="https://claude.ai/artifact/JVkigqm5XYpmwbN2F11xdF">Interactive overview</a> <span class="desc">every method's mechanism, diagrams and charts</span></li>
+      <li><a href="https://arxiv.org/abs/2611.05306">You don't need long context</a> <span class="src">NVIDIA, arXiv 2611.05306</span></li>
+      <li><a href="https://www.swebench.com/">SWE-bench Verified</a> <span class="src">Jimenez et al., ICLR 2024; OpenAI</span></li>
+    </ol></div>
+  </section>
+</main>
+</div>
+<script>
+  /* Side panel: highlights the section in view, shows reading progress, collapses to a top bar on narrow screens */
+  (() => {
+    const nav = document.getElementById('sidenav');
+    if (!nav) return;
+    const list = nav.querySelector('.sn-list');
+    const links = [...list.querySelectorAll('a[href^="#"]')];
+    const pairs = links.map((a) => [a, document.getElementById(a.getAttribute('href').slice(1))]).filter((p) => p[1]);
+    links.forEach((a) => { a.title = a.textContent.replace(/\s+/g, ' ').trim(); });
+    const curPart = nav.querySelector('.sn-cur-part');
+    const current = nav.querySelector('.sn-current');
+    const fill = nav.querySelector('.sn-progress span');
+    const readbar = document.querySelector('.readbar span');
+    const toggle = nav.querySelector('.sn-toggle');
+    let activeLink = null;
+    let ticking = false;
+
+    const update = () => {
+      ticking = false;
+      const line = Math.min(160, window.innerHeight * 0.3);
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      let pick = pairs[0];
+      for (const p of pairs) {
+        if (p[1].getBoundingClientRect().top - line <= 0) pick = p; else break;
+      }
+      if (max > 0 && window.scrollY >= max - 2) pick = pairs[pairs.length - 1];
+      const pct = max > 0 ? Math.min(100, Math.max(0, (window.scrollY / max) * 100)) : 0;
+      fill.style.width = pct + '%';
+      if (readbar) readbar.style.width = pct + '%';
+      if (!pick || pick[0] === activeLink) return;
+      if (activeLink) { activeLink.classList.remove('is-active'); activeLink.removeAttribute('aria-current'); }
+      activeLink = pick[0];
+      activeLink.classList.add('is-active');
+      activeLink.setAttribute('aria-current', 'location');
+      const partLi = activeLink.closest('.sn-part');
+      nav.querySelectorAll('.sn-part').forEach((p) => p.classList.toggle('is-active', p === partLi));
+      const isSub = activeLink.closest('ol') !== list;
+      curPart.textContent = isSub && partLi ? partLi.dataset.name : '';
+      current.textContent = activeLink.textContent.replace(/\s+/g, ' ').trim();
+      const colour = partLi ? getComputedStyle(partLi).getPropertyValue('--part').trim() : '';
+      if (colour) document.documentElement.style.setProperty('--now', colour);
+      if (getComputedStyle(list).display !== 'none' && nav.scrollHeight > nav.clientHeight + 4) {
+        const n = nav.getBoundingClientRect();
+        const r = activeLink.getBoundingClientRect();
+        if (r.top < n.top + 150 || r.bottom > n.bottom - 24) nav.scrollTop += r.top - n.top - n.height / 2;
+      }
+    };
+
+    toggle.addEventListener('click', () => {
+      const open = !nav.classList.contains('is-open');
+      nav.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+    list.addEventListener('click', (event) => {
+      if (event.target.closest('a') && nav.classList.contains('is-open')) {
+        nav.classList.remove('is-open');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+    window.addEventListener('scroll', () => {
+      if (!ticking) { ticking = true; requestAnimationFrame(update); }
+    }, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  })();
+</script>
+<script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+      const staticOverride = params.get('motion') === 'static' || document.documentElement.dataset.motion === 'static';
+      const requestedStep = params.get('step');
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+      document.fonts.ready.then(() => { document.documentElement.dataset.fontsReady = 'true'; });
+
+      document.querySelectorAll('[data-motion-root]').forEach((root) => {
+        const count = Number(root.dataset.stepCount);
+        const hold = parseFloat(getComputedStyle(root).getPropertyValue('--motion-hold')) || 720;
+        const parsedStep = requestedStep !== null && /^\d+$/.test(requestedStep) ? Number(requestedStep) : null;
+        const exactStep = params.get('motion') === 'step' && Number.isSafeInteger(parsedStep) && parsedStep >= 0 && parsedStep <= count ? parsedStep : null;
+        const items = [...root.querySelectorAll('[data-motion-item]')];
+        const labels = Array.from({ length: count + 1 }, (_, index) => index === 0
+          ? 'Ready'
+          : items.filter((item) => !item.hasAttribute('data-motion-decorative') && Number(item.dataset.step) === index)
+              .map((item) => item.getAttribute('aria-label')).join('; '));
+        const controls = root.querySelector('[data-motion-controls]');
+        const status = root.querySelector('[data-motion-status]');
+        const visibleStep = root.querySelector('[data-motion-step-label]');
+        let step = count;
+        let timer = 0;
+        let playing = false;
+        let stepBeforeReduce = 0;
+        let resumeAfterReduce = root.dataset.motionMode === 'reveal';
+
+        const buttons = (action) => controls.querySelector(`[data-motion-action="${action}"]`);
+        const clearClock = () => { window.clearTimeout(timer); timer = 0; };
+        const announce = () => { status.textContent = `Step ${step} of ${count}: ${labels[step] || 'Complete'}`; };
+        const setControlsAvailable = (available) => {
+          controls.hidden = !available;
+          controls.setAttribute('aria-hidden', String(!available));
+          controls.dataset.playbackDisabled = String(!available);
+          controls.querySelectorAll('button').forEach((control) => { control.disabled = !available; });
+        };
+
+        function render(next, userInitiated = false) {
+          step = Math.max(0, Math.min(count, next));
+          root.dataset.stepCurrent = String(step);
+          root.dataset.frame = step === count ? 'end' : step === 0 ? 'start' : 'step';
+          items.forEach((item) => {
+            const itemStep = Number(item.dataset.step);
+            item.classList.toggle('is-visible', itemStep <= step);
+            item.classList.toggle('is-current', itemStep === step);
+          });
+          if (visibleStep) visibleStep.textContent = String(step);
+          const unavailable = controls.dataset.playbackDisabled === 'true';
+          buttons('prev').disabled = unavailable || step === 0;
+          buttons('next').disabled = unavailable || step === count;
+          if (userInitiated) announce();
+        }
+
+        function pause(userInitiated = false) {
+          clearClock();
+          playing = false;
+          root.classList.remove('is-playing');
+          buttons('play').setAttribute('aria-pressed', 'false');
+          buttons('pause').setAttribute('aria-pressed', 'true');
+          if (userInitiated) status.textContent = `Paused at step ${step} of ${count}`;
+        }
+
+        function finish() {
+          pause(false);
+          root.dataset.frame = 'end';
+          status.textContent = `Complete · step ${count} of ${count}`;
+        }
+
+        function tick() {
+          if (!playing) return;
+          if (step >= count) { finish(); return; }
+          render(step + 1, false);
+          if (step >= count) { finish(); return; }
+          timer = window.setTimeout(tick, hold);
+        }
+
+        function play(fromStart = false, userInitiated = false) {
+          clearClock();
+          if (fromStart || step >= count) render(0, userInitiated);
+          playing = true;
+          root.classList.add('is-playing');
+          buttons('play').setAttribute('aria-pressed', 'true');
+          buttons('pause').setAttribute('aria-pressed', 'false');
+          timer = window.setTimeout(tick, hold);
+        }
+
+        controls.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-motion-action]');
+          if (!button) return;
+          const action = button.dataset.motionAction;
+          if (action === 'play') play(false, true);
+          if (action === 'pause') pause(true);
+          if (action === 'replay') play(true, true);
+          if (action === 'prev') { pause(false); render(step - 1, true); }
+          if (action === 'next') { pause(false); render(step + 1, true); }
+        });
+
+        root.addEventListener('keydown', (event) => {
+          if (event.target.matches('input, textarea, select, a[href]')) return;
+          const keys = { ArrowLeft: step - 1, ArrowRight: step + 1, Home: 0, End: count };
+          if (event.code === 'Space' && !event.target.closest('button')) {
+            event.preventDefault();
+            playing ? pause(true) : play(false, true);
+            return;
+          }
+          if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'r') {
+            event.preventDefault();
+            play(true, true);
+            return;
+          }
+          if (!(event.key in keys)) return;
+          event.preventDefault();
+          pause(false);
+          render(keys[event.key], true);
+        });
+
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden' && playing) pause(false);
+        });
+        reduce.addEventListener('change', (event) => {
+          if (event.matches && root.dataset.motionState !== 'reduced') {
+            stepBeforeReduce = step;
+            resumeAfterReduce = playing;
+          }
+          pause(false);
+          if (event.matches) {
+            setControlsAvailable(false);
+            render(count, false);
+            root.dataset.frame = 'static';
+            root.dataset.motionState = 'reduced';
+            status.textContent = 'Reduced motion · complete static frame · playback controls unavailable';
+          } else if (staticOverride || root.dataset.motionMode === 'none') {
+            setControlsAvailable(false);
+            render(count, false);
+            root.dataset.frame = 'static';
+            root.dataset.motionState = 'static';
+            status.textContent = 'Static frame · complete diagram · playback controls unavailable';
+          } else {
+            delete root.dataset.motionState;
+            if (exactStep !== null) {
+              setControlsAvailable(false);
+              render(exactStep, false);
+              root.dataset.frame = 'step';
+              root.dataset.motionState = 'test';
+              status.textContent = `Test frame · step ${step} of ${count} · playback controls unavailable`;
+            } else {
+              setControlsAvailable(true);
+              render(stepBeforeReduce, false);
+              status.textContent = `Ready · step ${step} of ${count}`;
+              if (resumeAfterReduce && root.dataset.motionMode === 'reveal') {
+                play(false, false);
+              }
+            }
+            resumeAfterReduce = false;
+          }
+        });
+
+        if (staticOverride) {
+          document.documentElement.dataset.motion = 'static';
+          pause(false);
+          setControlsAvailable(false);
+          render(count, false);
+          root.dataset.frame = 'static';
+          root.dataset.motionState = 'static';
+          status.textContent = 'Static frame · complete diagram · playback controls unavailable';
+        } else if (reduce.matches || root.dataset.motionMode === 'none') {
+          pause(false);
+          setControlsAvailable(false);
+          render(count, false);
+          root.dataset.frame = 'static';
+          root.dataset.motionState = reduce.matches ? 'reduced' : 'static';
+          status.textContent = reduce.matches
+            ? 'Reduced motion · complete static frame · playback controls unavailable'
+            : 'Static frame · complete diagram · playback controls unavailable';
+        } else if (exactStep !== null) {
+          document.documentElement.dataset.motion = 'step';
+          pause(false);
+          setControlsAvailable(false);
+          render(exactStep, false);
+          root.dataset.frame = 'step';
+          root.dataset.motionState = 'test';
+          status.textContent = `Test frame · step ${step} of ${count} · playback controls unavailable`;
+        } else if (root.dataset.motionMode === 'reveal') {
+          setControlsAvailable(true);
+          render(0, false);
+          play(false, false);
+        } else {
+          pause(false);
+          setControlsAvailable(true);
+          render(0, false);
+          status.textContent = `Ready · step 0 of ${count}`;
+        }
+        root.classList.add('motion-ready');
+      });
+    })();
+  </script>
+<script>
+(() => {
+  document.querySelectorAll('.chart').forEach((chart) => {
+    if (chart.closest('#sim2')) return;
+    const tip = chart.querySelector('.tip'); if (!tip) return;
+    chart.addEventListener('pointermove', (ev) => {
+      const row = ev.target.closest('[data-tip]'); if (!row || !chart.contains(row)) { tip.hidden = true; return; }
+      const c = chart.getBoundingClientRect(); tip.textContent = row.dataset.tip; tip.hidden = false;
+      tip.style.left = Math.max(80, Math.min(c.width - 80, ev.clientX - c.left)) + 'px'; tip.style.top = Math.max(28, ev.clientY - c.top - 14) + 'px';
+    });
+    chart.addEventListener('pointerleave', () => { tip.hidden = true; });
+    chart.addEventListener('focusin', (ev) => {
+      const row = ev.target.closest('[data-tip]'); if (!row) return;
+      const c = chart.getBoundingClientRect(), r = row.getBoundingClientRect(); tip.textContent = row.dataset.tip; tip.hidden = false;
+      tip.style.left = (r.left - c.left + r.width / 2) + 'px'; tip.style.top = Math.max(28, r.top - c.top - 6) + 'px';
+    });
+    chart.addEventListener('focusout', () => { tip.hidden = true; });
+  });
+})();
+</script>
