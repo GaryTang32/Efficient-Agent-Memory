@@ -143,9 +143,19 @@ def automem_v2_lean_handoff() -> Technique:
     return AM(workspace=False, ingest=0.1, compact="handoff", handoff_variant="swe")
 
 
+def automem_v2_adaptive() -> Technique:
+    """AutoMemory v2 with an adaptive workspace: the summariser model decides at each session start whether the work
+    depends on other sessions; if so the full workspace is on (as automem_v2), otherwise the session runs lean (as
+    automem_v2_lean). Autosave stays on either way."""
+    from eam.techniques.auto_memory import AutoMemory as AM
+
+    return AM(workspace="adaptive", ingest=0.1)
+
+
 PRESETS: dict[str, Callable[[], Technique]] = {
     "automem_v2": automem_v2,
     "automem_v2_lean": automem_v2_lean,
+    "automem_v2_adaptive": automem_v2_adaptive,
     "automem_v2_lean_handoff": automem_v2_lean_handoff,
     "automem_v2_strong": automem_v2_strong,
     "automem_v2_slim": automem_v2_slim,
