@@ -10,6 +10,7 @@ to the same-day ones. Costs relative to the ceiling are paired by workday; issue
 import glob
 import json
 import math
+import random
 from collections import defaultdict
 from pathlib import Path
 
@@ -60,6 +61,54 @@ def paired(a: dict[str, dict], b: dict[str, dict]) -> tuple[int, int, int, float
     return w, lo, len(common), sign_p(w, lo)
 
 
+def solve3(a: list[list[float]], b: list[float]) -> list[float]:
+    """Solve a 3×3 linear system (normal equations of the fit below)."""
+    m = [row[:] + [b[i]] for i, row in enumerate(a)]
+    for i in range(3):
+        piv = max(range(i, 3), key=lambda r: abs(m[r][i]))
+        m[i], m[piv] = m[piv], m[i]
+        for r in range(3):
+            if r != i:
+                f = m[r][i] / m[i][i]
+                m[r] = [x - f * y for x, y in zip(m[r], m[i])]
+    return [m[i][3] / m[i][i] for i in range(3)]
+
+
+_PER_RETRY: dict[str, float] = {}
+
+
+def per_retry(model: str) -> float:
+    """Cost of one runaway reply (an `llm_retry`: the model loops to the CLI's output cap): the coefficient of a
+    row's retries in a least-squares fit of its cost on retries and calls, over this round's SWE rows of `model`."""
+    if model not in _PER_RETRY:
+        rows = [r for r in load("sameday_swe*.jsonl") + load("oos_*.jsonl") + load("recheck*.jsonl")
+                if r["model"] == model]
+        x = [[r["events"].get("llm_retry", 0), r["calls"], 1.0] for r in rows]
+        y = [r["cost_usd"] for r in rows]
+        xtx = [[sum(u[i] * u[j] for u in x) for j in range(3)] for i in range(3)]
+        xty = [sum(u[i] * v for u, v in zip(x, y)) for i in range(3)]
+        _PER_RETRY[model] = solve3(xtx, xty)[0] if len(rows) > 5 else 0.0
+    return _PER_RETRY[model]
+
+
+def net(r: dict) -> float:
+    """A row's cost without its runaway replies."""
+    return r["cost_usd"] - r["events"].get("llm_retry", 0) * per_retry(r["model"])
+
+
+def boot(runs: dict[str, dict], ref: dict[str, dict], n: int = 4000) -> tuple[float, float]:
+    """95% bootstrap interval of total cost relative to `ref`, resampling workdays (paired)."""
+    days = [i for i in runs if i in ref]
+    if len(days) < 3:
+        return float("nan"), float("nan")
+    rng, out = random.Random(0), []
+    for _ in range(n):
+        pick = [days[rng.randrange(len(days))] for _ in days]
+        out.append(100 * sum(runs[i]["cost_usd"] for i in pick) / sum(ref[i]["cost_usd"] for i in pick))
+    out.sort()
+    return out[int(0.025 * n)], out[int(0.975 * n)]
+
+
 def cell(runs: dict[str, dict], ref: dict[str, dict]) -> dict:
     common = [i for i in runs if i in ref]
     res = sum(sum(r["round_scores"]) for r in runs.values())
@@ -70,15 +119,22 @@ def cell(runs: dict[str, dict], ref: dict[str, dict]) -> dict:
                 rebuilds=sum(v for r in runs.values() for k, v in r["events"].items() if k.endswith("_rebuild")),
                 overflow=sum(r["events"].get("context_overflow", 0) for r in runs.values()),
                 unfinished=sum(r.get("unfinished_sessions", 0) for r in runs.values()),
-                recalls=sum(r["events"].get("automem_recall", 0) for r in runs.values()), days=len(runs))
+                recalls=sum(r["events"].get("automem_recall", 0) for r in runs.values()), days=len(runs),
+                out=sum(r["usage"].get("output_tokens", 0) for r in runs.values()), ci=boot(runs, ref) if ref else None,
+                retries=sum(r["events"].get("llm_retry", 0) for r in runs.values()),
+                net=100 * sum(net(runs[i]) for i in common) / max(sum(net(ref[i]) for i in common), 1e-9),
+                net_per=sum(net(r) for r in runs.values()) / max(res, 1))
 
 
 def fmt(c: dict) -> str:
-    return f"{c['res']}/{c['n']} · {c['cost']:.0f}% · {c['per']:.4f}"
+    same = abs(c["cost"] - 100) < 1e-6
+    ci = f" [{c['ci'][0]:.0f}–{c['ci'][1]:.0f}]" if c.get("ci") and not same and c["ci"][0] == c["ci"][0] else ""
+    return f"{c['res']}/{c['n']} · {c['cost']:.0f}%{ci} · {c['net']:.0f}% · {c['net_per']:.4f}"
 
 
 def swe_table(title: str, pattern: str, specs: list[str], base: str = L) -> None:
-    print(f"\n### {title}\n\nResolved · cost vs ceiling (paired by workday) · $ per resolved issue.\n")
+    print(f"\n### {title}\n\nResolved · cost vs ceiling, paired by workday [95% bootstrap interval over workdays] · "
+          "the same net of runaway replies · $ per resolved issue net of runaway replies.\n")
     data = {m: by_spec(load(pattern.format(m=m))) for m, _ in MODELS}
     print("| Setting | " + " | ".join(label for _, label in MODELS) + " |\n|---|" + "---|" * len(MODELS))
     for s in specs:
@@ -101,20 +157,22 @@ def swe_table(title: str, pattern: str, specs: list[str], base: str = L) -> None
             else:
                 cells.append("—")
         print(f"| {name(s)} | " + " | ".join(cells) + " |")
-    print("\nCompactions · overflows · unfinished sessions · note recalls:\n")
+    print("\nCompactions · overflows · unfinished sessions · note recalls · output tokens · runaway replies:\n")
     print("| Setting | " + " | ".join(label for _, label in MODELS) + " |\n|---|" + "---|" * len(MODELS))
     for s in specs:
         cells = []
         for m, _ in MODELS:
             runs = data[m].get(s)
             c = cell(runs, {}) if runs else None
-            cells.append(f"{c['rebuilds']} · {c['overflow']} · {c['unfinished']} · {c['recalls']}" if c else "—")
+            cells.append(f"{c['rebuilds']} · {c['overflow']} · {c['unfinished']} · {c['recalls']} · "
+                         f"{c['out'] / 1e6:.2f}M · {c['retries']}" if c else "—")
         print(f"| {name(s)} | " + " | ".join(cells) + " |")
 
 
 def repeat_swe() -> None:
     print("\n### Run-to-run spread on Django (the lean cell run twice, same day)\n")
-    print("| | Run A | Run B | Issues that flipped (A only / B only / compared) | Cost difference |\n|---|---|---|---|---|")
+    print("| | Run A: resolved · cost · output tokens | Run B | Issues that flipped (A only / B only / compared) | "
+          "Cost B vs A [95% interval] |\n|---|---|---|---|---|")
     for m, label in MODELS:
         a = by_spec(load(f"sameday_swe-{m}.jsonl")).get(L, {})
         b = by_spec(load(f"sameday_swe_rep-{m}.jsonl")).get(L, {})
@@ -125,10 +183,16 @@ def repeat_swe() -> None:
         w, lo, n, _ = paired(a, b)
         ca, cb = sum(r["cost_usd"] for r in a.values()), sum(r["cost_usd"] for r in b.values())
         ra, rb = sum(sum(r["round_scores"]) for r in a.values()), sum(sum(r["round_scores"]) for r in b.values())
-        print(f"| {label} ({len(days)} workdays) | {ra:.0f} · ${ca:.2f} | {rb:.0f} · ${cb:.2f} | "
-              f"{w} / {lo} / {n} | {100 * (cb - ca) / ca:+.0f}% |")
-        day = [100 * abs(b[i]["cost_usd"] - a[i]["cost_usd"]) / a[i]["cost_usd"] for i in days]
-        print(f"| {label}, per workday | | | | median |Δcost| {sorted(day)[len(day) // 2]:.0f}% |")
+        oa, ob = (sum(r["usage"]["output_tokens"] for r in x.values()) / 1e6 for x in (a, b))
+        lo95, hi95 = boot(b, a)
+        na, nb = sum(net(r) for r in a.values()), sum(net(r) for r in b.values())
+        ta, tb = (sum(r["events"].get("llm_retry", 0) for r in x.values()) for x in (a, b))
+        print(f"| {label} ({len(days)} workdays) | {ra:.0f} · ${ca:.2f} · {oa:.2f}M | {rb:.0f} · ${cb:.2f} · {ob:.2f}M | "
+              f"{w} / {lo} / {n} | {100 * cb / ca:.0f}% [{lo95:.0f}–{hi95:.0f}] |")
+        print(f"| {label}, runaway replies {ta} / {tb}; net of them | ${na:.2f} | ${nb:.2f} | | {100 * nb / na:.0f}% |")
+        day = sorted(max(b[i]["cost_usd"], a[i]["cost_usd"]) / min(b[i]["cost_usd"], a[i]["cost_usd"]) for i in days)
+        print(f"| {label}, one workday | | | | the dearer run costs {day[len(day) // 2]:.1f}× the cheaper (median), "
+              f"up to {day[-1]:.1f}× |")
 
 
 TASKS = ("research_corpus", "ops_stream", "ledger_audit", "repo_debug")
@@ -256,6 +320,7 @@ def spend() -> None:
 
 
 if __name__ == "__main__":
+    print("Cost of one runaway reply (fitted): " + ", ".join(f"{label} ${per_retry('cc-' + m):.3f}" for m, label in MODELS))
     swe_table("Same-day Django (100 issues, 16K)", "sameday_swe-{m}.jsonl",
               ["naive@native", L, f"{L},compact=handoff,handoff_variant=swe",
                f"{L},compact=handoff,handoff_variant=brief", "automem_v2_adaptive"])
