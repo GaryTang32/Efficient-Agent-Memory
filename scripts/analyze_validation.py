@@ -293,16 +293,41 @@ def eocc() -> None:
         return
     print("\n### EoCC alone under corrected grading (Haiku, Django 100 at 16K)\n")
     n, o = cell(new, {}), cell(old, {}) if old else None
-    print("| | Resolved | Overflows | Unfinished sessions | Unfinished but resolved | Cost |\n|---|---|---|---|---|---|")
+    print("| | Resolved | Overflows | Sessions that ended early | Cost |\n|---|---|---|---|---|")
     if o:
-        print(f"| Earlier (unfinished sessions scored 0, over-window recaps allowed) | {o['res']}/{o['n']} | "
-              f"{o['overflow']} | not recorded | 0 by rule | ${o['usd']:.2f} |")
-    print(f"| Re-check (final state graded, over-window recaps end the session) | {n['res']}/{n['n']} | "
-          f"{n['overflow']} | {n['unfinished']} | see note | ${n['usd']:.2f} |")
+        print(f"| Earlier (sessions that ended early scored 0; over-window recaps allowed) | {o['res']}/{o['n']} | "
+              f"{o['overflow']} | not recorded | ${o['usd']:.2f} |")
+    print(f"| Re-check (final state graded; over-window recaps end the session) | {n['res']}/{n['n']} | "
+          f"{n['overflow']} | {n['unfinished']} | ${n['usd']:.2f} |")
     lean = by_spec(load("sameday_swe-haiku.jsonl")).get(L, {})
     if lean:
         w, lo, k, p = paired(new, lean)
         print(f"\nPaired by issue against same-day lean: +{w} / −{lo} of {k}, p = {p:.2f}.")
+
+
+def handoff_pooled() -> None:
+    """Handoff against ReSum (both lean), paired by issue, over every 16K run set that has both."""
+    h = f"{L},compact=handoff,handoff_variant=swe"
+    print("\n### Handoff recap against ReSum, all paired evidence at 16K\n")
+    print("Only handoff resolved / only ReSum resolved (issues compared).\n")
+    print("| Run set | " + " | ".join(label for _, label in MODELS) + " |\n|---|" + "---|" * len(MODELS))
+    tot = {m: [0, 0] for m, _ in MODELS}
+    for label, pat in (("Django 100, 2026-11-06 (old grading)", "swe_16k-{m}.jsonl"),
+                       ("Django 100, same day", "sameday_swe-{m}.jsonl"), ("SymPy", "oos_sympy-{m}.jsonl")):
+        cells = []
+        for m, _ in MODELS:
+            d = by_spec(load(pat.format(m=m)))
+            if h in d and L in d:
+                w, lo, n, _ = paired(d[h], d[L])
+                tot[m][0] += w
+                tot[m][1] += lo
+                cells.append(f"+{w} / −{lo} ({n})")
+            else:
+                cells.append("—")
+        print(f"| {label} | " + " | ".join(cells) + " |")
+    print("| **Pooled** | " + " | ".join(f"**+{w} / −{lo}**, p = {sign_p(w, lo):.2f}" for w, lo in tot.values()) + " |")
+    w, lo = sum(v[0] for v in tot.values()), sum(v[1] for v in tot.values())
+    print(f"\nBoth models pooled: +{w} / −{lo}, sign-test p = {sign_p(w, lo):.3f}.")
 
 
 def spend() -> None:
@@ -332,5 +357,6 @@ if __name__ == "__main__":
     position("oos_related-{m}.jsonl", rel)
     swe_table("SymPy (16K)", "oos_sympy-{m}.jsonl",
               ["naive@native", L, f"{L},compact=handoff,handoff_variant=swe"])
+    handoff_pooled()
     eocc()
     spend()
