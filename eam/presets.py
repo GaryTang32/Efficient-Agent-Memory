@@ -135,9 +135,10 @@ def automem_v2_lean() -> Technique:
 
 def automem_v2_lean_handoff() -> Technique:
     """`automem_v2_lean` with NVIDIA's EoCC handoff recap (arXiv 2611.05306) in place of ReSum's summary, written by
-    the agent model itself (docs/results/2026-11-06-handoff-and-swe-100.md). On 100 SWE-bench Verified issues at a
-    16K window it resolved 81 (Haiku) and 88 (Sonnet) against 76 and 86 with ReSum, at 6–16 points more cost:
-    the accuracy-first choice for coding work under a tight window; `automem_v2_lean` stays the cheapest."""
+    the agent model itself (docs/results/2026-11-06-handoff-and-swe-100.md). Over three paired SWE-bench Verified
+    sets at a 16K window (Django twice, SymPy; both models) it resolved 22 issues that ReSum missed and missed 11
+    that ReSum resolved (sign test p = 0.08), with no measurable cost difference: a likely accuracy gain, not an
+    established one (docs/results/2026-11-11-validation-round.md)."""
     from eam.techniques.auto_memory import AutoMemory as AM
 
     return AM(workspace=False, ingest=0.1, compact="handoff", handoff_variant="swe")
@@ -146,7 +147,9 @@ def automem_v2_lean_handoff() -> Technique:
 def automem_v2_adaptive() -> Technique:
     """AutoMemory v2 with an adaptive workspace: the summariser model decides at each session start whether the work
     depends on other sessions; if so the full workspace is on (as automem_v2), otherwise the session runs lean (as
-    automem_v2_lean). Autosave stays on either way."""
+    automem_v2_lean). Autosave stays on either way. In the validation round it stayed close to the right fixed
+    preset on Sonnet and cost more than it on Haiku, so it is an option for an unknown workload on a strong model,
+    not the default."""
     from eam.techniques.auto_memory import AutoMemory as AM
 
     return AM(workspace="adaptive", ingest=0.1)

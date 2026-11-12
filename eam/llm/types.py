@@ -107,6 +107,7 @@ class Response:
     # context size.
     context_tokens: int | None = None
     retries: int = 0
+    cap_hits: int = 0  # replies that reached the backend's output cap (Claude Code CLI: runaway replies)
 
     @property
     def prompt_size(self) -> int:

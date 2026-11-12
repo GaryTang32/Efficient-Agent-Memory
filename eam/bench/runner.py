@@ -70,10 +70,14 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     if context_limit and inst.disclose_limit:
         common["system_prompt"] = (common["system_prompt"] + f"\n\nContext window: your conversation can hold at "
                                    f"most {context_limit:,} tokens in total. If it grows beyond that, the task fails.")
+    early_peak = early_steps = 0
     for session in inst.sessions:  # earlier sessions of multi-session tasks: costs count, answers don't
         r = run_agent(session, max_steps=inst.max_steps, final_marker=None, **common)
         rewrites += r.history_rewrites
         events.update(e["kind"] for e in r.events)
+        tool_calls += r.tool_calls
+        early_peak, early_steps = max(early_peak, r.peak_prompt_tokens), early_steps + r.steps
+    unfinished = 0
     round_scores: list[float] = []
     round_answers: list[str] = []
     if inst.rounds:  # multi-round tasks: one fresh session per round; technique objects (memory) persist
@@ -82,7 +86,10 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
             r = run_agent(prompt, max_steps=inst.max_steps, **common)
             tool_calls += r.tool_calls
             all_events += [dict(e, session=k) for e in r.events]
-            round_scores.append(inst.round_score(k, r.answer) if r.finished else 0.0)
+            # an unfinished session (overflow, step limit) scores 0, except where the task grades its final state
+            graded = r.finished or inst.grade_unfinished
+            round_scores.append(inst.round_score(k, r.answer) if graded else 0.0)
+            unfinished += not r.finished
             round_answers.append(r.answer[:1500])
             rewrites += r.history_rewrites
             events.update(e["kind"] for e in r.events)
@@ -96,6 +103,8 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         res = run_agent(inst.prompt, max_steps=inst.max_steps, **common)
         tool_calls += res.tool_calls
         events.update(e["kind"] for e in res.events)
+    res.steps += early_steps
+    res.peak_prompt_tokens = max(res.peak_prompt_tokens, early_peak)
     summary = meter.summary()
     if os.environ.get("EAM_TRANSCRIPTS"):  # opt-in: keep the last session's messages for failure analysis
         tdir = Path(os.environ["EAM_TRANSCRIPTS"])
@@ -111,6 +120,8 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "techniques": [t.describe() for t in techniques],
         "provenance": [getattr(t, "provenance", "") for t in techniques],
         "backend": backend,
+        # CLI version, reply cap and thinking settings (Claude Code CLI route); None on other routes
+        "backend_settings": llm.run_settings() if hasattr(llm, "run_settings") else None,
         "model": model.key,
         "aux_model": aux_model.key,
         "success": (all(x == 1.0 for x in round_scores) if inst.rounds else bool(res.finished and inst.check(res.answer))),
@@ -124,6 +135,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "prompt_cache": prompt_cache,
         "offload": bool(inst.step_observation_budget and offload),
         "finished": res.finished,
+        "unfinished_sessions": unfinished if inst.rounds else int(not res.finished),
         "steps": res.steps,
         "tool_calls": tool_calls,
         "sessions": len(inst.rounds) or 1,
@@ -142,7 +154,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "wall_s": round(time.perf_counter() - t0, 2),
         "peak_prompt_tokens": res.peak_prompt_tokens,
         "history_rewrites": rewrites + res.history_rewrites,
-        "nudges": sum(1 for e in res.events if e["kind"] == "nudge"),
+        "nudges": events.get("nudge", 0),
         "events": dict(events),
         "answer": res.answer[:500],
         "gold": inst.gold,
@@ -166,14 +178,14 @@ def run_suite(families_specs: dict[str, list[str]], *, backend: str, model_key: 
     done: set[tuple] = set()
     if resume and out.exists():  # skip runs already recorded without error
         for row in load_rows([out]):
-            done.add((row["family"], row["instance"], row["spec"]))
+            done.add((row["family"], row["instance"], row["spec"], row.get("gold")))
     jobs = []
     for family, specs in families_specs.items():
         gen = FAMILIES[family]
         for i in range(n):
             for spec in specs:
-                if (family, FAMILIES[family](seed + i, **(task_kwargs or {}).get(family, {})).instance_id,
-                        spec) not in done:
+                inst = FAMILIES[family](seed + i, **(task_kwargs or {}).get(family, {}))
+                if (family, inst.instance_id, spec, inst.gold) not in done:  # gold: the same issue set
                     jobs.append((family, seed + i, spec))
     lock = threading.Lock()
     rows: list[dict[str, Any]] = []

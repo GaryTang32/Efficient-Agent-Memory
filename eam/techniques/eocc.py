@@ -124,6 +124,8 @@ class HandoffCompaction(Technique):
                       tag="aux:handoff")
         resp = ctx.llm.converse(req)
         ctx.meter.record(req.tag, ctx.model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
+        if not ctx.own_history_response(resp):  # the recap request itself was over the window
+            return ""
         return "\n".join(b["text"] for b in resp.message["content"] if "text" in b).strip()
 
     def before_call(self, ctx):

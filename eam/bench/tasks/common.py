@@ -63,3 +63,4 @@ class TaskInstance:
     context_limit: int | None = None  # requests above this many tokens end the run (simulated window)
     step_observation_budget: int | None = None  # harness cap on tool output per step (recoverable offload)
     disclose_limit: bool = False  # aware condition: state the limit and show a context gauge; unaware: silent
+    grade_unfinished: bool = False  # score rounds whose session ended early too (SWE-bench grades the final diff)

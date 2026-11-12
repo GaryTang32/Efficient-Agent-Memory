@@ -168,12 +168,32 @@ CSS = """
   .toc { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
   .banner .meta span { overflow-wrap: anywhere; min-width: 0; }
   @media (max-width: 640px) { .todo .it { grid-template-columns: minmax(0, 1fr); } }
+  /* bar board */
+  .board { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); overflow-x: auto; }
+  .board-row { display: grid; grid-template-columns: minmax(170px, 230px) minmax(240px, 1fr) minmax(240px, 1fr); align-items: center; gap: 0 14px; padding: 5px 12px; border-bottom: 1px solid var(--rule); min-width: 700px; }
+  .board-row:last-child { border-bottom: 0; }
+  .board-row.head { background: var(--ink); color: var(--paper); font-family: var(--font-cond); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  .board-row.grp { background: var(--surface); font-family: var(--font-cond); font-weight: 600; font-size: 0.76rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 3px 12px; }
+  .bname { font-size: 0.88rem; font-weight: 500; line-height: 1.25; }
+  .bname .sub { font-size: 0.74rem; }
+  .bcell { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px; align-items: center; }
+  .btrack { position: relative; height: 14px; background: var(--surface); border-radius: 2px; }
+  .bfill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--muted); opacity: 0.55; }
+  .bfill.g-ours { background: var(--violet); opacity: 1; }
+  .bfill.g-new { background: var(--amber); opacity: 0.9; }
+  .bfill.g-pub { background: var(--accent); opacity: 0.85; }
+  .bfill.g-anc { background: var(--muted); opacity: 0.45; }
+  .bmark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
+  .bval { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink); white-space: nowrap; }
+  .bval .c { color: var(--muted); }
+  .bval .c.cheap { color: var(--check); font-weight: 500; }
+  .bval .c.dear { color: var(--warn); }
 """
 
 NAV_ITEMS = [
     ("wd", "01", "Work done", "wrench", [("wd-time", "Timeline"), ("wd-built", "What was built"), ("wd-spend", "Runs and spend")]),
     ("fd", "02", "Findings", "bulb", [("fd-key", "Key findings"), ("fd-works", "What works, what does not")]),
-    ("rs", "03", "Results", "gauge", [("rs-synth", "Four long tasks"), ("rs-swe", "SWE-bench Verified"), ("rs-pick", "Which preset")]),
+    ("rs", "03", "Results", "gauge", [("rs-synth", "Four long tasks"), ("rs-swe", "SWE-bench Verified"), ("rs-valid", "Validation round"), ("rs-pick", "Which preset")]),
     ("cc", "04", "Claude Code plugin", "layers", [("cc-how", "How it works"), ("cc-pilot", "Pilot in Claude Code"), ("cc-long", "Long sessions"), ("cc-vs", "Versus other memory tools")]),
     ("todo", "05", "To-do", "flag", [("todo-blocked", "Blocked"), ("todo-next", "Next steps"), ("todo-gaps", "Known gaps")]),
 ]
@@ -235,6 +255,8 @@ TIMELINE_ROWS = [
     ("6 Nov", "NVIDIA handoff; 100 issues", "EoCC prompts; SWE-bench-faithful grading; 32K and 16K windows; 480 runs", "automem_v2_lean_handoff for accuracy-first coding"),
     ("6–7 Nov", "Front page and housekeeping", "README with charts and flowcharts; CONTRIBUTING, CITATION; papers folder ignored", "PRs #1–#3 merged"),
     ("8 Nov", "Claude Code plugin and pilots", "Hooks: previews from Claude Code's saved output, handoff at compaction, recall, autosave; short and 12-issue sessions", "Neutral inside Claude Code"),
+    ("8 Nov", "Brief handoff recap; adaptive workspace", "Two follow-up checks on the 100 Django issues and the synthetic tasks", "Kept as options; their first cost readings did not survive the validation round"),
+    ("8–12 Nov", "Validation round", "Every decision cell re-run on one day; two cells repeated; an independent audit of the measurement code; SymPy and related-issue Django workdays; 596 runs", "Headline results hold; four cost and ranking claims withdrawn; a harness artifact found and fixed"),
 ]
 
 
@@ -247,7 +269,9 @@ def timeline_table():
 SPEND = [("Phases 1–3 and the eight new methods", "≈ 1,900", 820), ("AutoMemory v2, v3 ablation, Sonnet seeds", "≈ 250", 102),
          ("SWE-bench, 40 issues", "164", 56), ("Earlier pilots and calibration", "—", 162),
          ("NVIDIA handoff: synthetic tasks", "80", 68.59), ("SWE-bench, 100 issues at 32K and the own window", "260", 98.19),
-         ("SWE-bench, 100 issues at 16K", "140", 54.31)]
+         ("SWE-bench, 100 issues at 16K", "140", 54.31),
+         ("Brief handoff recap and adaptive workspace checks", "—", 57),
+         ("Validation round: same-day controls, repeats, related issues, SymPy", "596", 293.28)]
 
 
 def spend_table():
@@ -258,7 +282,7 @@ def spend_table():
     body = "".join(f'<tr><th>{E(a)}</th><td class="nm">{E(b)}</td><td class="nm">${c:,.0f}</td></tr>' for a, b, c in rows)
     tot = sum(c for _, _, c in rows)
     return (f'<div class="tbl-wrap"><table><thead><tr><th>Run set</th><th class="nm">Runs</th><th class="nm">Cost</th></tr></thead>'
-            f'<tbody>{body}<tr><th>Total</th><td class="nm">≈ 3,000</td><td class="nm"><strong>${tot:,.0f}</strong></td></tr></tbody></table></div>'
+            f'<tbody>{body}<tr><th>Total</th><td class="nm">≈ 3,600</td><td class="nm"><strong>${tot:,.0f}</strong></td></tr></tbody></table></div>'
             '<p class="note">Claude Code CLI route at list prices. The first four rows are rounded from the phase reports.</p>')
 
 
@@ -275,28 +299,112 @@ BLOCKED = [
      "No non-Claude model has been measured. GPT-5.6 is reachable through Bedrock's OpenAI-compatible endpoints with the same key; prices go in config/models.json."),
 ]
 NEXT = [
+    ("Native tool-calling route", "Blocked: credentials", "high", "—",
+     "The runaway replies come from emulating tools as text through the Claude Code CLI. A route with native tool calls (Bedrock Converse) removes them at the source and is the same work as the Bedrock validation above."),
+    ("Three runs per cell before any cost ranking", "Next", "med", "≈ $75",
+     "One run of 100 issues does not separate settings closer than about 5 issues or 25 points of cost. Two more runs of the ceiling, lean and lean + handoff on Django (both models) would give intervals narrow enough to rank them; the 8K output cap makes each run cheaper and steadier."),
+    ("EoCC alone on Sonnet, corrected grading", "Next", "low", "≈ $12",
+     "The re-check that moved EoCC alone from 72 to 77 of 100 was run on Haiku only."),
+    ("Handoff recap or ReSum summary", "Open", "low", "with the runs above",
+     "Pooled over three paired sets and both models, handoff alone resolved 22 issues and ReSum alone 11 (sign test p = 0.08). Suggestive; the extra runs above would settle it."),
     ("Decide the plugin's role", "Next", "med", "no API cost",
      "Both pilots (short and long sessions) found the plugin neutral in Claude Code, which already caches, compacts and filters output. Keep it as an optional, harmless add-on; aim further work at agents without these built-ins (custom loops on Bedrock, other CLIs)."),
-    ("Cheaper handoff recap", "Done", "low", "$25",
-     "A brief recap (six fields as terse bullets, pointers instead of code, at most 150 words) cut handoff's cost from 89% to 79% (Haiku) and 77% (Sonnet). On Haiku it has the lowest cost per resolved issue of any setting (78/100); on Sonnet it lost handoff's accuracy gain (84 vs 88 of 100), so ReSum stays cost-first there. Kept as an option: handoff_variant=brief."),
-    ("Adaptive workspace", "Done: not adopted", "low", "$32",
-     "A short question to the summariser at each session start (majority of three, sticky once dependent) chose notes on or off. On 100 Django issues it kept notes off and matched lean's accuracy (81 / 86 of 100) at about 10 points more cost. On the synthetic tasks it judged repo_debug's second session independent, so cost rose from 126% to 255% (Haiku) and 50% to 175% (Sonnet). Whether notes pay depends on whether later sessions reuse what earlier ones learned, which the task text does not show; choosing automem_v2 or automem_v2_lean up front is simpler. Kept as the option automem_v2_adaptive."),
-    ("More SWE-bench evidence for handoff", "Next", "low", "≈ $50–60",
-     "At 16K, handoff resolved 7 issues ReSum missed and missed 2 (Haiku; sign test p ≈ 0.18). More seeds or a second repository would settle it."),
+    ("Brief handoff recap", "Done: no advantage", "low", "$25",
+     "Six fields as terse bullets, at most 150 words. Its first reading (79% of the ceiling's cost on Haiku, the cheapest per resolved issue) did not repeat on the same day: 90% and the fewest issues resolved (75). Kept as the option handoff_variant=brief, without a claim."),
+    ("Adaptive workspace", "Done: an option, not the default", "low", "$32",
+     "A short question to the summariser at each session start chooses notes on or off. On Sonnet it stayed close to the right fixed preset on both kinds of work (1.00 at 61% of the ceiling's cost on the synthetic tasks; 86 of 100 Django issues at 105%). On Haiku it cost more than the right preset on both (155% and 131%). Kept as automem_v2_adaptive."),
     ("Report cost on two price bases", "Next", "low", "no API cost",
      "List prices with caching (Bedrock and the CLI today) and context-length pricing (the NVIDIA paper's model) for self-hosted or long-context-tier users."),
 ]
 GAPS = [
-    ("One repository", "Gap", "low", "", "The SWE-bench set is 100 issues from Django; another repository would test generality."),
+    ("Two repositories, one language", "Gap", "low", "", "The SWE-bench sets are Django and SymPy, both Python. Sonnet's out-of-sample sets are smaller (50 related issues, 40 SymPy issues)."),
+    ("One run per cell", "Gap", "med", "", "Only two cells were repeated. Intervals are a bootstrap over workdays and are wide; there is no correction for the number of comparisons."),
+    ("Rows before 12 November", "Gap", "low", "", "They ran with a 32K output cap and thinking settings inherited from the launching session, and do not record the CLI version. New rows record all three."),
     ("Emulated windows", "Gap", "low", "", "The synthetic tasks emulate small windows (16K–48K) to create memory pressure."),
     ("Local-only reports", "Gap", "low", "", "Detailed reports in docs/results/ and the rows behind docs/overview.html are git-ignored, so a fresh clone cannot rebuild those pages; the README charts can be rebuilt."),
 ]
 
 
+# ---- the validation round (2026-11-08 to 11-12): numbers from scripts/analyze_validation.py ---------------------
+SAMEDAY = [  # (issue set, setting, Haiku, Sonnet)
+    ("Django, 100 issues", "Ceiling: full history, own window", "77 · 100%", "83 · 100%"),
+    ("", "automem_v2_lean", "80 · 92% [71–115]", "85 · 82% [69–100]"),
+    ("", "automem_v2_lean_handoff", "79 · 89% [69–118]", "89 · 85% [64–114]"),
+    ("", "… brief recap", "75 · 90% [73–110]", "84 · 86% [72–105]"),
+    ("", "automem_v2_adaptive", "78 · 131% [96–174]", "86 · 105% [85–130]"),
+    ("Django, related issues (80 Haiku, 50 Sonnet)", "Ceiling", "64 · 100%", "44 · 100%"),
+    ("", "automem_v2_lean", "70 · 117% [89–152]", "44 · 95% [66–126]"),
+    ("", "automem_v2 (with notes)", "64 · 208% [169–247]", "44 · 87% [69–113]"),
+    ("", "automem_v2_adaptive", "67 · 106% [83–135]", "45 · 80% [60–104]"),
+    ("SymPy (75 Haiku, 40 Sonnet)", "Ceiling", "50 · 100%", "35 · 100%"),
+    ("", "automem_v2_lean", "50 · 116% [81–158]", "35 · 70% [54–109]"),
+    ("", "automem_v2_lean_handoff", "52 · 92% [71–123]", "34 · 74% [56–108]"),
+]
+
+
+def sameday_table():
+    rows = "".join(f'<tr><th>{E(a)}</th><td><code>{E(b)}</code></td><td class="nm">{E(h)}</td><td class="nm">{E(so)}</td></tr>'
+                   if b.startswith(("automem", "…")) else
+                   f'<tr><th>{E(a)}</th><td>{E(b)}</td><td class="nm">{E(h)}</td><td class="nm">{E(so)}</td></tr>'
+                   for a, b, h, so in SAMEDAY)
+    return ('<div class="tbl-wrap"><table><thead><tr><th>Issue set</th><th>Setting</th><th class="nm">Haiku</th>'
+            f'<th class="nm">Sonnet</th></tr></thead><tbody>{rows}</tbody></table></div>'
+            '<p class="note">Issues resolved · cost relative to the ceiling [95% interval over workdays]. 16K window, '
+            'one fresh session per issue; all cells of one issue set and model ran on the same day.</p>')
+
+
+CHECKS = [
+    ("Same-day controls", "Every decision cell re-run on one day",
+     "The two headline results hold. Baselines drift between days: the ceiling resolved 82 and 88 Django issues on 6 November and 77 and 83 here."),
+    ("Noise", "One cell per workload run twice",
+     "Coding: the same setting resolved 80 and 81 (Haiku) and 85 and 87 (Sonnet), 6–7 issues flipped, cost differed by 7% and 38%. Synthetic: Haiku scored 0.75 and 0.86, Sonnet 0.99 and 1.00, cost within 10%."),
+    ("Code audit", "An independent review of the measurement, grading and aggregation code",
+     "15 findings, 13 fixed. Two changed a published result: sessions that ended early were scored without grading their final state, and a recap larger than the window was not counted as an overflow."),
+    ("Out-of-sample tasks", "SymPy; Django workdays that stay in one subsystem",
+     "Lean matches the ceiling on a second repository. Notes do not pay on coding issues even when consecutive issues are related."),
+]
+VERDICTS = [
+    ("ok", "Stands", "AutoMemory v2 reaches the ceiling's accuracy below its cost on multi-session work",
+     "Sonnet 0.99 and 1.00 at 56% in two runs; Haiku 0.75 and 0.86 at 87% and 74% (ceiling 0.80)"),
+    ("ok", "Stands", "Without notes, multi-session work fails", "0.64 at 249% (Haiku), 0.87 at 152% (Sonnet)"),
+    ("ok", "Stands", "Lean resolves as many coding issues as the ceiling, inside a 16K window",
+     "Django, related Django and SymPy on both models; no paired difference is significant"),
+    ("ok", "Stands", "Lean is cheaper than the ceiling on Sonnet", "82%, 95% and 70% on the three issue sets"),
+    ("ok", "Stands", "Notes do not pay on coding issues",
+     "Related issues, Haiku: 64 resolved at 208% with notes, 70 at 117% without"),
+    ("med", "Changes", "Lean is cheaper than the ceiling on Haiku (83%)", "Not distinguishable: 92%, 117%, 116%, every interval includes 100%"),
+    ("med", "Changes", "Handoff recap resolves more than a ReSum summary", "Suggestive only: 22 against 11 in the pooled pairs, p = 0.08"),
+    ("med", "Changes", "Adaptive workspace: not adopted", "A usable single setting on Sonnet; costs more than the right preset on Haiku"),
+    ("high", "Falls", "Handoff costs 6–16 points more than ReSum", "Same day: 89% vs 92% (Haiku), 85% vs 82% (Sonnet)"),
+    ("high", "Falls", "The brief recap is the cheapest per resolved issue on Haiku", "Same day: 90% and the fewest resolved (75)"),
+    ("high", "Falls", "EoCC alone resolves the fewest issues", "A grading bug: re-graded it resolves 77 of 100 on Haiku, the same as the ceiling"),
+    ("high", "Falls", "Dollar-per-issue rankings between the lean settings", "Inside the run-to-run spread"),
+]
+
+
+def validation_section():
+    checks = "".join(f'<tr><th>{E(a)}</th><td>{E(b)}</td><td>{E(c)}</td></tr>' for a, b, c in CHECKS)
+    kind = {"ok": "low", "med": "med", "high": "high"}
+    verdicts = "".join(f'<tr><th>{lvl(v, kind[k])}</th><td>{E(c)}</td><td>{E(e)}</td></tr>' for k, v, c, e in VERDICTS)
+    return ('<p class="lead-in">After the first results, four checks were run together to find out whether the conclusions came '
+            'from the methods or from the experiment design and the infrastructure.</p>'
+            '<div class="tbl-wrap"><table><thead><tr><th>Check</th><th>What was done</th><th>What it found</th></tr></thead>'
+            f'<tbody>{checks}</tbody></table></div>'
+            '<div class="tbl-wrap"><table><thead><tr><th>Verdict</th><th>Earlier conclusion</th><th>Evidence in this round</th></tr></thead>'
+            f'<tbody>{verdicts}</tbody></table></div>'
+            '<div class="duo"><div class="bad"><span class="k">Harness artifact found</span><ul class="plain">'
+            '<li>Runaway replies at the output cap<span class="ev">tools are emulated as text through the Claude Code CLI; in about 1% '
+            'of calls the model loops until the 32K cap, and the loop is billed and discarded</span></li>'
+            '<li>Share of all measured cost in the round<span class="ev">22% (Sonnet) and 26% (Haiku); most of the cost noise</span></li></ul></div>'
+            '<div class="good"><span class="k">Fixed for new runs</span><ul class="plain">'
+            '<li>Output cap 8K instead of 32K<span class="ev">a runaway reply costs about a quarter as much; the agent still recovers (measured)</span></li>'
+            '<li>Every row counts cap hits<span class="ev">and records the CLI version, the cap and the thinking settings</span></li>'
+            '<li>Thinking settings can be pinned<span class="ev">until now they were inherited from the launching session</span></li></ul></div></div>')
+
+
 def build():
     syn = RC.synth_chart(RC.THEMES["light"])
     swe = RC.swe_chart(RC.THEMES["light"])
-    dol = RC.dollars_chart(RC.THEMES["light"])
     page = f"""<title>Efficient Agent Memory Report</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -310,33 +418,34 @@ def build():
 <main>
   <header id="top">
     <div class="hero">
-      <p class="eyebrow">Work report · 8 November 2026</p>
+      <p class="eyebrow">Work report · 12 November 2026</p>
       <h1>Efficient Agent Memory</h1>
-      <p class="dek">What was built, what the measurements show, how the memory layer now ships as a Claude Code plugin, and what is left to do.</p>
-      <p class="hero-meta"><span>≈ 3,000 benchmark runs</span><span>27 methods and variants</span><span>Claude Haiku and Sonnet</span><span>SWE-bench Verified: 100 Django issues</span><span>PRs #1–#3 merged</span></p>
+      <p class="dek">What was built, what the measurements show after a validation round, how the memory layer ships as a Claude Code plugin, and what is left to do.</p>
+      <p class="hero-meta"><span>≈ 3,600 benchmark runs</span><span>27 methods and variants</span><span>Claude Haiku and Sonnet</span><span>SWE-bench Verified: Django and SymPy</span><span>PRs #1–#7 merged</span></p>
     </div>
     <div class="brief">
       <span class="k">{ic("brief")}Key points</span>
       <ul class="plain">
         <li><strong>Fewer tokens is not fewer dollars.</strong> Re-sent history is cheap while it stays in the prompt cache; methods that rewrite it every step cost more than they save (AKV: 93% of the ceiling's cost dropping every turn, 22% in blocks of 8).</li>
         <li><strong>Let the harness remember.</strong> Previews at ingestion, automatic recall and compaction at a fixed trigger worked on Haiku and Sonnet; methods that need the model to manage its memory failed on Haiku.</li>
-        <li><strong>AutoMemory v2</strong> matches the unoptimised ceiling on four long tasks at 85% (Haiku) and 58% (Sonnet) of its cost; no newer published method beats it across the board.</li>
-        <li><strong>On 100 real Django issues</strong> at a 16K window, <code>automem_v2_lean</code> is the cheapest ($0.123 per resolved issue on Sonnet), and NVIDIA's handoff recap brings both models to the ceiling's accuracy for 6–16 points more cost.</li>
+        <li><strong>AutoMemory v2</strong> matches the unoptimised ceiling on four long multi-session tasks at 85% (Haiku) and 58% (Sonnet) of its cost; a same-day re-run and a repeat gave 74–87% and 56%. No newer published method beats it across the board.</li>
+        <li><strong>On real coding issues</strong> (Django and SymPy, SWE-bench Verified), <code>automem_v2_lean</code> inside a 16K window resolves as many issues as the unoptimised agent with its full window, at 70–95% of its cost on Sonnet. On Haiku its cost cannot be told apart from the ceiling's.</li>
+        <li><strong>A validation round</strong> (same-day controls, repeats, a code audit, a second repository) confirmed both results and withdrew four smaller claims, among them "handoff costs more than ReSum" and "EoCC alone resolves the fewest". About a quarter of all measured cost was a harness artifact, now capped and counted.</li>
         <li><strong>{E(pilot_headline())}</strong></li>
       </ul>
-      <p class="rec"><strong>Recommendation:</strong> use the plugin's harness steps (previews, handoff at compaction, recall) rather than instructions in CLAUDE.md; pick <code>automem_v2</code> for multi-session work and <code>automem_v2_lean</code> for independent coding issues.</p>
+      <p class="rec"><strong>Recommendation:</strong> use the plugin's harness steps (previews, handoff at compaction, recall) rather than instructions in CLAUDE.md; pick <code>automem_v2</code> for multi-session work and <code>automem_v2_lean</code> for coding issues. Expect the saving on the dearer model: with Sonnet, 44% on multi-session work and 5–30% on coding issues.</p>
     </div>
     {toc()}
   </header>
 
-  {banner("wd", "01", "Part 1 · What", "wrench", "Work done", ["github.com/GaryTang32/Efficient-Agent-Memory", "main @ PR #3"])}
+  {banner("wd", "01", "Part 1 · What", "wrench", "Work done", ["github.com/GaryTang32/Efficient-Agent-Memory", "main @ PR #7, validation round on the working branch"])}
   {section("wd-time", "1.1", "trend", "Timeline", timeline_table())}
   {section("wd-built", "1.2", "box", "What was built", '''
     <div class="kv">
       <div><strong>Benchmark harness</strong><p>ReAct loop with technique hooks, emulated windows, a cache-aware cost meter; Claude Code CLI, Bedrock, LiteLLM and mock backends.</p></div>
       <div><strong>27 methods and variants</strong><p>Faithful ports of published methods, each with its source and deviations documented, from ReSum to NVIDIA's EoCC.</p></div>
-      <div><strong>Tasks</strong><p>Four long synthetic tasks and SWE-bench Verified workdays on 100 Django issues, graded as SWE-bench grades them.</p></div>
-      <div><strong>AutoMemory</strong><p>The combined memory layer as a bench technique, a Python library and an MCP server, with five presets.</p></div>
+      <div><strong>Tasks</strong><p>Four long synthetic tasks and SWE-bench Verified workdays on Django (100 issues, plus workdays of related issues) and SymPy (75), graded as SWE-bench grades them.</p></div>
+      <div><strong>AutoMemory</strong><p>The combined memory layer as a bench technique, a Python library and an MCP server, with six presets.</p></div>
       <div><strong>Claude Code plugin</strong><p><code>plugins/automem</code>: four hooks, a skill and a handoff command; standard library only.</p></div>
       <div><strong>Docs</strong><p>README with charts and flowcharts, the interactive overview, paper notes, methodology, CONTRIBUTING and CITATION.</p></div>
     </div>''')}
@@ -348,9 +457,10 @@ def build():
       <tr><th>Fewer tokens is not fewer dollars</th><td>Rewritten history is billed as cache writes (2× on the CLI, 1.25× on Bedrock). Masking cost up to 608% and AgentDiet 410% of full context on Haiku.</td></tr>
       <tr><th>Automatic beats model-managed</th><td>CORAL's memory tools were barely used (Haiku 7 of 56 sessions); ReFold's Haiku recovery was 0.25. Harness-applied previews, recall and compaction held on both models.</td></tr>
       <tr><th>Plain notes beat memory systems</th><td>MemoryOS, LightMem and Nemori scored 0.2–0.5 lower than a note workspace with the same compaction.</td></tr>
-      <tr><th>Match the layer to the work</th><td>Notes were essential for multi-session tasks and pure overhead (about 50% more tool calls) on independent coding issues.</td></tr>
-      <tr><th>A structured recap helps coding sessions</th><td>NVIDIA's handoff fields (applied changes, dead ends, next command): 81 vs 76 (Haiku) and 88 vs 86 (Sonnet) resolved at 16K; ties ReSum on synthetic tasks.</td></tr>
-      <tr><th>Real coding sessions fit in short contexts</th><td>Django issue sessions peaked at 16–21K tokens; at 32K compaction fired 3–9 times in 100 issues.</td></tr>
+      <tr><th>Match the layer to the work</th><td>Notes are essential for multi-session tasks (without them 0.64 and 0.87 in score at 1.5–2.5 times the ceiling's cost) and overhead on coding issues, even related ones (Haiku: twice the ceiling's cost, fewer issues resolved).</td></tr>
+      <tr><th>Real coding sessions fit in short contexts</th><td>Inside a 16K window with compaction, the agent resolves as many issues as with its full window, on Django and on SymPy. Sessions peak at 16–21K tokens without a limit.</td></tr>
+      <tr><th>The kind of summary matters little on coding work</th><td>NVIDIA's handoff recap resolved 22 issues that a ReSum summary missed and missed 11 it resolved (pooled, p = 0.08), with no measurable cost difference.</td></tr>
+      <tr><th>Measure the noise before ranking</th><td>The same setting run twice differed by up to 38% in cost; about a quarter of all measured cost was runaway replies at the output cap. Four early rankings did not survive a same-day re-run.</td></tr>
       <tr><th>Grading must follow SWE-bench exactly</th><td>The first 40-issue run checked 63% of the official tests (docstring-named tests were dropped); fixed and superseded.</td></tr>
     </tbody></table></div>''')}
   {section("fd-works", "2.2", "check", "What works, what does not", '''
@@ -363,22 +473,27 @@ def build():
       <div class="bad"><span class="k">Fails or depends on the model</span><ul class="plain">
         <li>Editing history every step<span class="ev">masking 608%, AgentDiet 410%</span></li>
         <li>Asking the model to manage its memory<span class="ev">CORAL tools barely used</span></li>
-        <li>A compaction method alone, without guard or notes<span class="ev">EoCC alone: 15 Haiku sessions overflowed at 16K</span></li>
-        <li>Notes on independent tasks<span class="ev">+50% tool calls</span></li></ul></div>
+        <li>A compaction method alone, without a guard<span class="ev">EoCC alone: 24 of 100 Haiku sessions ended at the window at 16K (graded on their final state it still resolved 77)</span></li>
+        <li>Notes on coding issues<span class="ev">Haiku: 208% of the ceiling's cost on related issues, 6 fewer resolved</span></li>
+        <li>Ranking settings from one run<span class="ev">cost differs by 7–38% between two runs of the same setting</span></li></ul></div>
     </div>''')}
 
   {banner("rs", "03", "Part 3 · How much", "gauge", "Results", ["Floor and ceiling on the same instances", "Cost relative to the ceiling"])}
   {section("rs-synth", "3.1", "chart", "Four long synthetic tasks", f'<p class="lead-in">Mean score against cost relative to the unoptimised ceiling. Top left is best.</p><div class="chart">{syn}</div>')}
-  {section("rs-swe", "3.2", "cpu", "SWE-bench Verified: 100 Django issues", f'''<p class="lead-in">One fresh session per issue, graded with the official FAIL_TO_PASS and PASS_TO_PASS tests. The board shows every setting; the charts show the 16K window and Sonnet's dollars per resolved issue.</p>
-    {X.swe_board(SWE)}<div class="chart">{swe}</div><div class="chart">{dol}</div>''')}
-  {section("rs-pick", "3.3", "route", "Which preset", '''
+  {section("rs-swe", "3.2", "cpu", "SWE-bench Verified: Django and SymPy", f'''<p class="lead-in">One fresh session per issue, graded with the official FAIL_TO_PASS and PASS_TO_PASS tests. The memory settings work inside a 16K window; the ceiling keeps the full history in the model's own window.</p>
+    <div class="chart">{swe}</div>{sameday_table()}
+    <h4>Earlier grid (6 November): 32K and 16K windows, one run per cell</h4>
+    <p class="note">Read with the validation round in mind: sessions that ended early were scored unresolved without grading (this lowered the EoCC rows most), cells ran on different days, and cost differences under about 25 points are inside the run-to-run spread.</p>
+    {X.swe_board(SWE)}''')}
+  {section("rs-valid", "3.3", "check", "Validation round", validation_section())}
+  {section("rs-pick", "3.4", "route", "Which preset", '''
     <div class="tbl-wrap"><table><thead><tr><th>Work</th><th>Preset</th><th>Why</th></tr></thead><tbody>
-      <tr><th>Multi-session work that builds on earlier results</th><td><code>automem_v2</code></td><td>Ceiling accuracy at 85% / 58% of its cost</td></tr>
+      <tr><th>Multi-session work that builds on earlier results</th><td><code>automem_v2</code></td><td>Ceiling accuracy at 74–87% (Haiku) and 56–58% (Sonnet) of its cost, in three runs</td></tr>
       <tr><th>Same, strong agent model</th><td><code>automem_v2_strong</code></td><td>Sonnet solved 16/16 runs at 61%</td></tr>
-      <tr><th>Independent coding issues, cost first</th><td><code>automem_v2_lean</code></td><td>Sonnet $0.123 per resolved issue at 16K</td></tr>
-      <tr><th>Independent coding issues, accuracy first</th><td><code>automem_v2_lean_handoff</code></td><td>81 / 88 of 100 resolved at 16K</td></tr>
-      <tr><th>Independent coding issues on Haiku-class models, cost per solve</th><td><code>…,handoff_variant=brief</code></td><td>Haiku $0.0122 per resolved issue, the lowest; 78/100</td></tr>
-      <tr><th>Short sessions on a large window</th><td>cached full history</td><td>Haiku 77/100 at 62% at 32K</td></tr>
+      <tr><th>Coding issues and tickets, one per session</th><td><code>automem_v2_lean</code></td><td>The ceiling's accuracy inside a 16K window on Django and SymPy; 70–95% of its cost on Sonnet</td></tr>
+      <tr><th>Same, with NVIDIA's recap at resets</th><td><code>automem_v2_lean_handoff</code></td><td>A likely accuracy gain (22 against 11 issues, p = 0.08) at no measurable cost</td></tr>
+      <tr><th>Unknown workload on a strong model</th><td><code>automem_v2_adaptive</code></td><td>Sonnet: 1.00 at 61% on multi-session tasks, 86/100 Django issues at 105%</td></tr>
+      <tr><th>Short sessions on a large window</th><td>cached full history</td><td>Haiku 77/100 at 62% at 32K (one run, 6 November)</td></tr>
     </tbody></table></div>''')}
 
   {banner("cc", "04", "Part 4 · For everyday users", "layers", "Claude Code plugin", ["plugins/automem", "claude --plugin-dir plugins/automem"])}
@@ -386,7 +501,7 @@ def build():
     <p>The plugin runs the measured harness steps as Claude Code hooks: no extra model calls, nothing rewritten in the cached history. Claude Code already caches prompts and cuts long Bash output to a 2 KB head-only preview with the full text saved to a file; the plugin builds on that.</p>
     <div class="tbl-wrap"><table><thead><tr><th>Hook</th><th>What it does</th><th>Measured rule behind it</th></tr></thead><tbody>
       <tr><th>PostToolUse (Bash)</th><td>Long output reaches the model as head + tail (1,500 characters each). For output Claude Code truncated, the tail is read from Claude Code's own saved copy, so test summaries and failures at the end stay visible.</td><td>Previews at ingestion (Haiku 11/16 vs 7/16)</td></tr>
-      <tr><th>PreCompact</th><td>Compaction keeps NVIDIA's six-field handoff recap.</td><td>81 vs 76 / 88 vs 86 at 16K</td></tr>
+      <tr><th>PreCompact</th><td>Compaction keeps NVIDIA's six-field handoff recap.</td><td>Resolved 22 issues a ReSum summary missed, missed 11 (p = 0.08)</td></tr>
       <tr><th>SessionStart</th><td>Recalls this project's notes at startup, resume, clear and after compaction.</td><td>Recall: Haiku 0.34 without, 0.99 with notes on Sonnet</td></tr>
       <tr><th>Stop</th><td>Saves each turn's final message as a project note.</td><td>Autosave</td></tr>
     </tbody></table></div>
@@ -408,7 +523,7 @@ def build():
     </tbody></table></div>
     <p class="note">Other memory services (for example mem0, Zep or Letta) have not been measured in this repository.</p>''')}
 
-  {banner("todo", "05", "Part 5 · Next", "flag", "To-do", ["Status as of 8 November 2026"])}
+  {banner("todo", "05", "Part 5 · Next", "flag", "To-do", ["Status as of 12 November 2026"])}
   {section("todo-blocked", "5.1", "alert", "Blocked", todo(BLOCKED))}
   {section("todo-next", "5.2", "route", "Next steps", todo(NEXT))}
   {section("todo-gaps", "5.3", "info", "Known gaps", todo(GAPS))}
@@ -417,7 +532,7 @@ def build():
     <h2 id="h-links">{ic("book", "ic hic")}Links</h2>
     <div class="refs-group"><ol class="refs">
       <li><a href="https://github.com/GaryTang32/Efficient-Agent-Memory">Repository</a> <span class="desc">README with charts, flowcharts and quick start</span></li>
-      <li><a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/1">PR #1</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/2">PR #2</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/3">PR #3</a> <span class="desc">merged</span></li>
+      <li><a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/1">PR #1</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/2">PR #2</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/3">PR #3</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/4">PR #4</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/5">PR #5</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/6">PR #6</a>, <a href="https://github.com/GaryTang32/Efficient-Agent-Memory/pull/7">PR #7</a> <span class="desc">merged</span></li>
       <li><a href="https://claude.ai/artifact/JVkigqm5XYpmwbN2F11xdF">Interactive overview</a> <span class="desc">every method's mechanism, diagrams and charts</span></li>
       <li><a href="https://arxiv.org/abs/2611.05306">You don't need long context</a> <span class="src">NVIDIA, arXiv 2611.05306</span></li>
       <li><a href="https://www.swebench.com/">SWE-bench Verified</a> <span class="src">Jimenez et al., ICLR 2024; OpenAI</span></li>

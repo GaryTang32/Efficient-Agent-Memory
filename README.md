@@ -10,9 +10,9 @@ OpenAI-compatible endpoint.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-2a78d6.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-2a78d6.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-242%20passing-1baf7a.svg)](tests)
-[![Benchmark runs](https://img.shields.io/badge/benchmark%20runs-%E2%89%882%2C800-52514e.svg)](#results)
-[![SWE-bench Verified](https://img.shields.io/badge/SWE--bench%20Verified-100%20Django%20issues-52514e.svg)](#real-repositories-swe-bench-verified)
+[![Tests](https://img.shields.io/badge/tests-269%20passing-1baf7a.svg)](tests)
+[![Benchmark runs](https://img.shields.io/badge/benchmark%20runs-%E2%89%883%2C400-52514e.svg)](#results)
+[![SWE-bench Verified](https://img.shields.io/badge/SWE--bench%20Verified-Django%20%2B%20SymPy-52514e.svg)](#real-repositories-swe-bench-verified)
 [![MCP server](https://img.shields.io/badge/MCP-server-52514e.svg)](#mcp-server)
 
 [Results](#results) · [How it works](#how-automemory-works) · [Which preset?](#which-preset-should-i-use) ·
@@ -27,9 +27,10 @@ OpenAI-compatible endpoint.
 
 | | |
 |---|---|
-| 🎯 **Ceiling accuracy below its cost** | AutoMemory v2 matches the unoptimised agent's accuracy on four long tasks at **85%** (Claude Haiku) and **58%** (Claude Sonnet) of its cost. |
+| 🎯 **Ceiling accuracy below its cost** | AutoMemory v2 matches the unoptimised agent's accuracy on four long multi-session tasks at **85%** (Claude Haiku) and **58%** (Claude Sonnet) of its cost. A same-day re-run and a repeat gave 74–87% and 56%. |
 | 🧪 **27 methods and variants, measured the same way** | Faithful ports of published methods (ReSum, AgentDiet, ReFold, SJC, CADOC, AKV, CORAL, SelfCompact, NVIDIA EoCC, MemoryOS, LightMem, Nemori, …), each placed between the same floor and ceiling. |
-| 🛠️ **Real repositories** | On 100 SWE-bench Verified Django issues, `automem_v2_lean` costs **$0.123 per resolved issue** on Sonnet (ceiling: $0.165); with NVIDIA's handoff recap it reaches the ceiling's accuracy. |
+| 🛠️ **Real repositories** | On SWE-bench Verified (100 Django and 75 SymPy issues), `automem_v2_lean` resolves as many issues inside a 16K window as the unoptimised agent with its full window, at **70–95%** of its cost on Sonnet. |
+| 🔁 **Checked twice** | A [validation round](#validation-round) re-ran every decision cell on one day, repeated cells to measure noise, audited the measurement code and added a second repository. It confirmed the two results above and withdrew four smaller claims. |
 | 📦 **Installable** | One memory layer, four ways: a bench technique, a framework-agnostic Python library, an MCP server, and a Claude Code plugin. |
 
 > **The core lesson:** fewer tokens is not fewer dollars. Re-sent history is cheap while it stays in the prompt cache
@@ -72,15 +73,16 @@ flowchart TD
 
 ## Results
 
-About **2,800 benchmark runs** on Claude Haiku and Claude Sonnet (Claude Code CLI route, list prices, prompt caching
-on), measured up to 2026-11-06.
+About **3,400 benchmark runs** on Claude Haiku and Claude Sonnet (Claude Code CLI route, list prices, prompt caching
+on), measured up to 2026-11-12.
 
 **Measurement** (details in [`docs/methodology.md`](docs/methodology.md)):
 - Each method sits between the same model's **floor** (`naive`: no memory, no caching, the task's window) and
   **ceiling** (`naive@native`: nothing removed, the model's own window, no caching), on the same task instances.
 - **Cost** is relative to the ceiling's cost (60% means 40% cheaper). **Peak** is the largest prompt sent.
-- Haiku 4 runs per cell, Sonnet 2–4. Differences under about 0.1 in score or 15 points in cost are within
-  run-to-run noise.
+- Haiku 4 runs per cell, Sonnet 2–4. Measured run-to-run spread (the same setting twice on one day): up to 0.11 in
+  mean score on the synthetic tasks; on 100 coding issues, 1–2 issues resolved and 7–38% in cost. Smaller differences
+  are noise.
 
 ### Four long synthetic tasks
 
@@ -105,26 +107,31 @@ Top left is best: the ceiling's accuracy at a fraction of its cost.
 |---|---|---|---|
 | No memory (floor) | — | 0.21 · 27% · 1/16 · 34% | 0.17 · 38% · 1/16 · 48% |
 | Unoptimised ceiling | — | 0.88 · 100% · 9/16 · 100% | 0.95 · 100% · 12/16 · 100% |
-| Workspace + ReSum (best phase-1 combination) | USTC / Alibaba Tongyi | 0.89 · 126% · 11/16 · 40% | 0.94 · 71% · 8/10 · 42% |
-| MemoryOS / LightMem / Nemori + ReSum (3 tasks) | BUPT+Tencent / ZJU / Fudan+Shanda | 0.54–0.61 · 116–184% | — |
-| Strands harness defaults | AWS | 0.59 · 125% · 7/16 · 35% | 0.88 · 148% · 4/8 · 43% |
-| CADOC | SJTU | 0.43 · 107% · 5/16 · 44% | 0.86 · 83% · 4/8 · 40% |
-| ReFold | UCSB + Intel | 0.43 · 56% · 3/16 · 41% | 0.97 · 106% · 7/8 · 38% |
-| SJC on ReSum | University of Virginia | 0.80 · 136% · 7/16 · 42% | 0.94 · 80% · 7/8 · 40% |
-| OpenClaw + SJC | University of Virginia | 0.88 · 90% · 10/16 · 39% | 0.87 · 68% · 5/8 · 39% |
-| AKV rolling drop | Tsinghua + CUHK | 0.45 · 81% · 4/16 · 39% | 0.60 · 68% · 3/8 · 43% |
-| Raw-history RAG (3 tasks) | Memory Tax studies | 0.52 · 105% · 1/12 · 41% | 0.99 · 199% · 4/6 · 48% |
-| CORAL (prompting-only) | CUHK + Tencent + HKUST | 0.15 · 66% · 0/16 · 46% | 0.38 · 45% · 1/8 · 48% |
-| SelfCompact | Apple + JHU | 0.75 · 179% · 6/16 · 38% | 0.93 · 130% · 6/8 · 30% |
+| Workspace + ReSum (best phase-1 combination) | USTC / Alibaba Tongyi | 0.89 · 126% · 11/16 · 40% | 0.94 · 75% · 8/10 · 42% |
+| MemoryOS / LightMem / Nemori + ReSum (3 tasks) | BUPT+Tencent / ZJU / Fudan+Shanda | 0.54–0.61 · 114–179% | — |
+| Strands harness defaults | AWS | 0.59 · 125% · 7/16 · 35% | 0.88 · 160% · 4/8 · 43% |
+| CADOC | SJTU | 0.43 · 107% · 5/16 · 44% | 0.86 · 86% · 4/8 · 40% |
+| ReFold | UCSB + Intel | 0.43 · 56% · 3/16 · 41% | 0.97 · 108% · 7/8 · 38% |
+| SJC on ReSum | University of Virginia | 0.80 · 136% · 7/16 · 42% | 0.94 · 81% · 7/8 · 40% |
+| OpenClaw + SJC | University of Virginia | 0.88 · 90% · 10/16 · 39% | 0.87 · 69% · 5/8 · 39% |
+| AKV rolling drop | Tsinghua + CUHK | 0.45 · 81% · 4/16 · 39% | 0.60 · 69% · 3/8 · 43% |
+| Raw-history RAG (3 tasks) | Memory Tax studies | 0.52 · 105% · 1/12 · 41% | 0.99 · 213% · 4/6 · 48% |
+| CORAL (prompting-only) | CUHK + Tencent + HKUST | 0.15 · 66% · 0/16 · 46% | 0.38 · 46% · 1/8 · 48% |
+| SelfCompact | Apple + JHU | 0.75 · 179% · 6/16 · 38% | 0.93 · 134% · 6/8 · 30% |
 | EoCC handoff compaction alone (`eocc`) | NVIDIA | 0.73 · 89% · 6/16 · 42% | 0.91 · 126% · 9/16 · 46% |
 | AutoMemory v1 | this repo | 0.83 · 86% · 7/16 · 34% | 0.98 · 68% · 14/16 · 36% |
 | **AutoMemory v2** (`automem_v2`) | this repo | **0.88 · 85% · 11/16** · 35% | 0.99 · **58%** · 13/16 · 37% |
 | **AutoMemory v2 strong** (`automem_v2_strong`) | this repo | 0.81 · 114% · 7/16 · 35% | **1.00 · 61% · 16/16** · 37% |
-| AutoMemory v2 slim (`automem_v2_slim`) | this repo | 0.87 · 90% · 6/16 · **30%** | 1.00 · 78% · 7/8 · **30%** |
+| AutoMemory v2 slim (`automem_v2_slim`) | this repo | 0.87 · 90% · 6/16 · **30%** | 1.00 · 80% · 7/8 · **30%** |
 | AutoMemory v2 + handoff recap (`compact=handoff`) | this repo + NVIDIA | 0.83 · 79% · 8/16 · 35% | 1.00 · 66% · 13/16 · 37% |
 | … recap written by the Haiku summariser (`compact=handoff_aux`) | this repo + NVIDIA | — | 0.99 · 58% · 12/16 · 38% |
 
 - On Sonnet, AutoMemory uses Haiku as its summariser.
+- Cost and peak are relative to the ceiling on the same task instances (a method run on fewer instances is
+  compared with the ceiling on those instances only).
+- Same-day re-run of 2026-11-12 (instances 0–3, same formula): AutoMemory v2 scored 0.75 and 0.86 at 87% and 74%
+  on Haiku (ceiling 0.80) and 0.99 and 1.00 at 56% on Sonnet (ceiling 0.95). Without the note workspace
+  (`automem_v2_lean`) the same tasks scored 0.64 and 0.87 at 249% and 152%.
 - Phase-1 methods tested on earlier tasks are left out: observation masking cost up to 608%, AgentDiet 410%, and
   turn control had no effect. Context-Folding solved Sonnet `research_corpus` at 20% but failed `ops_stream` and
   `ledger_audit`.
@@ -133,23 +140,48 @@ Top left is best: the ceiling's accuracy at a fraction of its cost.
 
 ### Real repositories: SWE-bench Verified
 
-**100 real Django issues** (SWE-bench Verified, Django 4.0–5.0, all difficulties) in 20 workdays of 5 consecutive
-sessions. Each session starts from a fresh checkout at its issue's commit. Grading follows SWE-bench: the test modules
-the issue's test patch touches are run, and the issue is resolved iff every FAIL_TO_PASS and PASS_TO_PASS test passes.
-Windows follow NVIDIA's "You don't need long context": 16K (compaction at 12K) and 32K (at 24K).
+Real issues from SWE-bench Verified in workdays of 5 consecutive sessions, one issue per session. Each session starts
+from a fresh checkout at its issue's commit. Grading follows SWE-bench: the test files the issue's test patch touches
+are run, and the issue is resolved iff every FAIL_TO_PASS and PASS_TO_PASS test passes. The memory settings work inside
+a 16K window (compaction at 12K, after NVIDIA's "You don't need long context"); the ceiling keeps the full history in
+the model's own window.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/swe-16k-dark.svg">
-  <img alt="SWE-bench Verified at a 16K window: issues resolved against cost relative to the ceiling. AutoMemory lean with ReSum is the cheapest; with the handoff recap it reaches the ceiling's accuracy; EoCC alone resolves the fewest." src="docs/assets/swe-16k-light.svg" width="100%">
+  <img alt="SWE-bench Verified, 100 Django issues at a 16K window, all settings run on the same day: cost relative to the ceiling with 95% intervals, and issues resolved. On Sonnet the lean settings cost 82 to 86% of the ceiling; on Haiku 89 to 92% with intervals that include 100%. Every setting resolves within a few issues of the ceiling." src="docs/assets/swe-16k-light.svg" width="100%">
 </picture>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/swe-dollars-dark.svg">
-  <img alt="Claude Sonnet, dollars per resolved issue: AutoMemory lean at 16K $0.123, lean with handoff at 32K $0.130, cached full history $0.142, lean with handoff at 16K $0.147, ceiling $0.165, EoCC alone $0.175." src="docs/assets/swe-dollars-light.svg" width="100%">
-</picture>
+Issues resolved · cost vs the ceiling [95% interval over workdays]. All cells of one issue set and model ran on the
+same day (2026-11-09 to 11-12).
+
+| Issue set | Setting | Haiku | Sonnet |
+|---|---|---|---|
+| **Django**, 100 issues | Ceiling: full history, own window | 77 · 100% | 83 · 100% |
+| | `automem_v2_lean` | 80 · 92% [71–115] | 85 · **82%** [69–100] |
+| | `automem_v2_lean_handoff` | 79 · 89% [69–118] | **89** · 85% [64–114] |
+| | … brief recap (`handoff_variant=brief`) | 75 · 90% [73–110] | 84 · 86% [72–105] |
+| | `automem_v2_adaptive` | 78 · 131% [96–174] | 86 · 105% [85–130] |
+| **Django, related issues**: each workday stays in one subsystem (80 issues Haiku, 50 Sonnet) | Ceiling | 64 · 100% | 44 · 100% |
+| | `automem_v2_lean` | **70** · 117% [89–152] | 44 · 95% [66–126] |
+| | `automem_v2` (with notes) | 64 · 208% [169–247] | 44 · 87% [69–113] |
+| | `automem_v2_adaptive` | 67 · 106% [83–135] | 45 · 80% [60–104] |
+| **SymPy**, a second repository (75 issues Haiku, 40 Sonnet) | Ceiling | 50 · 100% | 35 · 100% |
+| | `automem_v2_lean` | 50 · 116% [81–158] | 35 · **70%** [54–109] |
+| | `automem_v2_lean_handoff` | 52 · 92% [71–123] | 34 · 74% [56–108] |
+
+- **Accuracy.** Inside a 16K window the lean settings resolve as many issues as the ceiling in every set. Paired by
+  issue, no setting differs significantly from another (sign test, p ≥ 0.07).
+- **Cost.** On Sonnet, lean is below the ceiling in all three sets. On Haiku it cannot be told apart from the ceiling.
+- **Notes do not pay on coding issues**, even when consecutive issues touch the same subsystem: with the note
+  workspace Haiku resolved 64 instead of 70 at almost twice the cost, and later sessions of a workday gained nothing.
+- **Handoff recap or ReSum summary.** Pooled over three paired sets and both models, handoff alone resolved 22
+  issues and ReSum alone 11 (p = 0.08): suggestive, not established. No cost difference is measurable.
+- **Noise.** `automem_v2_lean` run twice on the same day resolved 80 and 81 (Haiku) and 85 and 87 (Sonnet), with 6–7
+  issues flipping, and differed by 7% and 38% in cost. One run of 100 issues does not separate settings closer than
+  about 5 issues or 25 points of cost.
 
 <details>
-<summary><b>Full table</b>: issues resolved of 100 · cost vs ceiling · $ per resolved issue</summary>
+<summary><b>Earlier grid (2026-11-06)</b>: 32K and 16K windows, one run per cell · issues resolved of 100 · cost vs ceiling · $ per resolved issue</summary>
 
 | Setting | Window | Haiku | Sonnet |
 |---|---|---|---|
@@ -162,18 +194,40 @@ Windows follow NVIDIA's "You don't need long context": 16K (compaction at 12K) a
 | AutoMemory v2 lean | 16K | 76 · 83% · $0.013 | 86 · **73% · $0.123** |
 | **AutoMemory v2 lean + handoff** | 16K | **81** · 89% · $0.013 | **88** · 89% · $0.147 |
 | … recap written by the Haiku summariser | 16K | — | 86 · 90% · $0.152 |
-| … brief recap (`handoff_variant=brief`) | 16K | 78 · **79%** · **$0.012** | 84 · 77% · $0.134 |
+| … brief recap (`handoff_variant=brief`) | 16K | 78 · **79%** · **$0.012** | 84 · 77% · $0.133 |
 | EoCC alone | 16K | 72 · 93% · $0.016 (15 overflows) | 83 · 100% · $0.175 (7 overflows) |
 
-- At 32K the window rarely binds (sessions peak at 16–21K; 3–9 compactions in 100 issues), so the settings there
-  are within noise of each other.
-- At 16K, paired by issue, handoff resolves 7 issues that ReSum misses and misses 2 that it resolves (Haiku); 3 and
-  1 (Sonnet). The direction is consistent but not yet certain.
-- The brief recap (the same six fields as terse bullets, pointers instead of copied code, at most 150 words) cuts handoff's cost from 89% to 79% (Haiku) and 77% (Sonnet) and its agent output by 11–19%. On Haiku it gives the lowest cost per resolved issue of any setting; on Sonnet it loses handoff's accuracy gain (84 vs 88), so ReSum stays the cost-first choice there.
-- An earlier 40-issue run graded only the tests whose ids name a test method (63% of the official tests); it is
-  superseded by this table.
+
+Read this grid with the validation round in mind:
+- Sessions that ended early (overflow, step limit) were scored unresolved without grading their final state. This
+  lowered the EoCC rows most: re-graded, EoCC alone at 16K resolves 77 of 100 on Haiku, not 72.
+- Cells ran on different days and once each; the ceiling resolved 82 and 88 here and 77 and 83 when re-run.
+- Cost differences between cells of less than about 25 points, and the dollar figures beyond two digits, are inside
+  the run-to-run spread. The rankings "handoff costs more than ReSum" and "the brief recap is the cheapest" did not
+  hold in the same-day runs.
+- At 32K the window rarely binds (sessions peak at 16–21K; 3–9 compactions in 100 issues).
 
 </details>
+
+### Validation round
+
+After the first results, four checks were run together (2026-11-08 to 11-12, 596 runs):
+
+| Check | What it found |
+|---|---|
+| Same-day controls: every decision cell re-run on one day | The two headline results hold. Baselines drift between days (the ceiling: 82 → 77 and 88 → 83 issues), so cells from different days must not be compared closely. |
+| Noise: one cell per workload run twice | The spread given under "Measurement" above. |
+| Independent audit of the measurement code | 15 findings, 13 fixed. Two changed a published result: sessions that ended early were not graded, and a recap that exceeded the window was not counted as an overflow. |
+| Out-of-sample tasks: SymPy, and Django workdays of related issues | The lean result holds on a second repository; notes do not pay on coding issues even when they are related. |
+
+It also found a harness artifact. The bench emulates tools as text through the Claude Code CLI, and in about 1% of
+calls the model loops until it reaches the output cap; the loop is billed and discarded. These runaway replies were
+22% (Sonnet) and 26% (Haiku) of all measured cost in the round and explain most of the cost noise. The cap is now
+8K tokens instead of 32K (a runaway reply costs about a quarter as much), cap hits are counted in every result row,
+and each row records the CLI version and thinking settings it ran with.
+
+Withdrawn: "handoff costs 6–16 points more than ReSum", "the brief recap is the cheapest per resolved issue",
+"EoCC alone resolves the fewest issues", and dollar-per-issue rankings between the lean settings.
 
 ### What the results show
 
@@ -185,12 +239,15 @@ Windows follow NVIDIA's "You don't need long context": 16K (compaction at 12K) a
    tools were barely used, ReFold's Haiku recovery was 0.25.
 3. **Plain notes beat engineered memory systems.** MemoryOS, LightMem and Nemori scored 0.2–0.5 lower than a note
    workspace with the same compaction.
-4. **On coding work under a tight window, the handoff recap beats a generic summary.** Applied changes, dead ends
-   and the next command are what a coding session needs after a reset: at 16K it brings both models to the
-   ceiling's accuracy or within one issue of it, for 6–16 points more cost. NVIDIA's method on its own, without
-   AutoMemory's guard, previews and notes, overflowed the window and resolved the fewest issues.
+4. **On coding work, a 16K window with compaction is enough, and the kind of summary matters little.** The lean
+   settings resolve as many issues as the full-history ceiling on two repositories. NVIDIA's handoff recap (applied
+   changes, dead ends, the next command) resolved more issues than a ReSum summary in the pooled pairs (22 against
+   11, p = 0.08) at no measurable cost.
 5. **Match the memory layer to the work.** The note workspace is essential when sessions build on earlier results
-   and pure overhead (about 50% more tool calls) when they are independent.
+   (without it: 0.64 and 0.87 in score at 1.5–2.5 times the ceiling's cost) and overhead on coding issues, even
+   related ones (Haiku: twice the ceiling's cost, fewer issues resolved).
+6. **Measure the noise before ranking.** The same setting run twice differed by up to 38% in cost, and about a
+   quarter of all cost was a harness artifact. Four early rankings did not survive a same-day re-run.
 
 ---
 
@@ -204,13 +261,11 @@ flowchart TD
     Q2 -- no --> P2[automem_v2]
     Q1 -- "no: one issue or<br/>ticket per session" --> Q3{Tight window or<br/>long sessions?}
     Q3 -- "no: short sessions,<br/>large window" --> P3[Cached full history<br/>may be enough]
-    Q3 -- yes --> Q4{Accuracy first or<br/>cost first?}
-    Q4 -- cost --> P4[automem_v2_lean]
-    Q4 -- accuracy --> P5[automem_v2_lean_handoff]
+    Q3 -- yes --> P4[automem_v2_lean, or<br/>automem_v2_lean_handoff<br/>for NVIDIA's recap at resets]
     Q1 -.->|smallest working context above all| P6[automem_v2_slim]
 
     classDef preset fill:#2a78d6,stroke:#2a78d6,color:#ffffff
-    class P1,P2,P4,P5,P6 preset
+    class P1,P2,P4,P6 preset
 ```
 
 | Preset | Spec | For |
@@ -218,16 +273,18 @@ flowchart TD
 | `automem_v2` | `automem:ingest=0.1` | The default: multi-session work that builds on earlier results |
 | `automem_v2_strong` | `automem:ingest=0.1,compact=sjc` | Strong agent models, with a cheaper summariser (`#aux=`) |
 | `automem_v2_slim` | `automem:ingest=0.1,fold=true` | The smallest working context |
-| `automem_v2_lean` | `automem:workspace=false,ingest=0.1` | Independent tasks (coding issues, tickets), cost first |
-| `automem_v2_lean_handoff` | `…,compact=handoff,handoff_variant=swe` | Independent tasks, accuracy first under a tight window |
+| `automem_v2_lean` | `automem:workspace=false,ingest=0.1` | Coding issues and tickets, one per session |
+| `automem_v2_lean_handoff` | `…,compact=handoff,handoff_variant=swe` | The same, with NVIDIA's handoff recap at resets (a likely accuracy gain) |
+| `automem_v2_adaptive` | `automem:workspace=adaptive,ingest=0.1` | Unknown workload on a strong model |
 
 Choose by whether later sessions reuse what earlier ones learn (the same small codebase, running totals, an audit
-over rounds): then `automem_v2`; a backlog of unrelated tickets: `automem_v2_lean`. When unsure, `automem_v2`: its
-mistake (extra note-taking) cost about 40–60 points in our runs, the opposite one about twice as much. An automatic
-choice (`automem_v2_adaptive`, a short question to the summariser at each session start) was tested and not adopted:
-it matched lean's accuracy on the Django issues at about 10 points more cost, and on the synthetic tasks it judged
-`repo_debug`'s second session independent (new bug reports in the same small library), which raised its cost from
-126% to 255% (Haiku) and from 50% to 175% (Sonnet) of the ceiling.
+over rounds): then `automem_v2`; coding issues or a backlog of tickets: `automem_v2_lean`. When unsure, `automem_v2`:
+its mistake (note-taking on coding issues) cost up to 90 points on Haiku and nothing on Sonnet in the validation
+runs, while the opposite mistake cost 100–160 points and about 0.1 in score. An automatic choice
+(`automem_v2_adaptive`, a short question to the summariser at each session start) is available but is not the
+default. On Sonnet it stayed close to the right fixed preset on both kinds of work (1.00 at 61% of the ceiling's
+cost on the synthetic tasks, 86 of 100 Django issues at 105%); on Haiku it cost more than the right preset on both
+(155% and 131%).
 
 ---
 
@@ -405,7 +462,7 @@ flowchart TB
 | Path | What is there |
 |---|---|
 | [`eam/`](eam/) | Harness: backends, agent loop with technique hooks, cost meter, techniques, tasks, library, MCP server |
-| [`tests/`](tests/) | 242 offline tests, including a mock run of every method on every long task and the Claude Code plugin's hooks |
+| [`tests/`](tests/) | 269 offline tests, including a mock run of every method on every long task and the Claude Code plugin's hooks |
 | [`plugins/automem/`](plugins/automem/) | The Claude Code plugin: hooks, skill, `/automem:handoff` |
 | [`scripts/`](scripts/) | Run scripts for every experiment, SWE-bench validation, docs generators |
 | [`docs/report.html`](docs/report.html) | The work report: work done, findings, results, the plugin and its pilot, to-do list ([rendered](https://claude.ai/artifact/89QC8QvXU4E3zCszkrnx2h)) |
@@ -424,12 +481,16 @@ git-ignored); every experiment's run script is in `scripts/`.
 
 ## Limitations and roadmap
 
-- All runs use the Claude Code CLI route at list prices. **Bedrock validation** is blocked on credentials (runbook:
-  `scripts/run_bedrock_validation.sh`); Codex / OpenAI pricing has not been re-priced.
+- All runs use the Claude Code CLI route at list prices, with tools emulated as text. That route produced the
+  runaway replies described under [Validation round](#validation-round). **Bedrock validation** (native tool calls)
+  is blocked on credentials (runbook: `scripts/run_bedrock_validation.sh`); Codex / OpenAI pricing has not been
+  re-priced.
 - The synthetic tasks emulate small windows to create memory pressure.
-- The SWE-bench set is 100 issues from one repository (Django).
-- Next: an adaptive workspace (on only when a task refers to earlier results), and fewer agent tokens after a handoff
-  reset, which is the remaining cost of the handoff recap.
+- The SWE-bench sets are two Python repositories (Django, SymPy). Sonnet's out-of-sample sets are smaller (40–50
+  issues), and most cells were run once.
+- Rows recorded before 2026-11-12 ran with a 32K output cap and do not record the CLI version or thinking settings.
+- Next: a native tool-calling route to remove the runaway replies at the source; three or more runs per cell before
+  any cost ranking; EoCC alone on Sonnet under the corrected grading.
 
 ---
 

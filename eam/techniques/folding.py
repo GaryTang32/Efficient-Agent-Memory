@@ -78,6 +78,9 @@ class ContextFolding(Technique):
                             meter=ctx.meter, store=ctx.store, tag="subagent", initial_messages=history,
                             context_limit=ctx.context_limit)
             ctx.log("folded", description=description, sub_steps=sub.steps, returned=sub.finished)
+            # the branch's requests count like MAIN's: its peak, and its events (an overflow there is one of the run)
+            ctx.peak_prompt_tokens = max(ctx.peak_prompt_tokens, sub.peak_prompt_tokens)
+            ctx.events.extend(dict(e, branch=count + 1) for e in sub.events)
             if sub.finished and sub.answer:
                 return P.RETURNED.format(message=sub.answer)
             return P.RETURNED_NO_MESSAGE.format(last=sub.answer or "(no message)")
