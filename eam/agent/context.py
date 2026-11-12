@@ -76,6 +76,8 @@ class AgentContext:
         if getattr(resp, "retries", 0):
             self.log("llm_retry", retries=resp.retries, billed_prompt_tokens=resp.usage.prompt_tokens,
                      prompt_size=resp.prompt_size, side=True)
+        for _ in range(getattr(resp, "cap_hits", 0)):
+            self.log("output_cap", side=True)
         if self.context_limit and resp.prompt_size > self.context_limit:
             self.stop_reason = "context_overflow"
             self.log("context_overflow", tokens=resp.prompt_size, limit=self.context_limit, when="side_call")
@@ -99,6 +101,8 @@ class AgentContext:
         )
         resp = self.llm.converse(req)
         self.meter.record(req.tag, self.aux_model, resp.usage, resp.latency_ms, resp.reported_cost_usd)
+        for _ in range(getattr(resp, "cap_hits", 0)):
+            self.log("output_cap", side=True, aux=True)
         return resp.text
 
     def estimate_context_tokens(self) -> int:

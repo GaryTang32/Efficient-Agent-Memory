@@ -217,6 +217,8 @@ def run_agent(
         if resp.retries:  # backend retries / internal continuation turns: billed more than one prompt
             ctx.log("llm_retry", retries=resp.retries, billed_prompt_tokens=resp.usage.prompt_tokens,
                     prompt_size=resp.prompt_size)
+        for _ in range(resp.cap_hits):  # one event per reply that reached the output cap, so rows can count them
+            ctx.log("output_cap")
         if context_limit:
             # The character-based estimate undercounts dense text (numbers, ids); calibrate it with the real count,
             # and treat a request whose real size exceeded the window as rejected.

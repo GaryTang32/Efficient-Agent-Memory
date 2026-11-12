@@ -27,6 +27,9 @@ from eam.cost import usage_cost
 from eam.llm.types import Request, Response, Usage
 
 
+DEFAULT_OUTPUT_CAP = 8192
+
+
 class ClaudeCLIError(RuntimeError):
     pass
 
@@ -42,6 +45,44 @@ class ClaudeCLIClient:
         self.extra_args = extra_args or []
         self.env = env
         self.wait_for_limit = os.environ.get("EAM_CLAUDE_WAIT_FOR_LIMIT", "1") != "0"
+        self.output_cap = int(os.environ.get("EAM_CLAUDE_MAX_OUTPUT", DEFAULT_OUTPUT_CAP))
+
+    # our variable -> the Claude Code variable it pins for the child processes
+    PINS = {"EAM_CLAUDE_THINKING_TOKENS": "MAX_THINKING_TOKENS", "EAM_CLAUDE_EFFORT": "CLAUDE_EFFORT"}
+
+    def child_env(self, max_tokens: int = 0) -> dict[str, str]:
+        """Environment of a ``claude -p`` call. The reply cap bounds what a runaway reply costs (see ``_run``).
+        Thinking budget and effort are inherited from the launching process unless pinned: ``EAM_CLAUDE_THINKING_TOKENS``
+        and ``EAM_CLAUDE_EFFORT`` set them, and the value ``unset`` removes them."""
+        env = {**os.environ, **(self.env or {})}
+        env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(max(self.output_cap, max_tokens))
+        for ours, theirs in self.PINS.items():
+            pin = os.environ.get(ours)
+            if pin is None:
+                continue
+            if pin.strip().lower() in ("", "unset", "none"):
+                env.pop(theirs, None)
+            else:
+                env[theirs] = pin.strip()
+        return env
+
+    _versions: dict[str, str | None] = {}
+
+    def cli_version(self) -> str | None:
+        if self.binary not in self._versions:
+            try:
+                out = subprocess.run([self.binary, "--version"], capture_output=True, text=True, timeout=30).stdout
+                self._versions[self.binary] = out.strip().split()[0] if out.strip() else None
+            except (OSError, subprocess.SubprocessError):
+                self._versions[self.binary] = None
+        return self._versions[self.binary]
+
+    def run_settings(self) -> dict[str, Any]:
+        """What changes a run's cost and behaviour besides the request, recorded in every result row: the CLI
+        version (it updates itself), the reply cap, and the thinking settings the child processes run with."""
+        env = self.child_env()
+        return {"cli_version": self.cli_version(), "output_cap": self.output_cap,
+                "thinking_tokens": env.get("MAX_THINKING_TOKENS"), "effort": env.get("CLAUDE_EFFORT")}
 
     def build_command(self, req: Request) -> tuple[list[str], str]:
         system = "\n\n".join(b["text"] for b in req.system if "text" in b)
@@ -80,13 +121,13 @@ class ClaudeCLIClient:
         return (reset - now).total_seconds()
 
     def _run(self, cmd: list[str], stdin: str, max_tokens: int = 8192) -> dict[str, Any]:
-        # Cap the reply length: without it a degenerate (repeating) reply can run to the model's 128K-token
-        # maximum and time out. The cap must stay far above normal replies: when a reply reaches it, Claude Code
-        # continues in a second internal turn and reports the summed usage (measured: a 2.6K-token request
-        # reported as 12.9K prompt tokens), so an 8K cap made Haiku's occasional long replies look like
-        # oversized prompts.
-        cap = max(int(os.environ.get("EAM_CLAUDE_MAX_OUTPUT", 32000)), max_tokens)
-        env = {**os.environ, "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(cap), **(self.env or {})}
+        # Cap the reply length. Tools are text on this route, and in about 1% of calls the model loops (it repeats
+        # a tool call in its native syntax) until it reaches the cap; Claude Code then continues in a second
+        # internal turn and the loop's output is billed and discarded. At the earlier 32K cap these replies were
+        # 22-26% of all measured cost (2026-11 validation round); at 8K one costs about a quarter as much and the
+        # second turn still returns a usable reply (measured). Replies that reach the cap are counted (`_cap_hits`).
+        # The prompt size is read from the first request, so the continuation's summed usage does not inflate it.
+        env = self.child_env(max_tokens)
         last = ""
         # what failed attempts used: error results (usage and reported cost) and timed-out calls (usage of the
         # assistant messages streamed before the timeout, priced from usage); added to the returned result
@@ -105,11 +146,13 @@ class ClaudeCLIClient:
             if result is not None:
                 result = {**result, "_first_prompt": first_prompt}
             if result and not result.get("is_error"):
-                return {**result, **failed}
+                # with tools off, every extra internal turn is a continuation after a reply that reached the cap
+                return {**result, **failed, "_cap_hits": int(result.get("num_turns") or 1) - 1}
             if result and "output token maximum" in str(result.get("result", "")):
                 # A runaway reply hit the output cap. Hand back an empty, truncated reply (its usage is still
                 # billed) so the agent loop handles it like any other malformed turn instead of failing the run.
-                return {**result, "result": "", "is_error": False, "stop_reason": "max_tokens", **failed}
+                return {**result, "result": "", "is_error": False, "stop_reason": "max_tokens", **failed,
+                        "_cap_hits": max(1, int(result.get("num_turns") or 1) - 1)}
             if result:
                 failed["_failed_attempts"] += 1
                 failed["_failed_usage"] = failed["_failed_usage"] + self._usage(result)
@@ -129,7 +172,8 @@ class ClaudeCLIClient:
                 time.sleep(2 * (attempt + 1))
         raise ClaudeCLIError(f"claude -p failed: {last}")
 
-    _NO_FAILURES = {"_failed_attempts": 0, "_failed_usage": Usage(), "_failed_cost": 0.0, "_unpriced_usage": Usage()}
+    _NO_FAILURES = {"_failed_attempts": 0, "_failed_usage": Usage(), "_failed_cost": 0.0, "_unpriced_usage": Usage(),
+                    "_cap_hits": 0}
 
     @classmethod
     def _scan(cls, stdout: str) -> tuple[dict[str, Any] | None, int | None, Usage]:
@@ -164,6 +208,7 @@ class ClaudeCLIClient:
         context_tokens = self._context_size(result)
         # internal continuation turns and failed attempts count as retries
         retries = int(result.get("num_turns") or 1) - 1 + result["_failed_attempts"]
+        cap_hits = result["_cap_hits"]
         reported = result.get("total_cost_usd")  # None (not 0) when absent, so the meter prices the usage
         cost = (None if reported is None else
                 float(reported) + result["_failed_cost"] + usage_cost(result["_unpriced_usage"], req.model))
@@ -178,6 +223,7 @@ class ClaudeCLIClient:
             visible, uses = self._parse(req, text)
             context_tokens = self._context_size(result)
             retries += int(result.get("num_turns") or 1) + result["_failed_attempts"]
+            cap_hits += result["_cap_hits"]
             extra = self._usage(result) + result["_failed_usage"] + result["_unpriced_usage"]
             reported2 = result.get("total_cost_usd")
             cost2 = (usage_cost(extra, req.model) if reported2 is None else float(reported2) + result["_failed_cost"]
@@ -191,7 +237,8 @@ class ClaudeCLIClient:
         stop = "tool_use" if uses else ("max_tokens" if result.get("stop_reason") == "max_tokens" else "end_turn")
         return Response({"role": "assistant", "content": content}, stop, usage,
                         float(result.get("duration_api_ms") or wall_ms), req.model.key,
-                        reported_cost_usd=cost, raw_text=text, context_tokens=context_tokens, retries=retries)
+                        reported_cost_usd=cost, raw_text=text, context_tokens=context_tokens, retries=retries,
+                        cap_hits=cap_hits)
 
     @staticmethod
     def _parse(req: Request, text: str) -> tuple[str, list[dict[str, Any]]]:

@@ -126,3 +126,54 @@ def test_test_files_are_reset_before_the_test_patch(tmp_path):
     patch = "diff --git a/t.py b/t.py\ndiff --git a/new.py b/new.py\n"
     E.reset_test_files(tmp_path, {"test_patch": patch, "base_commit": base})
     assert (tmp_path / "t.py").read_text() == "orig\n" and not (tmp_path / "new.py").exists()
+
+
+def test_cli_reply_cap_is_bounded_and_cap_hits_are_counted(monkeypatch):
+    monkeypatch.delenv("EAM_CLAUDE_MAX_OUTPUT", raising=False)
+    cli = C.ClaudeCLIClient()
+    assert cli.child_env(2048)["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == str(C.DEFAULT_OUTPUT_CAP) == "8192"
+    assert cli.child_env(20000)["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "20000"  # never below the request's own limit
+    monkeypatch.setenv("EAM_CLAUDE_MAX_OUTPUT", "32000")
+    assert C.ClaudeCLIClient().child_env(2048)["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "32000"
+    # a reply that reached the cap: Claude Code continues in a second internal turn
+    assert converse(monkeypatch, [ok(0.01, num_turns=2)]).cap_hits == 1
+    assert converse(monkeypatch, [ok(0.01)]).cap_hits == 0
+    capped = {**ok(0.02), "is_error": True, "result": "response exceeded the 8192 output token maximum"}
+    resp = converse(monkeypatch, [capped])
+    assert resp.cap_hits == 1 and resp.stop_reason == "max_tokens"
+
+
+def test_cli_thinking_settings_are_inherited_unless_pinned_and_are_recorded(monkeypatch):
+    monkeypatch.setattr(C.ClaudeCLIClient, "_versions", {"claude": "9.9.9"})
+    monkeypatch.setenv("MAX_THINKING_TOKENS", "31999")
+    monkeypatch.setenv("CLAUDE_EFFORT", "high")
+    for name in C.ClaudeCLIClient.PINS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("EAM_CLAUDE_MAX_OUTPUT", raising=False)
+    cli = C.ClaudeCLIClient(binary="claude")
+    assert cli.run_settings() == {"cli_version": "9.9.9", "output_cap": 8192, "thinking_tokens": "31999",
+                                  "effort": "high"}
+    monkeypatch.setenv("EAM_CLAUDE_THINKING_TOKENS", "0")
+    monkeypatch.setenv("EAM_CLAUDE_EFFORT", "unset")
+    env = cli.child_env()
+    assert env["MAX_THINKING_TOKENS"] == "0" and "CLAUDE_EFFORT" not in env
+    assert cli.run_settings()["effort"] is None
+
+
+def test_replies_at_the_output_cap_reach_the_row():
+    class Capped(MockLLM):
+        def converse(self, req):
+            resp = super().converse(req)
+            resp.cap_hits = 1
+            return resp
+
+        def run_settings(self):
+            return {"output_cap": 8192}
+
+    res = run_agent("t", llm=Capped(lambda req: final("FINAL ANSWER: x")), model=M, env_tools=big_tool(10),
+                    techniques=[], max_steps=3)
+    assert [e["kind"] for e in res.events].count("output_cap") == 1
+    inst = TaskInstance(family="t", instance_id="t-0", prompt="p", tools=big_tool(10), check=lambda a: True,
+                        gold="g", oracle=lambda: (lambda req: final("FINAL ANSWER: x")), max_steps=2)
+    row = run_instance(inst, "naive", backend="mock", model=M, aux_model=M, models=MOCK_MODELS)
+    assert row["backend_settings"] is None and "output_cap" not in row["events"]

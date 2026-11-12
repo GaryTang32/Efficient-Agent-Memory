@@ -120,6 +120,8 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "techniques": [t.describe() for t in techniques],
         "provenance": [getattr(t, "provenance", "") for t in techniques],
         "backend": backend,
+        # CLI version, reply cap and thinking settings (Claude Code CLI route); None on other routes
+        "backend_settings": llm.run_settings() if hasattr(llm, "run_settings") else None,
         "model": model.key,
         "aux_model": aux_model.key,
         "success": (all(x == 1.0 for x in round_scores) if inst.rounds else bool(res.finished and inst.check(res.answer))),
