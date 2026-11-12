@@ -134,6 +134,31 @@ Results recorded before these fixes are marked in their reports and were rerun w
 3. **Logging.** Both retries and continuations are logged as `llm_retry`.
 4. **Usage limits.** The CLI client waits for a usage-limit reset instead of failing the run (`EAM_CLAUDE_WAIT_FOR_LIMIT`).
 
+### Harness corrections (2026-11-08 to 11-12, validation round)
+
+An independent audit of the measurement code and the validation runs led to these changes. Rows recorded before them are not re-graded; the README marks the results they affect.
+
+1. **Side requests obey the window.** A request that carries the agent's own history outside the main loop (the recap the agent writes for a handoff, SelfCompact's probes) counts in the peak and ends the session as an overflow when it exceeds the window.
+2. **Unfinished SWE sessions are graded.** A session that ends early (overflow, step limit) is graded on the state of its checkout, as SWE-bench grades the final diff; rows record `unfinished_sessions`. Before, such sessions scored 0, which lowered EoCC alone at 16K from 77 to 72 of 100 on Haiku.
+3. **Test files are reset** to the base commit before the test patch is applied, as SWE-bench does.
+4. **Failed attempts are billed.** Usage and cost of failed or timed-out CLI attempts are added to the call; a missing reported cost is priced from usage instead of recorded as $0.
+5. **Prompt size comes from the first request** of a call, so a continuation turn's summed usage does not inflate it (replaces correction 2 above where the stream has the figure).
+6. **Folding branches** report their peak, overflows and events to the run.
+7. **Ratios to the ceiling are paired by instance** in the overview data.
+8. **Runaway replies are capped and counted.** With tools emulated as text, about 1% of calls loop (the model repeats a tool call in its native syntax) until the output cap; the loop is billed and discarded. At the 32K cap these replies were 22% (Sonnet) and 26% (Haiku) of all measured cost in the validation round. The cap is now 8,192 tokens (`EAM_CLAUDE_MAX_OUTPUT`), each reply that reaches it is logged as an `output_cap` event, and results recorded before 2026-11-12 are not comparable in cost with later ones at the 10-point level.
+9. **Run settings are recorded.** Every row carries `backend_settings`: the CLI version, the output cap, and the thinking budget and effort the calls ran with. The last two are inherited from the launching process unless pinned with `EAM_CLAUDE_THINKING_TOKENS` and `EAM_CLAUDE_EFFORT`.
+
+### Measured run-to-run spread (2026-11-12)
+
+The same setting run twice on the same day, same instances:
+
+| Workload | Accuracy | Cost |
+|---|---|---|
+| Four synthetic tasks, AutoMemory v2, 16 runs | Haiku mean score 0.75 and 0.86 (6 and 9 runs solved); Sonnet 0.99 and 1.00 | within 10% in total; one Haiku instance differed 15-fold between the two runs |
+| 100 Django issues, lean, 16K | Haiku 80 and 81 resolved, Sonnet 85 and 87; 6–7 issues flip | Haiku 7% apart (95% interval of the ratio 82–144%); Sonnet 38% apart, 4% net of runaway replies |
+
+Consequences: compare cells only when they ran on the same day (the ceiling resolved 82 and 88 Django issues on one day and 77 and 83 on another); do not rank settings on one run when they differ by fewer than about 5 issues in 100 or 25 points of cost; report intervals (`scripts/analyze_validation.py` uses a bootstrap over workdays and a paired sign test over issues).
+
 ## 6. Measuring a method independently of model strength
 
 Comparing raw scores across models mixes two effects: a stronger model scores higher with *any* method. To say whether a memory or cost method works *regardless of the model*, each method is measured against **that model's own** anchors, on the same instance (paired by seed):

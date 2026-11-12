@@ -9,6 +9,7 @@ to the same-day ones. Costs relative to the ceiling are paired by workday; issue
 
 import glob
 import json
+import statistics as st
 import math
 import random
 from collections import defaultdict
@@ -200,17 +201,19 @@ SYN = ("naive@native", "automem:ingest=0.1", L, "automem_v2_adaptive")
 
 
 def synthetic() -> None:
-    print("\n### Same-day synthetic tasks (instances 0–3)\n\nMean over the four tasks: score · cost vs ceiling "
-          "(paired by instance) · runs fully solved.\n")
+    print("\n### Same-day synthetic tasks (instances 0–3)\n\nMean over the four tasks: score · cost vs ceiling as the "
+          "README computes it (median run per task) · cost vs ceiling in total dollars per task · runs fully solved. "
+          "The last row is the repeat of v2.\n")
     print("| Setting | " + " | ".join(label for _, label in MODELS) + " |\n|---|" + "---|" * len(MODELS))
     table = {}
     for m, _ in MODELS:
         for t in TASKS:
             table[m, t] = by_spec(load(f"sameday_syn-{t}-{m}.jsonl"))
-    for s in SYN:
+            table[m, t]["repeat"] = by_spec(load(f"sameday_syn_rep-{t}-{m}.jsonl")).get("automem:ingest=0.1", {})
+    for s in SYN + ("repeat",):
         cells = []
         for m, _ in MODELS:
-            scores, costs, solved, n = [], [], 0, 0
+            scores, costs, medians, solved, n = [], [], [], 0, 0
             for t in TASKS:
                 runs, ref = table[m, t].get(s, {}), table[m, t].get("naive@native", {})
                 common = [i for i in runs if i in ref]
@@ -218,11 +221,14 @@ def synthetic() -> None:
                     continue
                 scores.append(sum(runs[i]["score"] for i in common) / len(common))
                 costs.append(100 * sum(runs[i]["cost_usd"] for i in common) / sum(ref[i]["cost_usd"] for i in common))
+                medians.append(100 * st.median(runs[i]["cost_usd"] for i in common)
+                               / st.median(ref[i]["cost_usd"] for i in common))
                 solved += sum(bool(runs[i]["success"]) for i in common)
                 n += len(common)
-            cells.append(f"{sum(scores) / len(scores):.2f} · {sum(costs) / len(costs):.0f}% · {solved}/{n}"
+            cells.append(f"{sum(scores) / len(scores):.2f} · {sum(medians) / len(medians):.0f}% · "
+                         f"{sum(costs) / len(costs):.0f}% · {solved}/{n}"
                          + ("" if len(scores) == 4 else f" ({len(scores)} tasks)") if scores else "—")
-        print(f"| {name(s)} | " + " | ".join(cells) + " |")
+        print(f"| {'v2 (notes), repeat' if s == 'repeat' else name(s)} | " + " | ".join(cells) + " |")
     print("\nPer task (score · cost vs ceiling):\n")
     print("| Task | Setting | " + " | ".join(label for _, label in MODELS) + " |\n|---|---|" + "---|" * len(MODELS))
     for t in TASKS:

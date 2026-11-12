@@ -27,21 +27,21 @@ FONT = 'font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif
 SYNTH = [
     ("No memory (floor)", "ref", (27, 0.21), (38, 0.17)),
     ("Ceiling", "ref", (100, 0.88), (100, 0.95)),
-    ("Workspace + ReSum", "pub", (126, 0.89), (71, 0.94)),
-    ("Strands", "pub", (125, 0.59), (148, 0.88)),
-    ("CADOC", "pub", (107, 0.43), (83, 0.86)),
-    ("ReFold", "pub", (56, 0.43), (106, 0.97)),
-    ("SJC on ReSum", "pub", (136, 0.80), (80, 0.94)),
-    ("OpenClaw + SJC", "pub", (90, 0.88), (68, 0.87)),
-    ("AKV rolling drop", "pub", (81, 0.45), (68, 0.60)),
-    ("Raw-history RAG", "pub", (105, 0.52), (199, 0.99)),
-    ("CORAL", "pub", (66, 0.15), (45, 0.38)),
-    ("SelfCompact", "pub", (179, 0.75), (130, 0.93)),
+    ("Workspace + ReSum", "pub", (126, 0.89), (75, 0.94)),
+    ("Strands", "pub", (125, 0.59), (160, 0.88)),
+    ("CADOC", "pub", (107, 0.43), (86, 0.86)),
+    ("ReFold", "pub", (56, 0.43), (108, 0.97)),
+    ("SJC on ReSum", "pub", (136, 0.80), (81, 0.94)),
+    ("OpenClaw + SJC", "pub", (90, 0.88), (69, 0.87)),
+    ("AKV rolling drop", "pub", (81, 0.45), (69, 0.60)),
+    ("Raw-history RAG", "pub", (105, 0.52), (213, 0.99)),
+    ("CORAL", "pub", (66, 0.15), (46, 0.38)),
+    ("SelfCompact", "pub", (179, 0.75), (134, 0.93)),
     ("EoCC (NVIDIA)", "pub", (89, 0.73), (126, 0.91)),
     ("AutoMemory v1", "ours", (86, 0.83), (68, 0.98)),
     ("AutoMemory v2", "ours", (85, 0.88), (58, 0.99)),
     ("v2 strong", "ours", (114, 0.81), (61, 1.00)),
-    ("v2 slim", "ours", (90, 0.87), (78, 1.00)),
+    ("v2 slim", "ours", (90, 0.87), (80, 1.00)),
 ]
 # labels drawn on the chart (the rest are in the README table), with (dx, dy, anchor)
 SYNTH_LABELS = {
@@ -53,28 +53,14 @@ SYNTH_LABELS = {
                "Raw-history RAG": (-8, 16, "end"), "Strands": (8, 4, "start")},
 }
 
-# SWE-bench Verified, 100 Django issues, 16K window (+ the ceiling at the own window): (cost %, resolved)
+# SWE-bench Verified, 100 Django issues, 16K window, every cell run on the same day (validation round, 2026-11):
+# (label, Haiku, Sonnet), each (cost % of the ceiling, interval low, interval high, issues resolved)
+SWE_CEILING = {"haiku": 77, "sonnet": 83}
 SWE16 = [
-    ("Ceiling (own window)", "ref", (100, 82), (100, 88)),
-    ("AutoMemory lean (ReSum)", "ours", (83, 76), (73, 86)),
-    ("AutoMemory lean + handoff", "ours", (89, 81), (89, 88)),
-    ("EoCC alone (NVIDIA)", "pub", (93, 72), (100, 83)),
-]
-SWE_LABELS = {
-    "haiku": {"Ceiling (own window)": (-9, -10, "end"), "AutoMemory lean (ReSum)": (-9, 4, "end"),
-              "AutoMemory lean + handoff": (-9, 4, "end"), "EoCC alone (NVIDIA)": (-9, 4, "end")},
-    "sonnet": {"Ceiling (own window)": (-9, 20, "end"), "AutoMemory lean (ReSum)": (9, 18, "start"),
-               "AutoMemory lean + handoff": (-9, 4, "end"), "EoCC alone (NVIDIA)": (-9, 4, "end")},
-}
-
-# Sonnet, dollars per resolved issue on the 100 issues
-DOLLARS = [
-    ("AutoMemory lean, 16K", "ours", 0.123),
-    ("AutoMemory lean + handoff, 32K", "ours", 0.130),
-    ("Cached full history, own window", "ref", 0.142),
-    ("AutoMemory lean + handoff, 16K", "ours", 0.147),
-    ("Ceiling: full history, no cache", "ref", 0.165),
-    ("EoCC alone, 16K", "pub", 0.175),
+    ("Lean (ReSum summary)", (92, 71, 115, 80), (82, 69, 100, 85)),
+    ("Lean + handoff recap", (89, 69, 118, 79), (85, 64, 114, 89)),
+    ("Lean + brief recap", (90, 73, 110, 75), (86, 72, 105, 84)),
+    ("Adaptive workspace", (131, 96, 174, 78), (105, 85, 130, 86)),
 ]
 
 
@@ -137,7 +123,7 @@ def synth_chart(t):
                                ("ref", "Floor and ceiling")])]
     for i, (m, key) in enumerate((("Claude Haiku", "haiku"), ("Claude Sonnet", "sonnet"))):
         pts = [(n, k, (hv if key == "haiku" else sv)) for n, k, hv, sv in SYNTH]
-        body.append(scatter_panel(78 + i * 470, top, pw, ph, t, m, pts, SYNTH_LABELS[key], (0, 210), (0, 1.05),
+        body.append(scatter_panel(78 + i * 470, top, pw, ph, t, m, pts, SYNTH_LABELS[key], (0, 220), (0, 1.05),
                                   [0, 50, 100, 150, 200], [0, 0.25, 0.5, 0.75, 1.0], lambda v: f"{v:.0f}%",
                                   lambda v: f"{v:.2f}", "Cost vs the unoptimised ceiling (lower is cheaper)",
                                   "Mean score over 4 tasks"))
@@ -148,48 +134,50 @@ def synth_chart(t):
 
 
 def swe_chart(t):
-    pw, ph, top = 380, 250, 78
-    body = [legend(70, 26, t, [("ours", "AutoMemory"), ("pub", "NVIDIA EoCC alone"), ("ref", "Ceiling")])]
+    """Cost against the ceiling with its 95% interval (dot and whisker), and the issues resolved, per setting."""
+    left, pw, top, rowh = 172, 250, 92, 38
+    x0, x1 = 50, 180
+    body = [f'<text x="20" y="26" fill="{t["ink"]}" font-size="14" font-weight="600">SWE-bench Verified, 100 Django '
+            f'issues at a 16K window: cost against the ceiling, all settings run on the same day</text>',
+            f'<text x="20" y="46" fill="{t["ink2"]}" font-size="12.5">Dot: cost as a share of the ceiling\'s. Line: 95% '
+            f'interval over workdays. Right: issues resolved of 100.</text>']
     for i, (m, key) in enumerate((("Claude Haiku", "haiku"), ("Claude Sonnet", "sonnet"))):
-        pts = [(n, k, (hv if key == "haiku" else sv)) for n, k, hv, sv in SWE16]
-        body.append(scatter_panel(78 + i * 470, top, pw, ph, t, m, pts, SWE_LABELS[key], (60, 105), (70, 92),
-                                  [60, 70, 80, 90, 100], [70, 75, 80, 85, 90], lambda v: f"{v:.0f}%",
-                                  lambda v: f"{v:.0f}", "Cost vs the ceiling (lower is cheaper)",
-                                  "Issues resolved of 100"))
-    return svg(960, 390, "".join(body), "SWE-bench Verified: 100 Django issues at a 16K window",
-               "Issues resolved against cost relative to the ceiling, for Haiku and Sonnet. AutoMemory lean with ReSum "
-               "is the cheapest; with NVIDIA's handoff recap it reaches the ceiling's accuracy for more cost; EoCC "
-               "alone resolves the fewest.")
-
-
-def dollars_chart(t):
-    left, top, w, rowh = 250, 48, 560, 34
-    vmax = 0.20
-    sx = lambda v: left + v / vmax * w
-    body = [f'<text x="20" y="24" fill="{t["ink"]}" font-size="14" font-weight="600">Claude Sonnet: dollars per resolved '
-            f'issue, 100 SWE-bench Verified issues (lower is better)</text>']
-    for v in (0, 0.05, 0.10, 0.15, 0.20):
-        body.append(f'<line x1="{sx(v):.1f}" x2="{sx(v):.1f}" y1="{top - 6}" y2="{top + rowh * len(DOLLARS)}" '
-                    f'stroke="{t["grid"]}" stroke-width="1"/>')
-        body.append(f'<text x="{sx(v):.1f}" y="{top + rowh * len(DOLLARS) + 18}" fill="{t["muted"]}" font-size="11.5" '
-                    f'text-anchor="middle">${v:.2f}</text>')
-    for i, (name, kind, v) in enumerate(DOLLARS):
-        y = top + i * rowh
-        col = t["ours"] if kind == "ours" else t["pub"] if kind == "pub" else t["ref"]
-        bw = sx(v) - left
-        body.append(f'<text x="{left - 12}" y="{y + 19}" fill="{t["ink"]}" font-size="12.5" text-anchor="end">{E(name)}</text>')
-        body.append(f'<path d="M{left} {y + 6} h{bw - 4:.1f} a4 4 0 0 1 4 4 v12 a4 4 0 0 1 -4 4 h{-(bw - 4):.1f} Z" '
-                    f'fill="{col}"><title>{E(name)}: ${v:.3f} per resolved issue</title></path>')
-        body.append(f'<text x="{sx(v) + 8:.1f}" y="{y + 19}" fill="{t["ink2"]}" font-size="12.5">${v:.3f}</text>')
-    body.append(f'<line x1="{left}" x2="{left}" y1="{top - 6}" y2="{top + rowh * len(DOLLARS)}" stroke="{t["axis"]}" stroke-width="1"/>')
-    return svg(900, top + rowh * len(DOLLARS) + 34, "".join(body), "Dollars per resolved issue (Sonnet)",
-               "Horizontal bars: AutoMemory lean at a 16K window is the cheapest per resolved issue ($0.123); the "
-               "unoptimised ceiling costs $0.165 and EoCC alone $0.175.")
+        ox = left + i * 470
+        sx = lambda v, ox=ox: ox + (min(max(v, x0), x1) - x0) / (x1 - x0) * pw
+        bottom = top + rowh * len(SWE16)
+        body.append(f'<text x="{ox}" y="{top - 14}" fill="{t["ink"]}" font-size="13.5" font-weight="600">{m}'
+                    f'<tspan fill="{t["muted"]}" font-weight="400">  ·  the ceiling resolves {SWE_CEILING[key]}</tspan></text>')
+        for v in (50, 75, 100, 125, 150, 175):
+            body.append(f'<line x1="{sx(v):.1f}" x2="{sx(v):.1f}" y1="{top}" y2="{bottom}" stroke="{t["grid"]}" stroke-width="1"/>')
+            body.append(f'<text x="{sx(v):.1f}" y="{bottom + 17}" fill="{t["muted"]}" font-size="11.5" '
+                        f'text-anchor="middle">{v}%</text>')
+        body.append(f'<line x1="{sx(100):.1f}" x2="{sx(100):.1f}" y1="{top - 4}" y2="{bottom}" stroke="{t["ref"]}" '
+                    f'stroke-width="1.5" stroke-dasharray="4 4"/>')
+        for r, (name, hv, sv) in enumerate(SWE16):
+            cost, lo, hi, res = hv if key == "haiku" else sv
+            y = top + r * rowh + rowh / 2
+            if i == 0:
+                body.append(f'<text x="{ox - 12}" y="{y + 4:.1f}" fill="{t["ink"]}" font-size="12.5" text-anchor="end">{E(name)}</text>')
+            tip = f"{name}, {m}: {cost}% of the ceiling's cost (95% interval {lo}–{hi}%), {res} of 100 resolved"
+            body.append(f'<line x1="{sx(lo):.1f}" x2="{sx(hi):.1f}" y1="{y:.1f}" y2="{y:.1f}" stroke="{t["ours"]}" '
+                        f'stroke-width="2.5" stroke-linecap="round" opacity="0.55"><title>{E(tip)}</title></line>')
+            body.append(f'<circle cx="{sx(cost):.1f}" cy="{y:.1f}" r="5.5" fill="{t["ours"]}" stroke="{t["ring"]}" '
+                        f'stroke-width="2"><title>{E(tip)}</title></circle>')
+            body.append(f'<text x="{sx(cost):.1f}" y="{y - 10:.1f}" fill="{t["ink2"]}" font-size="11.5" text-anchor="middle">{cost}%</text>')
+            body.append(f'<text x="{ox + pw + 14}" y="{y + 4:.1f}" fill="{t["ink"]}" font-size="12.5">{res}</text>')
+        body.append(f'<text x="{ox + pw + 14}" y="{top - 14}" fill="{t["muted"]}" font-size="11.5">resolved</text>')
+        body.append(f'<text x="{ox + pw / 2}" y="{bottom + 36}" fill="{t["ink2"]}" font-size="12" text-anchor="middle">'
+                    f'Cost vs the ceiling (left of the dashed line is cheaper)</text>')
+    return svg(960, top + rowh * len(SWE16) + 50, "".join(body),
+               "SWE-bench Verified: 100 Django issues at a 16K window, same-day runs",
+               "Cost relative to the ceiling with 95% intervals and issues resolved, for Haiku and Sonnet. On Sonnet "
+               "the lean settings cost 82 to 86% of the ceiling; on Haiku 89 to 92% with intervals that include 100%. "
+               "The adaptive workspace costs more. Every setting resolves within a few issues of the ceiling.")
 
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for name, fn in (("synthetic-frontier", synth_chart), ("swe-16k", swe_chart), ("swe-dollars", dollars_chart)):
+    for name, fn in (("synthetic-frontier", synth_chart), ("swe-16k", swe_chart)):
         for mode, t in THEMES.items():
             (OUT / f"{name}-{mode}.svg").write_text(fn(t))
     print("wrote", sorted(p.name for p in OUT.glob("*.svg")))
