@@ -145,3 +145,19 @@ def test_repo_debug_scoring_uses_pristine_tests_and_penalises_regressions():
                               "new": "start = number * per_page"}, ctx)
     assert inst.round_score(0, "") == 0.5
     assert "FAILED" in tools["run_tests"]({}, ctx)
+
+
+def test_multi_session_tasks_expose_what_each_round_needs_from_earlier_rounds():
+    """Ground truth for measuring recall: per round, the facts it needs from earlier rounds (and their values)."""
+    from eam.bench.tasks import ledger_audit, ops_stream
+
+    led = ledger_audit.generate(0)
+    deps = led.resources["dependencies"]
+    assert len(deps) == len(led.rounds) == 3 and deps[0] == []
+    assert all(d["from_round"] == 1 for d in deps[1]) and all(d["from_round"] == 2 for d in deps[2])
+    assert all(f"paid {d['value']}" in led.gold for d in deps[1])
+    ops = ops_stream.generate(0)
+    deps = ops.resources["dependencies"]
+    assert len(deps) == len(ops.rounds) and deps[0] == []
+    corrections = [d for day in deps for d in day if d["kind"] == "correction"]
+    assert corrections and all(d["from_round"] < k + 1 for k, day in enumerate(deps) for d in day)
