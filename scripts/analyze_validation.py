@@ -350,6 +350,101 @@ def spend() -> None:
     print(f"| **Total** | | **${total:.2f}** |")
 
 
+HANDOFF = f"{L},compact=handoff,handoff_variant=swe"
+
+
+def pooled(runs: list[dict[str, dict]]) -> dict[str, dict]:
+    """Several runs of one cell as one: per workday (those every run has), the summed cost."""
+    days = set(runs[0]).intersection(*runs[1:]) if runs else set()
+    return {d: {"cost_usd": sum(r[d]["cost_usd"] for r in runs)} for d in days}
+
+
+def ratio(runs: dict[str, dict], ref: dict[str, dict]) -> str:
+    common = [i for i in runs if i in ref]
+    if not common:
+        return "—"
+    v = 100 * sum(runs[i]["cost_usd"] for i in common) / sum(ref[i]["cost_usd"] for i in common)
+    lo, hi = boot(runs, ref)
+    return f"{v:.0f}%" + (f" [{lo:.0f}–{hi:.0f}]" if lo == lo else "")
+
+
+def count_pairs(a: list[dict[str, dict]], b: list[dict[str, dict]]) -> str:
+    """Per issue, the number of runs that resolved it under `a` and under `b`; issues where a has more / b has more."""
+    ca, cb = defaultdict(float), defaultdict(float)
+    keys = set(issues(a[0])).intersection(*[issues(x) for x in a[1:] + b])
+    for runs, c in ((a, ca), (b, cb)):
+        for x in runs:
+            for k, v in issues(x).items():
+                if k in keys:
+                    c[k] += v
+    w, lo = sum(ca[k] > cb[k] for k in keys), sum(ca[k] < cb[k] for k in keys)
+    n = max(len(keys), 1)
+    return (f"{sum(ca.values()) / len(a) * 100 / n:.1f} vs {sum(cb.values()) / len(b) * 100 / n:.1f} per 100 · "
+            f"+{w} / −{lo} of {len(keys)}, p = {sign_p(w, lo):.2f}")
+
+
+def followup() -> None:
+    """Three runs per coding cell: run 1 from the same-day round (32K reply cap), runs 2 and 3 afterwards (8K cap,
+    settings recorded); and EoCC alone under the corrected grading, in run 2 next to its ceiling."""
+    if not load("rank3_swe-*.jsonl"):
+        return
+    cells = ["naive@native", L, HANDOFF]
+    data = {m: [by_spec(load(f"sameday_swe-{m}.jsonl")), by_spec(load(f"rank3_swe-{m}-r2.jsonl")),
+                by_spec(load(f"rank3_swe-{m}-r3.jsonl"))] for m, _ in MODELS}
+    print("\n### Follow-up: three runs per coding cell (Django 100, 16K)\n\nRun 1 is the same-day round (32K reply cap); "
+          "runs 2 and 3 use the 8K cap. Cost is relative to the same run's ceiling, paired by workday.\n")
+    print("| Model | Setting | Resolved, runs 1 / 2 / 3 | Cost vs ceiling, runs 1 / 2 / 3 | Runs 2 + 3 pooled [95%] | "
+          "All three pooled [95%] |\n|---|---|---|---|---|---|")
+    for m, label in MODELS:
+        for s in cells:
+            runs = [d.get(s, {}) for d in data[m]]
+            refs = [d.get("naive@native", {}) for d in data[m]]
+            res = " / ".join(f"{round(sum(sum(r['round_scores']) for r in x.values()))}"
+                             f"{'' if len(x) == 20 else f' ({len(x)} days)'}" if x else "—" for x in runs)
+            per = " / ".join(f"{100 * sum(x[i]['cost_usd'] for i in x if i in ref) / sum(ref[i]['cost_usd'] for i in x if i in ref):.0f}%"
+                             if x and any(i in ref for i in x) else "—" for x, ref in zip(runs, refs))
+            late = ratio(pooled(runs[1:]), pooled(refs[1:])) if all(runs[1:]) else "—"
+            every = ratio(pooled(runs), pooled(refs)) if all(runs) else "—"
+            print(f"| {label} | {name(s)} | {res} | {'100% each' if s == 'naive@native' else per} | "
+                  f"{'—' if s == 'naive@native' else late} | {'—' if s == 'naive@native' else every} |")
+    print("\nDollars per run of 100 issues, and replies that reached the cap (run 1: `llm_retry`; runs 2, 3: `output_cap`):\n")
+    print("| Model | Setting | Cost, runs 1 / 2 / 3 | Replies at the cap, runs 1 / 2 / 3 | Output tokens, runs 1 / 2 / 3 |\n|---|---|---|---|---|")
+    for m, label in MODELS:
+        for s in cells:
+            runs = [d.get(s, {}) for d in data[m]]
+            print(f"| {label} | {name(s)} | " + " / ".join(f"${sum(r['cost_usd'] for r in x.values()):.2f}" for x in runs) + " | "
+                  + " / ".join(str(sum(r["events"].get("llm_retry" if k == 0 else "output_cap", 0) for r in x.values()))
+                               for k, x in enumerate(runs)) + " | "
+                  + " / ".join(f"{sum(r['usage'].get('output_tokens', 0) for r in x.values()) / 1e6:.2f}M" for x in runs) + " |")
+    print("\nPaired by issue over the runs (mean issues resolved per 100 · issues resolved in more runs by the first / "
+          "by the second, sign test):\n")
+    print("| Comparison | " + " | ".join(label for _, label in MODELS) + " |\n|---|" + "---|" * len(MODELS))
+    for a, b in ((L, "naive@native"), (HANDOFF, "naive@native"), (HANDOFF, L)):
+        out = []
+        for m, _ in MODELS:
+            ra, rb = [d.get(a, {}) for d in data[m]], [d.get(b, {}) for d in data[m]]
+            out.append(count_pairs(ra, rb) if all(ra) and all(rb) else "—")
+        print(f"| {name(a)} vs {name(b)}, three runs | " + " | ".join(out) + " |")
+    print("\nSettings recorded in runs 2 and 3: " + "; ".join(sorted({json.dumps(r.get("backend_settings"), sort_keys=True)
+                                                                    for r in load("rank3_swe-*.jsonl")})))
+    print("\n### Follow-up: EoCC alone under corrected grading, same day as its ceiling (run 2, 8K cap)\n")
+    print("| Model | Resolved: EoCC / lean / ceiling | EoCC cost vs ceiling [95%] | vs lean [95%] | Overflows · sessions "
+          "ended early | Paired vs lean | Paired vs ceiling |\n|---|---|---|---|---|---|---|")
+    for m, label in MODELS:
+        d = data[m][1]
+        e, lean, ceil = d.get("eocc:variant=swe", {}), d.get(L, {}), d.get("naive@native", {})
+        if not e:
+            continue
+        res = lambda x: f"{round(sum(sum(r['round_scores']) for r in x.values()))}/{sum(len(r['round_scores']) for r in x.values())}"
+        pl, pc = paired(e, lean), paired(e, ceil)
+        print(f"| {label} | {res(e)} / {res(lean)} / {res(ceil)} | {ratio(e, ceil)} | {ratio(e, lean)} | "
+              f"{sum(r['events'].get('context_overflow', 0) for r in e.values())} · "
+              f"{sum(r.get('unfinished_sessions', 0) for r in e.values())} | "
+              f"+{pl[0]} / −{pl[1]} of {pl[2]}, p = {pl[3]:.2f} | +{pc[0]} / −{pc[1]} of {pc[2]}, p = {pc[3]:.2f} |")
+    rows = load("rank3_swe-*.jsonl")
+    print(f"\nFollow-up spend: {len(rows)} rows, ${sum(r['cost_usd'] for r in rows):.2f}.")
+
+
 if __name__ == "__main__":
     print("Cost of one runaway reply (fitted): " + ", ".join(f"{label} ${per_retry('cc-' + m):.3f}" for m, label in MODELS))
     swe_table("Same-day Django (100 issues, 16K)", "sameday_swe-{m}.jsonl",
@@ -366,3 +461,4 @@ if __name__ == "__main__":
     handoff_pooled()
     eocc()
     spend()
+    followup()

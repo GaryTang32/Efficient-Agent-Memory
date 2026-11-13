@@ -414,8 +414,8 @@ method(id="eocc", grp="Sep–Nov 2026 scan", tag="N9", name="EoCC handoff compac
        impl="Prompts quoted verbatim; the texts for its placeholders are ours. writer=aux lets the summariser write the recap. Preset automem_v2_lean_handoff for coding work.",
        flow=[("History grows", "trigger at 0.75 × window", "nb"), ("Handoff prompt", "agent's own next turn", "nb-focal"),
              ("Recap", "facts, changes, dead ends, next command", "nb"), ("Reset", "task + recap (+ notes, last steps)", "nb-check")],
-       ev="outcome", evtext="SWE-bench at 16K: in three paired sets the handoff recap resolved 22 issues ReSum missed and missed 11 (p = 0.08), at no measurable cost difference. Alone, 24 of 100 Haiku sessions ended at the window, yet it resolved 77 (the ceiling's count). Synthetic tasks: ties ReSum on Sonnet, lower on Haiku.",
-       verdict="The better recap for coding sessions under a tight window, inside AutoMemory; not a full memory layer on its own.",
+       ev="outcome", evtext="SWE-bench at 16K, three runs: inside AutoMemory the handoff recap and a ReSum summary resolve the same number of issues at the same cost. Alone, one session in five fills the window and it resolves 5 fewer issues than its same-day ceiling on both models (75 against 80, 85 against 90; pooled p = 0.013) at 85% and 74% of the ceiling's cost. Synthetic tasks: ties ReSum on Sonnet, lower on Haiku.",
+       verdict="A recap as good as ReSum's for coding sessions under a tight window, inside AutoMemory; not a full memory layer on its own.",
        rows=("eocc", "eocc"))
 method(id="am1", grp="This project", tag="A1", name="AutoMemory v1", dev="this project",
        src="eam/techniques/auto_memory.py · library eam/memory_skill.py · MCP server eam/mcp_server.py", acts="All four", driver="Harness",
@@ -736,7 +736,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
       <p class="eyebrow">Research brief · November 2026</p>
       <h1>Efficient Agent Memory</h1>
       <p class="dek">What this repository studies, how each memory and token-saving method works, and how well each one works today on four long agent tasks, measured on Claude Haiku and Sonnet.</p>
-      <p class="hero-meta"><span>≈ 3,400 benchmark runs</span><span>27 methods and variants</span><span>Claude Code CLI route</span><span>SWE-bench Verified: Django and SymPy</span><span>Evidence to 12 Nov 2026</span></p>
+      <p class="hero-meta"><span>≈ 3,700 benchmark runs</span><span>27 methods and variants</span><span>Claude Code CLI route</span><span>SWE-bench Verified: Django and SymPy</span><span>Evidence to 13 Nov 2026</span></p>
     </div>
     <div class="brief">
       <span class="k">{ic("brief")}Key points</span>
@@ -745,8 +745,8 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <li><strong>Fewer tokens is not fewer dollars.</strong> Re-sent history is cheap only while it stays byte-identical in the prompt cache; methods that edit history every step often cost more than they save.</li>
         <li><strong>Automatic beats model-managed.</strong> Steps the harness applies by itself (previews at ingestion, recall, compaction at a fixed trigger) work on both models; methods that need the model to manage its own memory fail on the weaker one.</li>
         <li><strong>AutoMemory v2 is the current best:</strong> Haiku {v2h["score"]:.2f} mean score at {v2h["cost"]:.0f}% of the unoptimised cost; Sonnet {v2s["score"]:.2f} at {v2s["cost"]:.0f}%. For strong models, v2 + SJC pruning solved {v2x["solved"]}/{v2x["runs"]} Sonnet runs at {v2x["cost"]:.0f}%. No newer method beats it across the board.</li>
-        <li><strong>On real repositories</strong> (SWE-bench Verified: 100 Django and 75 SymPy issues), AutoMemory without the note workspace resolves as many issues inside a 16K window as the unoptimised agent with its full window, at 70–95% of its cost on Sonnet; on Haiku its cost cannot be told apart from the ceiling's. With the workspace, coding issues cost more and gain nothing, even when they are related.</li>
-        <li><strong>Checked twice.</strong> A validation round (8–12 Nov: same-day controls, repeats, a code audit, a second repository) confirmed the two results above and withdrew four smaller claims; see <a href="#ef-swe">4.4</a>. The figures for the earlier grids on this page are single runs from different days: read cost differences under about 25 points as noise.</li>
+        <li><strong>On real repositories</strong> (SWE-bench Verified: 100 Django and 75 SymPy issues), AutoMemory without the note workspace resolves as many issues inside a 16K window as the unoptimised agent with its full window. On Sonnet it costs 80% of that agent over three runs (95% interval 72–90%); on Haiku its cost cannot be told apart from the ceiling's. With the workspace, coding issues cost more and gain nothing, even when they are related.</li>
+        <li><strong>Checked twice.</strong> A validation round (8–12 Nov: same-day controls, repeats, a code audit, a second repository) confirmed the two results above and withdrew four smaller claims. A follow-up with three runs per cell (12–13 Nov) settled the cost question, found the handoff recap and a ReSum summary level, and showed that EoCC alone resolves 5 fewer issues in 100; see <a href="#ef-swe">4.4</a>. The figures for the earlier grids on this page are single runs from different days: read cost differences under about 25 points as noise.</li>
       </ul>
       <p class="rec"><strong>Recommendation:</strong> use <code>automem_v2</code> as the default memory layer; for a strong agent use <code>automem_v2_strong</code> with a cheaper model writing summaries and judging them. For coding issues, drop the workspace: <code>automem_v2_lean</code>, or <code>automem_v2_lean_handoff</code> for NVIDIA's recap at resets (a likely accuracy gain). See the chooser (<a href="#ef-pick">4.6</a>).</p>
     </div>
@@ -908,6 +908,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <tr><th>8 · SWE-bench Verified</th><td>Does it hold on real repositories?</td><td>Haiku, Sonnet · 40 issues · 160 runs</td><td>Lean (no workspace) best; workspace is overhead on independent issues. Superseded by 9 (grading covered 63% of the tests).</td><td>2026-11-05-swe-bench-workdays</td></tr>
         <tr><th>9 · NVIDIA handoff, 100 issues</th><td>Does EoCC's recap beat ReSum? Do the SWE results hold on 100 issues with faithful grading?</td><td>Haiku, Sonnet · 100 issues · 400 SWE + 80 synthetic runs</td><td>Handoff reaches the ceiling at 16K; lean (ReSum) cheapest; EoCC alone overflows. The cost ranking and the EoCC count were revised by 10.</td><td>2026-11-06-handoff-and-swe-100</td></tr>
         <tr><th>10 · Validation round</th><td>Do the conclusions come from the methods, or from the experiment design and the infrastructure?</td><td>Haiku, Sonnet · 596 runs: same-day controls, repeats, a code audit, SymPy, related-issue workdays</td><td>Headline results hold; four cost and ranking claims withdrawn; runaway replies at the output cap found (22–26% of cost) and capped.</td><td>2026-11-11-validation-round</td></tr>
+        <tr><th>11 · Three runs per cell</th><td>Which coding preset is cheaper, once the noise is measured? Does EoCC alone lose issues under the corrected grading?</td><td>Haiku, Sonnet · 280 runs: ceiling, lean and lean + handoff twice more on 100 Django issues; EoCC alone next to its ceiling</td><td>Lean costs 80% of the ceiling on Sonnet [72–90] and the same on Haiku; handoff and ReSum level; EoCC alone resolves 5 fewer in 100.</td><td>2026-11-11-validation-round</td></tr>
       </tbody></table></div>
     <h4>Timeline</h4>
     {X.timeline()}
@@ -1024,13 +1025,16 @@ PAGE = f"""<title>Efficient Agent Memory</title>
 
   <section id="ef-swe" aria-labelledby="h-ef-swe">
     <h3 id="h-ef-swe">{ic("cpu", "ic hic")}<span class="no">4.4</span>Real repositories: SWE-bench Verified workdays</h3>
-    <p class="lead-in">Real issues in workdays of 5 consecutive sessions, graded as SWE-bench grades them. First the validation round (8–12 Nov), where every cell of an issue set ran on the same day at a 16K window; then the earlier grid of 6 Nov at the NVIDIA paper's 32K and 16K settings.</p>
+    <p class="lead-in">Real issues in workdays of 5 consecutive sessions, graded as SWE-bench grades them. First the validation round and its follow-up (8–13 Nov), where every cell is compared with a ceiling run on the same day at a 16K window; then the earlier grid of 6 Nov at the NVIDIA paper's 32K and 16K settings.</p>
     <div class="tbl-wrap"><table><thead><tr><th>Issue set</th><th>Setting</th><th class="nm">Haiku</th><th class="nm">Sonnet</th></tr></thead><tbody>
-      <tr><th>Django, 100 issues</th><td>Ceiling: full history, own window</td><td class="nm">77 · 100%</td><td class="nm">83 · 100%</td></tr>
-      <tr><th></th><td><code>automem_v2_lean</code></td><td class="nm">80 · 92% [71–115]</td><td class="nm">85 · 82% [69–100]</td></tr>
-      <tr><th></th><td><code>automem_v2_lean_handoff</code></td><td class="nm">79 · 89% [69–118]</td><td class="nm">89 · 85% [64–114]</td></tr>
+      <tr><th>Django, 100 issues, three runs</th><td>Ceiling: full history, own window</td><td class="nm">78 · 100%</td><td class="nm">87 · 100%</td></tr>
+      <tr><th></th><td><code>automem_v2_lean</code></td><td class="nm">81 · 96% [83–110]</td><td class="nm">87 · 80% [72–90]</td></tr>
+      <tr><th></th><td><code>automem_v2_lean_handoff</code></td><td class="nm">80 · 100% [91–109]</td><td class="nm">88 · 81% [74–89]</td></tr>
+      <tr><th>Django, the same issues, one run</th><td>Ceiling</td><td class="nm">77 · 100%</td><td class="nm">83 · 100%</td></tr>
       <tr><th></th><td>… brief recap</td><td class="nm">75 · 90% [73–110]</td><td class="nm">84 · 86% [72–105]</td></tr>
       <tr><th></th><td><code>automem_v2_adaptive</code></td><td class="nm">78 · 131% [96–174]</td><td class="nm">86 · 105% [85–130]</td></tr>
+      <tr><th>Django, the same issues, one run</th><td>Ceiling</td><td class="nm">80 · 100%</td><td class="nm">90 · 100%</td></tr>
+      <tr><th></th><td>EoCC alone: handoff recap, no previews</td><td class="nm">75 · 85% [70–100]</td><td class="nm">85 · 74% [67–82]</td></tr>
       <tr><th>Django, related issues (80 Haiku, 50 Sonnet)</th><td>Ceiling</td><td class="nm">64 · 100%</td><td class="nm">44 · 100%</td></tr>
       <tr><th></th><td><code>automem_v2_lean</code></td><td class="nm">70 · 117% [89–152]</td><td class="nm">44 · 95% [66–126]</td></tr>
       <tr><th></th><td><code>automem_v2</code> (with notes)</td><td class="nm">64 · 208% [169–247]</td><td class="nm">44 · 87% [69–113]</td></tr>
@@ -1039,16 +1043,17 @@ PAGE = f"""<title>Efficient Agent Memory</title>
       <tr><th></th><td><code>automem_v2_lean</code></td><td class="nm">50 · 116% [81–158]</td><td class="nm">35 · 70% [54–109]</td></tr>
       <tr><th></th><td><code>automem_v2_lean_handoff</code></td><td class="nm">52 · 92% [71–123]</td><td class="nm">34 · 74% [56–108]</td></tr>
     </tbody></table></div>
-    <p class="note">Issues resolved · cost relative to the ceiling [95% interval over workdays]. The same setting run twice on one day resolved 80 and 81 (Haiku) and 85 and 87 (Sonnet) and differed by 7% and 38% in cost; about a quarter of all measured cost was runaway replies at the output cap (now capped at 8K and counted per run).</p>
+    <p class="note">Issues resolved · cost relative to the ceiling [95% interval over workdays]. The first three rows are three runs each: mean issues resolved, costs pooled. The same setting run twice on one day resolved 80 and 81 (Haiku) and 85 and 87 (Sonnet) and differed by 7% and 38% in cost; about a quarter of all measured cost was runaway replies at the output cap. With the cap at 8K (the follow-up runs), two runs of one cell differ by 1–15% in cost.</p>
     <div class="duo">
       <div class="good"><span class="k">What held up on real code</span><ul class="plain">
-        <li>Previews, guard and ReSum without the workspace (<code>automem_v2_lean</code>)<span class="ev">the ceiling's accuracy inside a 16K window on Django and SymPy; 70–95% of its cost on Sonnet</span></li>
-        <li>NVIDIA's handoff recap in place of ReSum (<code>automem_v2_lean_handoff</code>)<span class="ev">pooled pairs: resolved 22 issues ReSum missed, missed 11 (p = 0.08); no measurable cost difference</span></li>
+        <li>Previews, guard and ReSum without the workspace (<code>automem_v2_lean</code>)<span class="ev">the ceiling's accuracy inside a 16K window on Django and SymPy; 80% of its cost on Sonnet over three runs [72–90]</span></li>
+        <li>NVIDIA's handoff recap in place of ReSum (<code>automem_v2_lean_handoff</code>)<span class="ev">level with ReSum over three runs: 80 and 81 of 100 on Haiku, 88 and 87 on Sonnet, at the same cost</span></li>
         <li>Plain caching when the window does not bind<span class="ev">sessions peak at 16–21K; Haiku cached history at 32K: 77/100 at 62% (one run)</span></li></ul></div>
       <div class="bad"><span class="k">What did not</span><ul class="plain">
         <li>The note workspace on coding issues<span class="ev">related issues, Haiku: 64 resolved at 208% of the ceiling's cost with notes, 70 at 117% without</span></li>
-        <li>A cost saving on Haiku<span class="ev">lean at 92%, 117% and 116% of the ceiling; every interval includes 100%</span></li>
-        <li>Four early claims<span class="ev">"handoff costs 6–16 points more", "the brief recap is the cheapest", "EoCC alone resolves the fewest" (a grading bug: re-graded 77/100), dollar-per-issue rankings</span></li></ul></div>
+        <li>A cost saving on Haiku<span class="ev">lean at 96% [83–110] of the ceiling over three Django runs; 117% and 116% on the other sets</span></li>
+        <li>The handoff recap without previews (EoCC alone)<span class="ev">one session in five fills the 16K window; 75 against 80 and 85 against 90 for the same-day ceiling (2 gained, 12 lost, p = 0.013)</span></li>
+        <li>Three early claims<span class="ev">"handoff costs 6–16 points more", "the brief recap is the cheapest", dollar-per-issue rankings; and "handoff resolves more than ReSum" was not confirmed</span></li></ul></div>
     </div>
     <h4>Earlier grid (6 November): one run per cell</h4>
     <p class="note">The bar is the share of issues resolved; the black tick is the ceiling's. Sessions that ended early were scored unresolved without grading, which lowered the EoCC rows most; cells ran on different days.</p>
@@ -1100,7 +1105,8 @@ PAGE = f"""<title>Efficient Agent Memory</title>
         <tr><th>C · NVIDIA handoff and 100 SWE issues</th><td><span class="lvl lvl-low">Done</span></td><td>$221</td><td>automem_v2_lean_handoff as an option for coding work under a tight window.</td></tr>
         <tr><th>Brief handoff recap; adaptive workspace</th><td><span class="lvl lvl-low">Done</span></td><td>$57</td><td>Both kept as options. The brief recap showed no advantage on a same-day re-run; the adaptive workspace is usable on Sonnet and dearer than the right preset on Haiku.</td></tr>
         <tr><th>D · Validation round</th><td><span class="lvl lvl-low">Done</span></td><td>$293</td><td>The headline results hold; cost rankings between the coding presets do not.</td></tr>
-        <tr><th>Three runs per cell before any cost ranking</th><td><span class="lvl lvl-med">Next</span></td><td>≈ $75</td><td>One run of 100 issues does not separate settings closer than about 5 issues or 25 points of cost.</td></tr>
+        <tr><th>E · Three runs per cell; EoCC alone next to its ceiling</th><td><span class="lvl lvl-low">Done</span></td><td>$81</td><td>Lean is cheaper than the ceiling on Sonnet (80% [72–90]) and not on Haiku; handoff and ReSum are level; EoCC alone resolves 5 fewer issues in 100.</td></tr>
+        <tr><th>Three runs of the SymPy and related-issue sets</th><td><span class="lvl lvl-med">Next</span></td><td>≈ $45</td><td>Lean's cost is established on the 100 Django issues only; on the other sets each cell ran once and the intervals are wide.</td></tr>
         <tr><th>A native tool-calling route</th><td><span class="lvl lvl-high">Blocked: credentials</span></td><td>—</td><td>Removes the runaway replies of the text-emulated tools at the source (same work as Bedrock).</td></tr>
         <tr><th>Bedrock validation</th><td><span class="lvl lvl-high">Blocked: credentials</span></td><td>—</td><td>Explicit cache points and Bedrock prices (writes 1.25×).</td></tr>
         <tr><th>Codex / OpenAI pricing</th><td><span class="lvl lvl-low">Not started</span></td><td>re-pricing only</td><td>Automatic caching at different prices may change which methods pay off.</td></tr>
@@ -1109,7 +1115,7 @@ PAGE = f"""<title>Efficient Agent Memory</title>
 
   <section class="endnote" id="conclusion" aria-labelledby="h-concl">
     <h2 id="h-concl">{ic("check", "ic hic")}Conclusion</h2>
-    <p>The repository set out to cut tokens and cost for long-running agents without losing accuracy. After faithful ports of {len(M)} published and new methods and about 3,400 benchmark runs, the answer is a small set of automatic, cache-aware rules rather than any single clever technique: shrink outputs when they arrive, compact rarely and keep the recent steps, and keep notes outside the context that come back by themselves.</p>
+    <p>The repository set out to cut tokens and cost for long-running agents without losing accuracy. After faithful ports of {len(M)} published and new methods and about 3,700 benchmark runs, the answer is a small set of automatic, cache-aware rules rather than any single clever technique: shrink outputs when they arrive, compact rarely and keep the recent steps, and keep notes outside the context that come back by themselves.</p>
     <p>AutoMemory v2 packages those rules. It matches the unoptimised ceiling's accuracy on Haiku and Sonnet at {min(v2h["cost"], v2s["cost"]):.0f}–{max(v2h["cost"], v2s["cost"]):.0f}% of its cost, and no method from the latest literature beats it across the board. For strong agent models, adding SJC's source-judged pruning made it solve every Sonnet run. On real Django and SymPy issues the within-session half alone (automem_v2_lean) resolves as many issues inside a 16K window as the unoptimised agent with its full window, at 70–95% of its cost on Sonnet: the note workspace belongs only where sessions build on each other. A validation round confirmed these results and showed that single runs cannot rank the coding presets by cost. The next proof point is a native tool-calling route at Bedrock prices.</p>
     <p class="note">Results are from the Claude Code CLI route at list prices, on four long benchmark tasks with emulated windows (2–4 runs per cell) and SWE-bench Verified workdays (one run per cell, two cells repeated). See each report in docs/results/ for exact tables and regeneration commands.</p>
   </section>

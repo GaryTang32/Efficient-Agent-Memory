@@ -159,6 +159,24 @@ The same setting run twice on the same day, same instances:
 
 Consequences: compare cells only when they ran on the same day (the ceiling resolved 82 and 88 Django issues on one day and 77 and 83 on another); do not rank settings on one run when they differ by fewer than about 5 issues in 100 or 25 points of cost; report intervals (`scripts/analyze_validation.py` uses a bootstrap over workdays and a paired sign test over issues).
 
+### Three runs per cell (2026-11-12 to 11-13)
+
+The ceiling, lean and lean + handoff cells were run twice more on the 100 Django issues (`scripts/run_rank3.sh`), with the 8K reply cap and with the CLI version and thinking settings recorded in each row. Run 1 is the same-day round (32K cap).
+
+| Cell | Issues resolved, runs 1 / 2 / 3 | Cost of 100 issues, runs 1 / 2 / 3 | Cost vs the same run's ceiling |
+|---|---|---|---|
+| Haiku, ceiling | 77 / 80 / 78 | $1.15 / $0.87 / $0.93 | — |
+| Haiku, lean | 80 / 80 / 82 | $1.05 / $0.96 / $0.83 | 92% / 110% / 89% |
+| Haiku, lean + handoff | 79 / 79 / 82 | $1.02 / $1.00 / $0.93 | 89% / 114% / 100% |
+| Sonnet, ceiling | 83 / 90 / 89 | $12.80 / $13.04 / $12.22 | — |
+| Sonnet, lean | 85 / 88 / 88 | $10.52 / $10.01 / $9.91 | 82% / 77% / 81% |
+| Sonnet, lean + handoff | 89 / 88 / 87 | $10.87 / $9.93 / $10.13 | 85% / 76% / 83% |
+
+- Runs 2 and 3 of one cell differ by 1–15% in cost, against 7% and 38% for the repeat at the 32K cap. Replies still reach the cap (4–15 per 100 issues), but each costs about a quarter as much.
+- Issue counts of one cell range over 2–7 issues across the three runs; the Sonnet ceiling moved most (83, 90, 89).
+- Pooled statistics sum each workday's cost over the runs and bootstrap over the 20 workdays; issue pairs compare the number of runs that resolved each issue under the two settings (sign test).
+- The Claude Code CLI updated itself during the runs: 181 rows ran on 2.1.322 and 99 on 2.1.323 (recorded per row in `backend_settings`). The cells of one workday did not always run on the same version.
+
 ## 6. Measuring a method independently of model strength
 
 Comparing raw scores across models mixes two effects: a stronger model scores higher with *any* method. To say whether a memory or cost method works *regardless of the model*, each method is measured against **that model's own** anchors, on the same instance (paired by seed):
