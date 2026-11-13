@@ -28,7 +28,7 @@ def test_a_multi_session_run_writes_every_table(tmp_path, monkeypatch):
     assert tables["tool_call"] == row["tool_calls"] and tables["event"] > 0
     assert all(r["run_id"] == row["run_id"] for r in recs)
     recall = [r for r in recs if r["table"] == "event" and r["kind"] == "automem_recall"]
-    assert recall and all(isinstance(r["fields"]["notes"], list) for r in recall)
+    assert recall and all(isinstance(json.loads(r["fields"])["notes"], list) for r in recall)
 
 
 def test_traces_can_be_switched_off(tmp_path, monkeypatch):

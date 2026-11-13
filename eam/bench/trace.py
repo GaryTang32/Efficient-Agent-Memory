@@ -8,7 +8,8 @@ appears in the run's result row:
     session   per session: score, finished, answer
     message   per message of every session: role, text, tool calls and tool results (long text cut, length kept)
     tool_call per tool call: name, input, output size, error flag (joined to its result by tool_use_id)
-    event     per harness event (compaction, recall with note names, preview, guard offload, overflow) with fields
+    event     per harness event (compaction, recall with note names, preview, guard offload, overflow); `fields`
+              is a JSON string (DuckDB: json_extract(fields, '$.notes'))
     call      per LLM call: tag, tokens (input, output, cache read and write), cost, latency
     grade     per graded session where the task provides one (SWE-bench: the agent's patch and the test report)
 
@@ -102,7 +103,7 @@ def write_trace(run_id: str, *, row: dict[str, Any], sessions: list[list[dict[st
             fields = {key: (_text(v)["text"] if isinstance(v, str) else v) for key, v in e.items()
                       if key not in ("kind", "session", "step", "raw")}
             recs.append({"table": "event", "session": e.get("session"), "step": e.get("step"), "kind": e.get("kind"),
-                         "fields": json.loads(json.dumps(fields, default=str))})
+                         "fields": json.dumps(fields, default=str)})  # a JSON string: one schema for every kind
         for i, c in enumerate(calls):
             u = c.usage
             recs.append({"table": "call", "index": i, "tag": c.tag, "model": c.model_key,

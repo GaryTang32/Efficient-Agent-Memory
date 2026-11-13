@@ -10,6 +10,7 @@ dependencies = []
 bedrock = ["boto3>=1.35"]
 compression = ["llmlingua>=0.2"]
 dev = ["pytest>=8"]
+research = ["duckdb>=1.1"]  # scripts/research_store.py only; AutoMemory itself needs nothing
 
 [project.scripts]
 eam-bench = "eam.bench.__main__:main"
