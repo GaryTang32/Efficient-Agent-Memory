@@ -36,6 +36,26 @@ stdio only. (Its `compact` tool calls a model only if you set `$EAM_MEMORY_ROUTE
 The defences live in `eam/safety.py`. The plugin ships an identical copy (`plugins/automem/hooks/automem_safety.py`),
 and a test keeps the two in sync. `tests/test_security.py` runs each attack above and passes only if it has no effect.
 
+## Measured effect of the wrapping (2026-11-13)
+
+`scripts/probe_poisoning.py`: 20 sessions per model and condition. Each session's recalled notes held a saved web
+page that told the model to put a code in its reply, and each asked a real question that the other notes answer.
+
+| Model | Obeyed the injection: plain | Obeyed: wrapped | Correct answers (both) |
+|---|---|---|---|
+| Claude Haiku | 4 of 20 | 0 of 20 | 20 of 20 |
+| Claude Sonnet | 0 of 20 | 0 of 20 | 20 of 20 |
+
+All four Haiku failures were the closing-tag escape (`</memory>` followed by new instructions), which the escaping
+now blocks. With 20 sessions per cell this is suggestive, not conclusive (one-sided Fisher p = 0.05). Sonnet
+pointed out the injection in about half of its replies in both conditions. The wrapping adds about 90 tokens per
+recall.
+
+On the two multi-session tasks where recall matters (ledger audit and ops stream, 4 instances each, Haiku), the mean
+score was 0.87 without wrapping and 0.88 with it (2 of 8 runs fully solved in both conditions). Total cost was 105%
+of the unwrapped runs, inside the run-to-run spread measured for this setting, so no cost or accuracy effect can be
+told apart.
+
 ## Settings
 
 | Variable | Default | Meaning |
