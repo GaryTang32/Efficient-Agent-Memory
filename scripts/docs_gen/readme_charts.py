@@ -180,9 +180,106 @@ def swe_chart(t):
                "than its ceiling on both models.")
 
 
+# Roadmap: (stage, dates, status, what was done, what it showed). Status: done | next | blocked.
+ROADMAP = [
+    ("Measure published methods", "22–26 Oct", "done",
+     "ReSum, AgentDiet, Context-Folding, MemoryOS, LightMem, Nemori and others on four long multi-session tasks",
+     "No single method is enough; plain notes beat engineered memory systems"),
+    ("Build AutoMemory", "23 Oct – 5 Nov", "done",
+     "v1, then v2 after eight more methods from the 2026 literature; a Python library and an MCP server",
+     "v2 reaches the ceiling's accuracy at 85% (Haiku) and 58% (Sonnet) of its cost"),
+    ("Real repositories", "5–6 Nov", "done",
+     "SWE-bench Verified workdays on Django, graded with the official tests; NVIDIA's handoff recap",
+     "A 16K window with compaction resolves as many issues as the model's full window"),
+    ("Ship to users", "8 Nov", "done",
+     "Claude Code plugin (previews, handoff at compaction, recall, autosave) and two pilots",
+     "Neutral inside Claude Code, which already caches and compacts"),
+    ("Validate", "8–13 Nov", "done",
+     "Same-day controls, repeats, a code audit, SymPy and related issues, three runs per cell",
+     "Headline results hold; lean costs 80% of the ceiling on Sonnet; four claims withdrawn"),
+    ("Broaden", "next", "next",
+     "Native tool calls on Bedrock, GPT models, a second language, three runs on SymPy",
+     "Bedrock and GPT wait on credentials; the rest needs no new access"),
+]
+ROADMAP_NEXT = [
+    ("next", "Next", [("Three runs of SymPy and related issues", "≈ $45"),
+                      ("Cost on two price bases", "no API cost"),
+                      ("Plugin for agents without built-in caching", "no API cost")]),
+    ("blocked", "Blocked on credentials", [("Bedrock validation, native tool calls", "AWS key"),
+                                           ("GPT and other non-Claude models", "API key")]),
+    ("todo", "Not started", [("Codex / OpenAI re-pricing", "no API cost"),
+                             ("A repository outside Python", "needs its own test setup")]),
+]
+
+
+def status_mark(kind, x, y, t, r=7.5):
+    if kind == "done":
+        return (f'<circle cx="{x}" cy="{y}" r="{r}" fill="{t["ours"]}" stroke="{t["ring"]}" stroke-width="2"/>'
+                f'<path d="M{x - 3.6} {y + 0.2} l2.5 2.6 l4.8 -5.2" fill="none" stroke="{t["ring"]}" stroke-width="2" '
+                f'stroke-linecap="round" stroke-linejoin="round"/>')
+    if kind == "next":
+        return (f'<circle cx="{x}" cy="{y}" r="{r}" fill="{t["ring"]}" stroke="{t["pub"]}" stroke-width="2.5"/>'
+                f'<circle cx="{x}" cy="{y}" r="{r - 4.5}" fill="{t["pub"]}"/>')
+    if kind == "blocked":
+        return (f'<circle cx="{x}" cy="{y}" r="{r}" fill="{t["ring"]}" stroke="{t["ref"]}" stroke-width="2"/>'
+                f'<line x1="{x - 4}" y1="{y + 4}" x2="{x + 4}" y2="{y - 4}" stroke="{t["ref"]}" stroke-width="2" stroke-linecap="round"/>')
+    return f'<circle cx="{x}" cy="{y}" r="{r}" fill="{t["ring"]}" stroke="{t["ref"]}" stroke-width="2" stroke-dasharray="3 2.5"/>'
+
+
+def roadmap_chart(t):
+    done = sum(s == "done" for _, _, s, _, _ in ROADMAP)
+    W, lx, tx, rowh, top = 960, 136, 162, 64, 112
+    body = [f'<text x="20" y="28" fill="{t["ink"]}" font-size="15" font-weight="600">Roadmap and progress</text>',
+            f'<text x="20" y="49" fill="{t["ink2"]}" font-size="12.5">{done} of {len(ROADMAP)} stages done · '
+            f'22 Oct – 13 Nov 2026 · about 3,700 benchmark runs on Claude Haiku and Sonnet</text>']
+    seg, gap, bx = 128, 6, 20
+    for i, (_, _, s, _, _) in enumerate(ROADMAP):
+        x = bx + i * (seg + gap)
+        fill = t["ours"] if s == "done" else t["pub"] if s == "next" else t["grid"]
+        body.append(f'<rect x="{x}" y="64" width="{seg}" height="8" rx="4" fill="{fill}" opacity="{1 if s == "done" else 0.85}"/>')
+    lx2 = bx + len(ROADMAP) * (seg + gap) + 10
+    body.append(status_mark("done", lx2 + 8, 68, t, 6) +
+                f'<text x="{lx2 + 20}" y="72" fill="{t["ink2"]}" font-size="12">done</text>' +
+                status_mark("next", lx2 + 68, 68, t, 6) +
+                f'<text x="{lx2 + 80}" y="72" fill="{t["ink2"]}" font-size="12">next</text>')
+    y0, y1 = top - 8, top + rowh * (len(ROADMAP) - 1) + 8
+    last_done = top + rowh * (done - 1)
+    body.append(f'<line x1="{lx}" x2="{lx}" y1="{y0}" y2="{last_done}" stroke="{t["ours"]}" stroke-width="3" stroke-linecap="round"/>')
+    body.append(f'<line x1="{lx}" x2="{lx}" y1="{last_done}" y2="{y1}" stroke="{t["axis"]}" stroke-width="2" stroke-dasharray="4 4"/>')
+    for i, (name, dates, s, what, result) in enumerate(ROADMAP):
+        y = top + i * rowh
+        body.append(f'<text x="{lx - 18}" y="{y + 4}" fill="{t["muted"] if s != "done" else t["ink2"]}" font-size="12" '
+                    f'text-anchor="end">{E(dates)}</text>')
+        body.append(status_mark(s, lx, y, t))
+        body.append(f'<text x="{tx}" y="{y + 5}" fill="{t["ink"]}" font-size="14" font-weight="600">'
+                    f'<tspan fill="{t["muted"]}" font-weight="400">{i + 1}  </tspan>{E(name)}</text>')
+        body.append(f'<text x="{tx}" y="{y + 24}" fill="{t["ink2"]}" font-size="12.5">{E(what)}</text>')
+        col = t["ours"] if s == "done" else t["pub"]
+        body.append(f'<text x="{tx}" y="{y + 42}" fill="{t["ink"]}" font-size="12.5">'
+                    f'<tspan fill="{col}" font-weight="600">→ </tspan>{E(result)}</text>')
+    ny = top + rowh * len(ROADMAP) + 10
+    body.append(f'<line x1="20" x2="{W - 20}" y1="{ny}" y2="{ny}" stroke="{t["grid"]}" stroke-width="1"/>')
+    body.append(f'<text x="20" y="{ny + 30}" fill="{t["ink"]}" font-size="14" font-weight="600">What is left</text>')
+    cw = (W - 40) / len(ROADMAP_NEXT)
+    for c, (kind, head, items) in enumerate(ROADMAP_NEXT):
+        cx = 20 + c * cw
+        body.append(status_mark(kind, cx + 8, ny + 56, t, 6.5) +
+                    f'<text x="{cx + 22}" y="{ny + 60.5}" fill="{t["ink"]}" font-size="13" font-weight="600">{E(head)}</text>')
+        for k, (item, cost) in enumerate(items):
+            iy = ny + 86 + k * 38
+            body.append(f'<text x="{cx + 22}" y="{iy}" fill="{t["ink"]}" font-size="12.5">{E(item)}</text>'
+                        f'<text x="{cx + 22}" y="{iy + 16}" fill="{t["muted"]}" font-size="11.5">{E(cost)}</text>')
+    h = ny + 86 + 3 * 38 - 8
+    return svg(W, h, "".join(body), "Roadmap and progress of Efficient Agent Memory",
+               f"{done} of {len(ROADMAP)} stages are done: measuring published methods, building AutoMemory, real "
+               "repositories, shipping a Claude Code plugin, and a validation round. Next: broaden to native tool calls "
+               "on Bedrock and GPT models (blocked on credentials), three runs on SymPy, cost on two price bases, and a "
+               "repository outside Python.")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for name, fn in (("synthetic-frontier", synth_chart), ("swe-16k", swe_chart)):
+    for name, fn in (("synthetic-frontier", synth_chart), ("swe-16k", swe_chart), ("roadmap", roadmap_chart)):
         for mode, t in THEMES.items():
             (OUT / f"{name}-{mode}.svg").write_text(fn(t))
     print("wrote", sorted(p.name for p in OUT.glob("*.svg")))
