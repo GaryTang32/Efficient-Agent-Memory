@@ -197,7 +197,7 @@ class AutoMemory(Technique):
             self._refold.on_session_start(ctx)  # puts the PROGRESS/STALE protocol into the first message
         if self.recall and self._ws_on and self._notes_text():
             ctx.preamble.append(self._recall())
-            ctx.log("automem_recall", chars=len(self._notes_text()))
+            ctx.log("automem_recall", chars=len(self._notes_text()), notes=sorted(self._ws.notes))
 
     def before_call(self, ctx):
         if self._compactor is None:

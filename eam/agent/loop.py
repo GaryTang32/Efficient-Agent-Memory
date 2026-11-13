@@ -41,6 +41,8 @@ class RunResult:
     events: list[dict[str, Any]] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
     tool_calls: int = 0  # tool calls issued by this agent (not by sub-agents), counted as they happen
+    # every message as it was added, in order: unlike `messages`, compaction and resets never remove anything here
+    history: list[Message] = field(default_factory=list)
 
 
 def _fingerprint(msg: Message) -> str:
@@ -167,6 +169,7 @@ def run_agent(
         ctx.messages.extend(initial_messages)
     else:
         ctx.messages.append({"role": "user", "content": [{"text": "\n\n".join([ctx.task_header(), *ctx.preamble])}]})
+    history = list(ctx.messages)  # append-only record for traces
 
     answer, finished, rewrites, nudges = "", False, 0, 0
     n_tool_calls = 0
@@ -177,6 +180,12 @@ def run_agent(
         ctx.step = step
         for tech in techniques:
             tech.before_call(ctx)
+        # messages a compaction or reset built (the summary, the recap) join the record; copies of kept steps do not
+        seen = {id(m) for m in history}
+        fresh = [m for m in ctx.messages if id(m) not in seen]
+        if fresh:
+            known = {_fingerprint(m) for m in history}
+            history.extend(m for m in fresh if _fingerprint(m) not in known)
         if ctx.stop_reason:
             break
 
@@ -234,6 +243,7 @@ def run_agent(
         ctx.peak_prompt_tokens = max(ctx.peak_prompt_tokens, ctx.last_prompt_tokens)
         prev_snapshot = snapshot + [_fingerprint(resp.message)]
         ctx.messages.append(resp.message)
+        history.append(resp.message)
         for tech in techniques:
             tech.after_call(ctx, resp)
 
@@ -246,6 +256,7 @@ def run_agent(
                 nudges += 1
                 ctx.log("nudge")
                 ctx.messages.append({"role": "user", "content": [{"text": NUDGE.format(marker=final_marker)}]})
+                history.append(ctx.messages[-1])
                 continue
             answer, finished = resp.text, True
             break
@@ -269,6 +280,7 @@ def run_agent(
             _apply_step_budget(ctx, outcomes, step_observation_budget)
         ctx.last_tool_error = any(o.is_error for o in outcomes)
         ctx.messages.append({"role": "user", "content": [o.to_block() for o in outcomes]})
+        history.append(ctx.messages[-1])
         if ctx.stop_reason:
             if ctx.final_answer is not None:
                 answer, finished = ctx.final_answer, True
@@ -289,4 +301,5 @@ def run_agent(
         events=ctx.events,
         messages=ctx.messages,
         tool_calls=n_tool_calls,
+        history=history,
     )

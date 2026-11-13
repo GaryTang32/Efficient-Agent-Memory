@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 from eam.agent.context import Tool
@@ -158,14 +159,19 @@ def generate(seed: int, n_issues: int = 5, context_limit: int | None = 64_000,
     rounds = [f"{intro}\n\nISSUE {k + 1} of {n_issues} ({issues[k]}):\n\n{inst[i]['problem_statement'].strip()}"
               for k, i in enumerate(issues)]
 
+    grades: list[dict] = []  # per session: the agent's patch and the test report, for the run's trace
+
     def round_score(k: int, answer: str) -> float:
         d = state["roots"].pop(k, None)
         if d is None:  # the agent never touched the repository
+            grades.append({"session": k, "resolved": False, "patch": "", "detail": "repository not touched"})
             return 0.0
         try:
-            ok, _ = E.resolved(d, inst[issues[k]])
+            patch = subprocess.run(["git", "-C", str(d), "diff"], capture_output=True, text=True).stdout
+            ok, detail = E.resolved(d, inst[issues[k]])
         finally:
             E.drop_worktree(d)
+        grades.append({"session": k, "resolved": ok, "patch": patch, "detail": detail})
         return 1.0 if ok else 0.0
 
     def oracle():
@@ -175,5 +181,5 @@ def generate(seed: int, n_issues: int = 5, context_limit: int | None = 64_000,
         family="swe_workday", instance_id=f"swe-{seed}", prompt=rounds[-1], tools=tools, check=lambda a: False,
         gold=", ".join(issues), oracle=oracle, max_steps=60, rounds=rounds, round_score=round_score,
         context_limit=context_limit, step_observation_budget=step_observation_budget, disclose_limit=disclose_limit,
-        grade_unfinished=True,
+        grade_unfinished=True, resources={"grades": grades},
     )
