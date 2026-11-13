@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install pytest
+      - name: Tests (offline: the mock backend; no API keys, no network)
+        run: python -m pytest -q
+        env:
+          EAM_CLAUDE_WAIT_FOR_LIMIT: "0"
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install bandit pip-audit pytest
+      - name: Adversarial tests (memory poisoning, secrets, file safety, concurrency)
+        run: python -m pytest -q tests/test_security.py tests/test_lightweight.py
+      - name: Static analysis of the shipped code (library, MCP server, plugin hooks)
+        run: bandit -q -ll -r eam/safety.py eam/memory_skill.py eam/mcp_server.py plugins/automem/hooks
+      - name: Dependency audit
+        run: pip-audit --strict .
+      - name: Secret scan of the history
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

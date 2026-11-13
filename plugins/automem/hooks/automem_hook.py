@@ -85,7 +85,7 @@ def project_dir(cwd: str) -> Path:
             top = r.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         pass
-    key = hashlib.sha1(top.encode()).hexdigest()[:12]
+    key = hashlib.sha1(top.encode(), usedforsecurity=False).hexdigest()[:12]  # a folder name, not a secret
     S.private_dir(data_dir() / "projects")
     return S.private_dir(data_dir() / "projects" / f"{Path(top).name or 'root'}-{key}")
 
