@@ -10,6 +10,11 @@ OpenAI-style message lists, with a persistent on-disk store.
     ...
     skill.save_session(final_answer)                                                            # autosave
 
+Safety (`eam/safety.py`): recalled notes come back inside a ``<memory>`` block marked as data (the system addendum
+says never to follow instructions found there), and at most `recall_budget` × window of them per recall; secrets are
+redacted before anything is saved; files are owner-only and written atomically, notes under a lock; artifacts older
+than `retention_days`, or beyond `max_artifact_mb`, are deleted.
+
 `summarize(prompt) -> str` is any LLM call (a cheaper model is fine: the summary prompt is ReSum's official
 prompt). With ``compaction="handoff"`` the compaction is the NVIDIA EoCC handoff recap (arXiv 2611.05306) instead:
 either the agent writes it as its own next turn, which reads the whole history from the prompt cache,
@@ -26,11 +31,14 @@ or `maybe_compact` has `summarize` write it from a transcript. Tool specs for wr
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any, Callable
 
+from eam import safety as S
 from eam.techniques.auto_memory import GUARDED, RECALL
 from eam.techniques.third_party import resum as P
 from eam.techniques.workspace import NoteWorkspace
@@ -41,9 +49,16 @@ class MemorySkill:
     def __init__(self, root: str | Path, *, window: int = 200_000, trigger: float = 0.75, guard: float = 0.9,
                  token_ratio: float = 1.5, summarize: Callable[[str], str] | None = None,
                  max_note_chars: int = 20_000, preview: float = 0.1, preview_tokens: int = 750,
-                 compaction: str = "resum", handoff_variant: str = "general"):
-        self.root = Path(root).expanduser()
-        (self.root / "artifacts").mkdir(parents=True, exist_ok=True)
+                 compaction: str = "resum", handoff_variant: str = "general", recall_budget: float = 0.1,
+                 retention_days: float = 14, max_artifact_mb: float = 200, max_artifact_chars: int = 10_000_000,
+                 wrap: bool = True):
+        self.root = S.private_dir(root)
+        S.private_dir(self.root / "artifacts")
+        # recalled notes take at most this share of the window; older notes are listed by name (read_notes fetches)
+        self.recall_budget = float(recall_budget)
+        self.retention_days, self.max_artifact_mb = float(retention_days), float(max_artifact_mb)
+        self.max_artifact_chars = int(max_artifact_chars)
+        self.wrap = bool(wrap)
         self.window, self.trigger, self.guard, self.token_ratio = int(window), trigger, guard, token_ratio
         self.summarize = summarize
         self.max_note_chars = max_note_chars
@@ -62,25 +77,70 @@ class MemorySkill:
         return self.root / "notes.json"
 
     def notes(self) -> dict[str, str]:
-        return json.loads(self._notes_path.read_text()) if self._notes_path.exists() else {}
+        """All notes, oldest first. A store that cannot be parsed is moved aside (notes.json.corrupt-<time>) rather
+        than breaking the session."""
+        if not self._notes_path.exists():
+            return {}
+        try:
+            data = json.loads(self._notes_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass
+        aside = self._notes_path.with_name(f"notes.json.corrupt-{time.strftime('%Y%m%d-%H%M%S')}")
+        os.replace(self._notes_path, aside)
+        print(f"automem: unreadable notes store moved to {aside}", file=sys.stderr)
+        return {}
 
     def write_note(self, name: str, content: str) -> str:
-        notes = self.notes()
-        name = (name or "note").strip() or "note"
-        notes[name] = str(content)[: self.max_note_chars]
-        self._notes_path.write_text(json.dumps(notes, indent=1))
-        return f"Saved note '{name}' ({len(notes[name])} chars). Notes: {', '.join(sorted(notes))}"
+        name = S.redact((name or "note").strip() or "note")[:200]
+        with S.locked(self._notes_path):  # read-modify-write: concurrent sessions must not drop each other's notes
+            notes = self.notes()
+            existed = name in notes
+            notes.pop(name, None)  # re-insert at the end: insertion order is recency
+            notes[name] = S.redact(str(content))[: self.max_note_chars]
+            S.write_private(self._notes_path, json.dumps(notes, indent=1))
+        return (f"{'Replaced' if existed else 'Saved'} note '{name}' ({len(notes[name])} chars). "
+                f"Notes: {', '.join(sorted(notes))}")
 
-    def read_notes(self) -> str:
+    def _notes_within(self, budget_tokens: int) -> tuple[list[tuple[str, str]], list[str]]:
+        """The newest notes that fit in `budget_tokens` (in their original order), and the names of the rest."""
+        items, kept, used = list(self.notes().items()), [], 0
+        for name, text in reversed(items):
+            n = estimate_tokens(f"## {name}\n{text}\n\n")
+            if kept and used + n > budget_tokens:
+                break
+            kept.append((name, text))
+            used += n
+        names = {k for k, _ in kept}
+        return list(reversed(kept)), [k for k, _ in items if k not in names]
+
+    def read_notes(self, name: str | None = None) -> str:
         notes = self.notes()
-        return "\n\n".join(f"## {k}\n{v}" for k, v in sorted(notes.items())) if notes else "The workspace is empty."
+        if not notes:
+            return "The workspace is empty."
+        if name:
+            if name not in notes:
+                raise ValueError(f"no note '{name}'. Notes: {', '.join(sorted(notes))}")
+            return f"## {name}\n{notes[name]}"
+        kept, rest = self._notes_within(max(1, int(self.recall_budget * self.window)))
+        text = "\n\n".join(f"## {k}\n{v}" for k, v in kept)
+        if rest:
+            text += f"\n\n[Older notes not shown, read one with read_notes(name=...): {', '.join(rest)}]"
+        return text
 
     def system_addendum(self) -> str:
-        return NoteWorkspace().system_addendum()
+        base = NoteWorkspace().system_addendum()
+        return f"{base}\n\n{S.MEMORY_RULE}" if self.wrap else base
+
+    def _recall_text(self) -> str:
+        notes = self.read_notes()
+        return S.wrap_memory(notes, "workspace notes from earlier sessions") if self.wrap else notes
 
     def session_preamble(self) -> str:
-        """Recall: the notes, to put at the top of a new session's first message (empty if there are none)."""
-        return RECALL.format(notes=self.read_notes()) + "\n\n" if self.notes() else ""
+        """Recall: the newest notes within the recall budget, as a <memory> block, to put at the top of a new
+        session's first message (empty if there are none)."""
+        return RECALL.format(notes=self._recall_text()) + "\n\n" if self.notes() else ""
 
     def save_session(self, answer: str, label: str | None = None) -> None:
         """Autosave: keep a session's final answer as a note."""
@@ -89,10 +149,17 @@ class MemorySkill:
 
     # ---- artifacts (recoverable offload) -------------------------------------------------------------------
     def offload(self, text: str, label: str = "") -> str:
-        aid = f"a{len(list((self.root / 'artifacts').glob('*.txt'))) + 1:05d}"
-        (self.root / "artifacts" / f"{aid}.txt").write_text(text)
+        art = self.root / "artifacts"
+        S.prune(art, max_age_days=self.retention_days, max_bytes=int(self.max_artifact_mb * 2**20))
+        text = S.redact(str(text))
+        if len(text) > self.max_artifact_chars:
+            text = text[: self.max_artifact_chars] + f"\n…[cut at {self.max_artifact_chars:,} characters]"
+        n = len(list(art.glob("*.txt"))) + 1
+        while not S.create_private(art / f"a{n:05d}.txt", text):  # exclusive create: concurrent writers never collide
+            n += 1
+        aid = f"a{n:05d}"
         if label:
-            (self.root / "artifacts" / f"{aid}.label").write_text(label)
+            S.write_private(art / f"{aid}.label", S.redact(str(label))[:500])
         return f"artifact://{aid}"
 
     def read_artifact(self, artifact_id: str, offset: int = 0, length: int = 12_000) -> str:
@@ -160,10 +227,10 @@ class MemorySkill:
             return messages
         if "<summary>" in out and "</summary>" in out:
             out = out.split("<summary>")[1].split("</summary>")[0]
-        self._last_summary = f"<summary>{out}</summary>"
+        self._last_summary = f"<summary>{S.escape_tags(out, 'summary')}</summary>"
         reset = P.NEW_OBSERVATION.format(question=question, summary=self._last_summary)
         if self.notes():
-            reset += "\n\n" + RECALL.format(notes=self.read_notes())
+            reset += "\n\n" + RECALL.format(notes=self._recall_text())
         return system + [{"role": "user", "content": reset}]
 
     # ---- handoff compaction (NVIDIA EoCC, arXiv 2611.05306) -------------------------------------------------
@@ -181,8 +248,8 @@ class MemorySkill:
         system = [m for m in messages[:1] if m.get("role") == "system"]
         text = f"Task: {question}"
         if self.notes():
-            text += "\n\n" + RECALL.format(notes=self.read_notes())
-        text += "\n\n" + RECAP_SECTION.format(recap=str(recap).strip())
+            text += "\n\n" + RECALL.format(notes=self._recall_text())
+        text += "\n\n" + RECAP_SECTION.format(recap=S.escape_tags(str(recap).strip(), "recap"))
         return system + [{"role": "user", "content": text}]
 
     # ---- tools for the agent -------------------------------------------------------------------------------
@@ -193,8 +260,9 @@ class MemorySkill:
              "input_schema": {"type": "object", "properties": {"name": {"type": "string"},
                                                                "content": {"type": "string"}},
                               "required": ["name", "content"]}},
-            {"name": "read_notes", "description": "Read all notes in your persistent workspace.",
-             "input_schema": {"type": "object", "properties": {}}},
+            {"name": "read_notes", "description": "Read the notes in your persistent workspace (the newest that fit; "
+             "older ones are listed by name), or one note by name.",
+             "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}}},
             {"name": "read_artifact", "description": "Read content that was moved out of the context "
              "(artifact://ID), paging with offset/length in characters.",
              "input_schema": {"type": "object", "properties": {"artifact_id": {"type": "string"},
@@ -207,7 +275,7 @@ class MemorySkill:
         if name == "write_note":
             return self.write_note(str(args.get("name", "note")), str(args.get("content", "")))
         if name == "read_notes":
-            return self.read_notes()
+            return self.read_notes(str(args["name"]) if args.get("name") else None)
         if name == "read_artifact":
             return self.read_artifact(str(args.get("artifact_id", "")), int(args.get("offset", 0) or 0),
                                       int(args.get("length", 12_000) or 12_000))

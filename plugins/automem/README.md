@@ -31,6 +31,12 @@ or add the repository as a plugin marketplace in Claude Code and install `autome
 | `AUTOMEM_NOTES` | `on` | `off` disables recall and autosave (independent tasks such as one issue per session gain nothing from notes) |
 | `AUTOMEM_RECALL_CHARS` | `3000` | Most recent notes recalled at session start |
 | `AUTOMEM_DATA` | `$CLAUDE_PLUGIN_DATA` | Where notes and saved outputs live, one folder per project (git top level) |
+| `AUTOMEM_REDACT` | `on` | Replace secrets with `[REDACTED:kind]` before saving outputs and notes |
+| `AUTOMEM_RETENTION_DAYS` | `14` | Saved outputs older than this are deleted; `0` keeps them |
+| `AUTOMEM_OUTPUT_MB` | `200` | Saved outputs per project are kept under this size, oldest deleted first |
+
+Saved files are owner-only and written atomically. Recalled notes reach the model as a `<memory>` block marked as
+data, never as instructions. See [SECURITY.md](../../SECURITY.md).
 
 Claude Code compacts only near the model's context limit by default. For long sessions you can compact earlier with
 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (Claude Code's own setting); the handoff recap then applies sooner.

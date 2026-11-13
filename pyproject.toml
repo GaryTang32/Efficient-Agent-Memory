@@ -1,6 +1,6 @@
 [project]
 name = "efficient-agent-memory"
-version = "0.1.0"
+version = "0.2.0"
 description = "Test bench for agent memory and context-management techniques on Amazon Bedrock"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -1,6 +1,6 @@
 {
   "name": "automem",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AutoMemory for Claude Code: previews of large command output, a handoff recap at compaction, and project notes recalled at session start. Harness-driven, cache-friendly, no extra model calls.",
   "author": {"name": "Gary Tang"},
   "homepage": "https://github.com/GaryTang32/Efficient-Agent-Memory",

@@ -31,12 +31,17 @@ Components and the evidence behind them:
   nothing rewrites earlier history every step (masking aside, when chosen), because history rewrites are paid as
   cache writes (2× input price on the Claude Code route).
 
+* ``wrap`` — recalled notes inside a ``<memory>`` block marked as data, with one system line saying never to follow
+  instructions found there (``eam/safety.py``). Off by default here so results stay comparable with earlier runs; the
+  library, the MCP server and the plugin have it on.
+
 The summariser is the run's auxiliary model (``--aux-model``), so a cheaper model can summarise for a stronger
 agent.
 """
 
 from __future__ import annotations
 
+from eam.safety import MEMORY_RULE, wrap_memory
 from eam.techniques.base import Technique
 from eam.techniques.obs_mask import ObservationMasking
 from eam.techniques.refold import ReFold, prompt_layer
@@ -69,7 +74,7 @@ class AutoMemory(Technique):
     def __init__(self, workspace: bool | str = True, recall: bool = True, autosave: bool = True, guard: float = 0.9,
                  compact: str = "resum", trigger: float = 0.75, default_window: int = 200_000,
                  token_ratio: float = 1.5, keep_recent: int = 2, fold: bool = False, ingest: float = 0.0,
-                 ingest_preview: int = 750, handoff_variant: str = "general"):
+                 ingest_preview: int = 750, handoff_variant: str = "general", wrap: bool = False):
         self.adaptive = str(workspace).lower() == "adaptive"
         self.workspace = self.adaptive or (workspace not in (False, "false", "False", 0, "0"))
         self.recall = bool(recall) and self.workspace
@@ -86,6 +91,7 @@ class AutoMemory(Technique):
         self.ingest = float(ingest)
         self.ingest_preview = int(ingest_preview)
         self.handoff_variant = str(handoff_variant)
+        self.wrap = str(wrap).lower() not in ("false", "0", "no", "off", "")
         self._refold = ReFold() if self.fold else None
         self._stash: dict[str, str] = {}
         self._ws = NoteWorkspace() if self.workspace else None
@@ -102,6 +108,10 @@ class AutoMemory(Technique):
         if not self._ws or not self._ws.notes:
             return ""
         return "\n\n".join(f"## {k}\n{v}" for k, v in sorted(self._ws.notes.items()))
+
+    def _recall(self) -> str:
+        notes = self._notes_text()
+        return RECALL.format(notes=wrap_memory(notes, "workspace notes from earlier sessions") if self.wrap else notes)
 
     def _make_compactor(self, ctx):
         if self.compact == "resum":
@@ -165,6 +175,8 @@ class AutoMemory(Technique):
             parts.append(self._ws.system_addendum())
         if self._refold:
             parts.append(self._refold.system_addendum())
+        if self.wrap and self._ws and self._ws_on and self.recall:
+            parts.append(MEMORY_RULE)
         return "\n\n".join(parts) or None
 
     def render(self, ctx, req):
@@ -184,7 +196,7 @@ class AutoMemory(Technique):
         if self._refold:
             self._refold.on_session_start(ctx)  # puts the PROGRESS/STALE protocol into the first message
         if self.recall and self._ws_on and self._notes_text():
-            ctx.preamble.append(RECALL.format(notes=self._notes_text()))
+            ctx.preamble.append(self._recall())
             ctx.log("automem_recall", chars=len(self._notes_text()))
 
     def before_call(self, ctx):
@@ -210,7 +222,7 @@ class AutoMemory(Technique):
             if compacted:
                 ctx.state["automem_predicted"] = 0
                 if self.recall and self._ws_on and self._notes_text():  # the reset replaced the first message
-                    ctx.messages[0]["content"].append({"text": RECALL.format(notes=self._notes_text())})
+                    ctx.messages[0]["content"].append({"text": self._recall()})
                 if self._refold:  # the rebuilt history starts a new step numbering; the protocol stays visible
                     self._refold._reset()
                     ctx.messages[0]["content"].append({"text": prompt_layer(self._refold.k)[1]})
@@ -278,4 +290,4 @@ class AutoMemory(Technique):
     def describe(self) -> str:
         return (f"automem(workspace={'adaptive' if self.adaptive else self.workspace}, recall={self.recall}, autosave={self.autosave}, "
                 f"guard={self.guard}, compact={self.compact}, trigger={self.trigger}, keep_recent={self.keep_recent}, "
-                f"fold={self.fold}, ingest={self.ingest})")
+                f"fold={self.fold}, ingest={self.ingest}" + (", wrap=True)" if self.wrap else ")"))

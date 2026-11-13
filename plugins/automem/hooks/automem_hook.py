@@ -22,6 +22,13 @@ Settings (environment variables):
     AUTOMEM_NOTES          on | off: recall and autosave (default on)
     AUTOMEM_RECALL_CHARS   most recent notes recalled, characters (default 3000)
     AUTOMEM_DATA           where state lives (default: $CLAUDE_PLUGIN_DATA, else ~/.automem)
+    AUTOMEM_RETENTION_DAYS saved outputs older than this are deleted (default 14; 0 keeps them)
+    AUTOMEM_OUTPUT_MB      saved outputs per project are kept under this size, oldest deleted first (default 200)
+    AUTOMEM_REDACT         on | off: replace secrets with [REDACTED:kind] before saving (default on)
+
+Safety (automem_safety.py, a copy of eam/safety.py): secrets are redacted before an output or a note is saved; state is
+owner-only (directories 0700, files 0600) and written atomically, notes under a lock; recalled notes reach the model
+inside a <memory> block marked as data, with a line telling it never to follow instructions found there.
 """
 
 from __future__ import annotations
@@ -34,6 +41,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import automem_safety as S  # noqa: E402  (the plugin ships a copy of eam/safety.py; it cannot import the package)
+
+PERSISTED_MAX = 20 * 2**20  # Claude Code's saved copy of an output: read whole up to this size, else head and tail
 
 HANDOFF = """When summarising this conversation, write a concise handoff recap; the conversation will continue from \
 the system prompt, the task and this recap. Record:
@@ -60,9 +72,7 @@ def _env_int(name: str, default: int) -> int:
 
 def data_dir() -> Path:
     root = os.environ.get("AUTOMEM_DATA") or os.environ.get("CLAUDE_PLUGIN_DATA") or str(Path.home() / ".automem")
-    p = Path(root).expanduser()
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return S.private_dir(root)
 
 
 def project_dir(cwd: str) -> Path:
@@ -76,9 +86,8 @@ def project_dir(cwd: str) -> Path:
     except (OSError, subprocess.SubprocessError):
         pass
     key = hashlib.sha1(top.encode()).hexdigest()[:12]
-    p = data_dir() / "projects" / f"{Path(top).name or 'root'}-{key}"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    S.private_dir(data_dir() / "projects")
+    return S.private_dir(data_dir() / "projects" / f"{Path(top).name or 'root'}-{key}")
 
 
 def notes_on() -> bool:
@@ -98,6 +107,19 @@ def preview(text: str, keep: int, path: Path) -> str:
     return head + note + tail
 
 
+def read_persisted(path: Path) -> str:
+    """Claude Code's saved copy of a long output; a very large one is read as its first and last megabyte."""
+    size = path.stat().st_size
+    if size <= PERSISTED_MAX:
+        return path.read_text(errors="replace")
+    with path.open("rb") as fh:
+        head = fh.read(2**20)
+        fh.seek(-2**20, os.SEEK_END)
+        tail = fh.read()
+    return (head.decode(errors="replace") + f"\n[… {size - 2 * 2**20:,} bytes not read …]\n"
+            + tail.decode(errors="replace"))
+
+
 def post_tool_use(d: dict) -> dict | None:
     limit, keep = _env_int("AUTOMEM_PREVIEW_CHARS", 6000), _env_int("AUTOMEM_PREVIEW_KEEP", 1500)
     resp = d.get("tool_response")
@@ -109,22 +131,24 @@ def post_tool_use(d: dict) -> dict | None:
         return None  # the agent is reading a saved output: never preview it again
     changed, out = False, dict(resp)
     saved = resp.get("persistedOutputPath")
-    if isinstance(saved, str) and Path(saved).is_file():
+    if isinstance(saved, str) and Path(saved).is_file() and not Path(saved).is_symlink():
         # Claude Code already cut this output to its first characters and saved the whole of it (stdout and stderr
         # merged); its own preview shows only the head. Build head + tail from the complete file, where test
         # summaries and failures usually are.
-        text = Path(saved).read_text(errors="replace")
+        text = read_persisted(Path(saved))
         out["stdout"], out["stderr"] = preview(text, keep, Path(saved)), ""
         return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "updatedToolOutput": {
             k: out[k] for k in ("stdout", "stderr", "interrupted", "isImage") if k in out}}}
     for stream in ("stdout", "stderr"):
         text = resp.get(stream)
         if isinstance(text, str) and len(text) > limit and len(text) > 2 * keep + 200:
-            store.mkdir(parents=True, exist_ok=True)
+            S.private_dir(store)
+            S.prune(store, max_age_days=_env_int("AUTOMEM_RETENTION_DAYS", 14),
+                    max_bytes=_env_int("AUTOMEM_OUTPUT_MB", 200) * 2**20, pattern="*.log")
             stamp = time.strftime("%Y%m%d-%H%M%S")
             tid = re.sub(r"[^A-Za-z0-9]", "", str(d.get("tool_use_id", "")))[-8:]
             path = store / f"bash-{stamp}-{tid}-{stream}.log"
-            path.write_text(f"$ {command}\n\n{text}")
+            S.write_private(path, S.redact(f"$ {command}\n\n{text}"))
             out[stream] = preview(text, keep, path)
             changed = True
     if not changed:
@@ -138,13 +162,26 @@ def notes_file(cwd: str) -> Path:
     return project_dir(cwd) / "notes.jsonl"
 
 
+def read_notes(f: Path) -> list[dict]:
+    """The saved notes; a damaged line is skipped, not fatal."""
+    notes = []
+    for line in f.read_text(errors="replace").splitlines():
+        try:
+            n = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(n, dict):
+            notes.append(n)
+    return notes
+
+
 def session_start(d: dict) -> dict | None:
     if not notes_on():
         return None
     f = notes_file(d.get("cwd") or os.getcwd())
     if not f.exists():
         return None
-    notes = [json.loads(line) for line in f.read_text().splitlines() if line.strip()]
+    notes = read_notes(f)
     budget, picked = _env_int("AUTOMEM_RECALL_CHARS", 3000), []
     for n in reversed(notes):  # most recent first, within the budget
         entry = f"- {n.get('time', '')}: {n.get('text', '').strip()}"
@@ -154,7 +191,8 @@ def session_start(d: dict) -> dict | None:
     if not picked:
         return None
     text = ("AutoMemory notes from earlier sessions in this project (oldest first). Use them when the task builds on "
-            "earlier work; otherwise ignore them.\n" + "\n".join(reversed(picked)))
+            f"earlier work; otherwise ignore them. {S.MEMORY_RULE}\n"
+            + S.wrap_memory("\n".join(reversed(picked)), "AutoMemory notes, earlier sessions"))
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
 
 
@@ -165,12 +203,12 @@ def stop(d: dict) -> None:
     if len(text) < 40:  # acknowledgements and empty turns are not worth recalling
         return None
     f = notes_file(d.get("cwd") or os.getcwd())
-    with f.open("a") as fh:
-        fh.write(json.dumps({"time": time.strftime("%Y-%m-%d %H:%M"), "session": d.get("session_id", ""),
-                             "text": text[:1500]}) + "\n")
-    lines = f.read_text().splitlines()
-    if len(lines) > 50:  # keep the store small
-        f.write_text("\n".join(lines[-50:]) + "\n")
+    entry = json.dumps({"time": time.strftime("%Y-%m-%d %H:%M"), "session": d.get("session_id", ""),
+                        "text": S.redact(text)[:1500]})
+    with S.locked(f):  # sessions in the same project must not drop each other's notes
+        lines = f.read_text(errors="replace").splitlines() if f.exists() else []
+        lines = [ln for ln in lines if ln.strip()] + [entry]
+        S.write_private(f, "\n".join(lines[-50:]) + "\n")  # keep the store small
     return None
 
 
