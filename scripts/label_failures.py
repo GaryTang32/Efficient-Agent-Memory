@@ -187,42 +187,123 @@ def page(cases: list[dict]) -> None:
     counts = defaultdict(int)
     for r in rows_:
         counts[r["label"]] += 1
-    body = []
-    for r in sorted(rows_, key=lambda r: (r["id"] not in audit, r["model"], r["spec"], r["issue"], r["run"])):
-        e = evidence(r) if r["id"] in audit else {}
-        detail = (f"<details><summary>Trace evidence</summary><h4>Events</h4><pre>{html.escape(e['events'])}</pre>"
-                  f"<h4>Tool calls</h4><pre>{html.escape(e['tools'])}</pre><h4>Agent patch</h4>"
-                  f"<pre>{html.escape(e['patch'])}</pre><h4>Test report</h4><pre>{html.escape(e['report'])}</pre>"
-                  f"<h4>Ceiling patch</h4><pre>{html.escape(e['ceiling_patch'])}</pre></details>") if e else ""
-        pick = (f'<label><input type="radio" name="{html.escape(r["id"])}" value="agree"> agree</label> '
-                f'<label><input type="radio" name="{html.escape(r["id"])}" value="disagree"> disagree</label> '
-                f'<input class="fix" data-id="{html.escape(r["id"])}" placeholder="correct label (if disagree)">'
-                ) if r["id"] in audit else ""
-        body.append(f'<tr class="{"audit" if r["id"] in audit else ""}"><td>{html.escape(r["model"])}</td>'
-                    f'<td>{html.escape(r["spec"])}</td><td>{html.escape(r["issue"])}</td><td>{r["run"]}</td>'
-                    f'<td><b>{html.escape(r["label"])}</b> <small>{html.escape(r.get("confidence", ""))}</small></td>'
-                    f'<td>{html.escape(r.get("evidence", "solved by this setting in another run"))}{detail}</td>'
-                    f'<td>{pick}</td></tr>')
-    summary = " · ".join(f"{k}: {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
+    esc = html.escape
+    short = {"naive@native": "ceiling", "automem:workspace=false,ingest=0.1": "lean",
+             "automem:workspace=false,ingest=0.1,compact=handoff,handoff_variant=swe": "lean + handoff",
+             "eocc:variant=swe": "EoCC alone"}
+
+    def name(r: dict) -> str:
+        return f"{r['model'].removeprefix('cc-').title()} · {short.get(r['spec'], r['spec'])} · {r['issue']} · {r['run']}"
+
+    def evidence_html(r: dict) -> str:
+        e = evidence(r)
+        parts = [("Harness events", e["events"]), ("Tool calls", e["tools"]), ("Agent patch", e["patch"]),
+                 ("Test report", e["report"]), ("Ceiling patch", e["ceiling_patch"])]
+        return "<details><summary>Trace evidence</summary>" + "".join(
+            f"<h4>{t}</h4><pre>{esc(v or '(none)')}</pre>" for t, v in parts) + "</details>"
+
+    cards = []
+    for r in [r for r in rows_ if r["id"] in audit]:
+        rid = esc(r["id"])
+        cards.append(f"""<article class="case audit"><header><span class="tag t-{esc(r['label'])}">{esc(r['label'])}</span>
+<span class="conf">{esc(r.get('confidence', ''))} confidence</span><h3>{esc(name(r))}</h3></header>
+<p>{esc(r.get('evidence', ''))}</p>{evidence_html(r)}
+<fieldset><legend>Your verdict</legend>
+<label><input type="radio" name="{rid}" value="agree"> Agree</label>
+<label><input type="radio" name="{rid}" value="disagree"> Disagree</label>
+<select class="fix" data-id="{rid}" aria-label="Correct label if you disagree"><option value="">Correct label (if you disagree)</option>
+{''.join(f'<option>{k}</option>' for k in RUBRIC)}</select></fieldset></article>""")
+    judged_rows = []
+    for r in sorted((r for r in rows_ if r["label"] != "noise" and r["id"] not in audit),
+                    key=lambda r: (r["label"], r["model"], r["spec"], r["issue"], r["run"])):
+        judged_rows.append(f"""<article class="case"><header><span class="tag t-{esc(r['label'])}">{esc(r['label'])}</span>
+<span class="conf">{esc(r.get('confidence', ''))} confidence</span><h3>{esc(name(r))}</h3></header>
+<p>{esc(r.get('evidence', ''))}</p>{evidence_html(r)}</article>""")
+    noise_rows = "".join(f"<tr><td>{esc(r['model'].removeprefix('cc-'))}</td><td>{esc(short.get(r['spec'], r['spec']))}</td>"
+                         f"<td>{esc(r['issue'])}</td><td>{esc(r['run'])}</td></tr>"
+                         for r in sorted((r for r in rows_ if r["label"] == "noise"),
+                                         key=lambda r: (r["model"], r["spec"], r["issue"], r["run"])))
+    total = max(1, len(rows_))
+    bars = "".join(f'<div class="bar"><span class="k">{esc(k)}</span><span class="track"><span class="fill t-{esc(k)}" '
+                   f'style="width:{100 * v / total:.1f}%"></span></span><span class="v">{v}</span></div>'
+                   for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
+    rubric = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in {
+        "noise": "the setting resolved this issue in another run, so the miss is run-to-run variation", **RUBRIC}.items())
     PAGE.parent.mkdir(parents=True, exist_ok=True)
-    PAGE.write_text(f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Failure audit</title><style>
-:root{{--bg:#fff;--ink:#111;--muted:#666;--line:#ddd;--hi:#fff8e1}}
-@media (prefers-color-scheme:dark){{:root{{--bg:#111;--ink:#eee;--muted:#999;--line:#333;--hi:#2a2410}}}}
-body{{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,sans-serif;margin:16px}}
-table{{border-collapse:collapse;width:100%}}td{{border-top:1px solid var(--line);padding:6px;vertical-align:top}}
-tr.audit{{background:var(--hi)}}pre{{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto}}
-small{{color:var(--muted)}}.wrap{{overflow-x:auto}}button{{margin:8px 0}}</style></head><body>
-<h1>Failure audit</h1><p>{len(rows_)} cases where a memory setting missed an issue its same-run ceiling resolved.
-{summary}.</p><p>Highlighted rows ({len(audit)}, 20% of the judged cases, drawn at random) are for your audit: open the
-trace evidence, mark agree or disagree, and press <b>Copy my audit</b>; paste the result back into the chat.</p>
-<button id="copy">Copy my audit</button><div class="wrap"><table><tr><td>Model</td><td>Setting</td><td>Issue</td>
-<td>Run</td><td>Label</td><td>Judge's evidence</td><td>Audit</td></tr>{''.join(body)}</table></div>
-<script>document.getElementById('copy').onclick=()=>{{const out={{}};
-document.querySelectorAll('input[type=radio]:checked').forEach(i=>{{out[i.name]={{verdict:i.value}}}});
-document.querySelectorAll('input.fix').forEach(i=>{{if(i.value){{(out[i.dataset.id]=out[i.dataset.id]||{{}}).label=i.value}}}});
-navigator.clipboard.writeText(JSON.stringify(out,null,1)).then(()=>alert(Object.keys(out).length+' audit answers copied'))}};
-</script></body></html>""")
+    PAGE.write_text(f"""<title>Memory Failure Audit</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* layout: one reading column; audit cards first, then the judged cases, then the noise table */
+:root{{--bg:#f7f8f9;--card:#fff;--ink:#16202a;--muted:#5a6773;--line:#dde2e7;--accent:#1f6feb;--hi:#fff4d6;
+--c-noise:#9aa5b1;--c-wrong:#c2410c;--c-window:#7c3aed;--c-lost:#0f766e;--c-other:#64748b;
+--sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}}
+@media (prefers-color-scheme:dark){{:root:not([data-theme="light"]){{--bg:#0f1418;--card:#161d23;--ink:#e6ebef;--muted:#97a3ae;
+--line:#2a343d;--accent:#6ea8fe;--hi:#2b2614;--c-noise:#5f6b76;--c-wrong:#f08a4b;--c-window:#a78bfa;--c-lost:#2dd4bf;
+--c-other:#94a3b8;color-scheme:dark}}}}
+:root[data-theme="dark"]{{--bg:#0f1418;--card:#161d23;--ink:#e6ebef;--muted:#97a3ae;--line:#2a343d;--accent:#6ea8fe;
+--hi:#2b2614;--c-noise:#5f6b76;--c-wrong:#f08a4b;--c-window:#a78bfa;--c-lost:#2dd4bf;--c-other:#94a3b8;color-scheme:dark}}
+body{{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans)}}
+main{{max-width:880px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));
+padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:20px}}
+h1{{font-size:26px;margin:0;text-wrap:balance}}h2{{font-size:18px;margin:12px 0 0}}h3{{font-size:15px;margin:6px 0 0;
+overflow-wrap:anywhere}}h4{{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:12px 0 4px}}
+p{{margin:0;max-width:70ch}}.lede{{color:var(--muted)}}
+.bars{{display:grid;gap:6px;font-variant-numeric:tabular-nums}}.bar{{display:grid;grid-template-columns:150px 1fr 32px;
+gap:10px;align-items:center;font-size:13px}}.track{{background:var(--line);border-radius:3px;height:10px}}
+.fill{{display:block;height:10px;border-radius:3px;background:var(--c-other)}}.v{{text-align:right}}
+.case{{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;gap:8px;min-width:0}}
+.case.audit{{background:var(--hi)}}.tag{{font:12px var(--mono);padding:2px 8px;border-radius:99px;color:#fff;
+background:var(--c-other)}}.conf{{font-size:12px;color:var(--muted);margin-left:8px}}
+.t-noise{{background:var(--c-noise)}}.t-wrong_fix{{background:var(--c-wrong)}}.t-stopped_at_window{{background:var(--c-window)}}
+.t-lost_in_compaction{{background:var(--c-lost)}}
+details summary{{cursor:pointer;color:var(--accent);font-size:13px}}
+pre{{font:12px/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto;margin:0;
+background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}}
+fieldset{{border:1px solid var(--line);border-radius:6px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}}
+legend{{font-size:12px;color:var(--muted)}}select,button,textarea{{font:inherit;color:inherit;background:var(--card);
+border:1px solid var(--line);border-radius:6px;padding:6px 10px}}
+button{{background:var(--accent);color:#fff;border:0;cursor:pointer;font-weight:600}}
+:focus-visible{{outline:2px solid var(--accent);outline-offset:2px}}
+.copy{{display:flex;flex-wrap:wrap;gap:10px;align-items:center}}textarea{{width:100%;font:12px var(--mono);min-height:90px}}
+dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13px;margin:0}}dt{{font-family:var(--mono)}}
+dd{{margin:0;color:var(--muted)}}.wrap{{overflow-x:auto}}table{{border-collapse:collapse;width:100%;font-size:13px}}
+td,th{{border-top:1px solid var(--line);padding:5px 8px;text-align:left}}th{{color:var(--muted);font-weight:600}}
+@media (max-width:560px){{.bar{{grid-template-columns:120px 1fr 28px}}dl{{grid-template-columns:1fr}}dd{{margin-bottom:6px}}}}
+</style>
+<main>
+<h1>Memory Failure Audit</h1>
+<p class="lede">{len(rows_)} Django sessions where a memory setting missed an issue that the same run's ceiling
+(full context) fixed, from the traced re-runs on SWE-bench Verified workdays. A case is labelled noise when the setting
+fixed the same issue in another run; a Sonnet judge labelled the rest from the session trace.</p>
+<section class="bars" aria-label="Cases by label">{bars}</section>
+<h2>Your audit: {len(audit)} cases, 20% of the judged ones</h2>
+<p>Open the trace evidence, choose agree or disagree, and pick the right label if you disagree. Then copy your answers
+and paste them into the chat.</p>
+{''.join(cards)}
+<div class="copy"><button id="copy" type="button">Copy my audit</button><span id="status" role="status"></span></div>
+<textarea id="out" readonly hidden aria-label="Your audit answers"></textarea>
+<h2>The other judged cases ({len(judged_rows)})</h2>
+{''.join(judged_rows)}
+<h2>Noise ({counts.get('noise', 0)})</h2>
+<div class="wrap"><table><tr><th>Model</th><th>Setting</th><th>Issue</th><th>Run</th></tr>{noise_rows}</table></div>
+<h2>Labels</h2><dl>{rubric}</dl>
+</main>
+<script>
+document.getElementById('copy').addEventListener('click',()=>{{
+ const out={{}};
+ document.querySelectorAll('input[type=radio]:checked').forEach(i=>{{out[i.name]={{verdict:i.value}}}});
+ document.querySelectorAll('select.fix').forEach(s=>{{if(s.value)(out[s.dataset.id]=out[s.dataset.id]||{{}}).label=s.value}});
+ const text=JSON.stringify(out,null,1),box=document.getElementById('out'),st=document.getElementById('status');
+ box.value=text;box.hidden=false;
+ const n=Object.keys(out).length+' of {len(audit)} answered';
+ const fallback=()=>{{box.focus();box.select();st.textContent=n+'. Copy the selected text below.'}};
+ try{{navigator.clipboard.writeText(text).then(()=>{{st.textContent=n+', copied. Paste it into the chat.'}},fallback)}}
+ catch(e){{fallback()}}
+}});
+</script>
+""")
+    summary = " · ".join(f"{k}: {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
     print(f"wrote {PAGE}: {len(rows_)} cases, {len(audit)} to audit; {summary}")
 
 

@@ -34,6 +34,17 @@ RUN_COLUMNS = {
     "events": "JSON", "gold": "VARCHAR",
 }
 
+# every field of the trace tables (eam/bench/trace.py), so DuckDB does not infer the union of their shapes
+TRACE_COLUMNS = {
+    "table": "VARCHAR", "run_id": "VARCHAR", "session": "BIGINT", "index": "BIGINT", "step": "BIGINT",
+    "role": "VARCHAR", "text": "VARCHAR", "chars": "BIGINT", "tool_uses": "JSON", "tool_results": "JSON",
+    "tool_use_id": "VARCHAR", "name": "VARCHAR", "input": "JSON", "error": "VARCHAR", "output_chars": "BIGINT",
+    "message": "BIGINT", "kind": "VARCHAR", "fields": "JSON", "tag": "VARCHAR", "model": "VARCHAR",
+    "input_tokens": "BIGINT", "output_tokens": "BIGINT", "cache_read_tokens": "BIGINT", "cache_write_tokens": "BIGINT",
+    "cost_usd": "DOUBLE", "latency_ms": "DOUBLE", "patch": "VARCHAR", "report": "VARCHAR", "resolved": "BOOLEAN",
+    "score": "DOUBLE", "spec": "VARCHAR", "instance": "VARCHAR",
+}
+
 
 def connect():
     import duckdb
@@ -54,8 +65,9 @@ def connect():
         FROM x""")
     traces = sorted((RESULTS / "traces").glob("*.jsonl.gz"))
     if traces:
+        cols = ", ".join(f"'{k}': '{v}'" for k, v in TRACE_COLUMNS.items())
         con.execute(f"""CREATE VIEW traces AS SELECT * FROM read_json('{RESULTS / "traces"}/*.jsonl.gz',
-                        format='newline_delimited', union_by_name=true)""")
+                        format='newline_delimited', columns={{{cols}}})""")
     return con
 
 
