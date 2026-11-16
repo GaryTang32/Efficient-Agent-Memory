@@ -234,4 +234,10 @@ def generate(seed: int, n_ledgers: int = 16, n_refund_files: int = 8, ledger_tok
         check=lambda a: False, gold=gold, oracle=oracle, max_steps=60,
         rounds=rounds, round_score=score_round, context_limit=context_limit, disclose_limit=disclose_limit,
         step_observation_budget=step_observation_budget,
+        # ground truth for recall measurement: the facts each round needs from earlier rounds
+        resources={"dependencies": [
+            [],
+            [{"kind": "carry", "from_round": 1, "fact": f"total paid to {v}", "value": paid[v]} for v in targets],
+            [{"kind": "carry", "from_round": 2, "fact": f"net spend of {v}", "value": net[v]} for v in targets],
+        ]},
     )

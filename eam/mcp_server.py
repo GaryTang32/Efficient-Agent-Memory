@@ -7,6 +7,9 @@ Register it with any MCP client, e.g. Claude Code (`.mcp.json`):
     {"mcpServers": {"automem": {"command": "python", "args": ["-m", "eam.mcp_server"],
                                 "env": {"EAM_MEMORY_DIR": "/path/to/project-memory"}}}}
 
+Recalled notes come back as a <memory> block marked as data; secrets are redacted before anything is stored; the
+store is owner-only (see eam/safety.py and SECURITY.md).
+
 Tools: write_note, read_notes, recall (notes for the start of a session), save_session (autosave a session's
 result), offload / read_artifact (recoverable offload of large text), context_budget (should the caller compact,
 how much may the next step add), compact (ReSum's official summary prompt: returned for the caller's own model to
@@ -53,7 +56,7 @@ TOOLS: list[dict[str, Any]] = MemorySkill.tool_specs() + [
      "returns the message to restart the conversation from (task, notes and recap).",
      "input_schema": {"type": "object", "properties": {"question": {"type": "string"},
                                                        "recap": {"type": "string"},
-                                                       "variant": {"type": "string", "enum": ["general", "swe"]}},
+                                                       "variant": {"type": "string", "enum": ["general", "swe", "brief"]}},
                       "required": ["question"]}},
 ]
 
@@ -113,6 +116,8 @@ class Server:
             return msgs[-1]["content"]
         if name == "handoff":
             if args.get("variant"):
+                if args["variant"] not in ("general", "swe", "brief"):
+                    raise ValueError("variant must be 'general', 'swe' or 'brief'")
                 s.handoff_variant = str(args["variant"])
             if not args.get("recap"):
                 return s.handoff_prompt()
@@ -126,7 +131,7 @@ class Server:
         try:
             if method == "initialize":
                 result = {"protocolVersion": PROTOCOL, "capabilities": {"tools": {}},
-                          "serverInfo": {"name": "eam-automem", "version": "1.0"}}
+                          "serverInfo": {"name": "eam-automem", "version": "0.2.0"}}
             elif method == "tools/list":
                 result = {"tools": [{"name": t["name"], "description": t["description"],
                                      "inputSchema": t["input_schema"]} for t in TOOLS]}

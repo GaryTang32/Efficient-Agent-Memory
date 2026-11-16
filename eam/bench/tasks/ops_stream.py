@@ -46,6 +46,10 @@ def generate(seed: int, n_days: int = 10, files_per_day: int = 3, events_per_fil
     day_files: list[list[str]] = []
     expected: list[dict[str, int]] = []
     ev = 50000
+    # ground truth for recall measurement (no RNG use, so the generated task is unchanged): per day, the facts from
+    # earlier days it needs: yesterday's closing stock of each tracked SKU, and every corrected event of an earlier day
+    event_day: dict[str, int] = {}
+    deps: list[list[dict]] = []
 
     def apply(eid, new_qty):
         sku, typ, old = events[eid]
@@ -53,6 +57,8 @@ def generate(seed: int, n_days: int = 10, files_per_day: int = 3, events_per_fil
         events[eid][2] = new_qty
 
     for d in range(1, n_days + 1):
+        today = [{"kind": "carry", "from_round": d - 1, "fact": f"closing stock of {s} on day {d - 1}",
+                  "value": expected[-1][s]} for s in tracked] if d > 1 else []
         ids = []
         for f in range(files_per_day):
             fid = f"D{d:02d}-{'ABC'[f]}"
@@ -76,6 +82,9 @@ def generate(seed: int, n_days: int = 10, files_per_day: int = 3, events_per_fil
                         new = max(1, old + rng.choice([-1, 1]) * rng.randint(5, 40))
                         lines.append(f"{eid} | day {d} | AMEND {target} | qty={new}")
                     if stock[sku] + SIGN[typ] * (new - old) >= 0:
+                        if event_day[target] < d:
+                            today.append({"kind": "correction", "from_round": event_day[target], "event": target,
+                                          "fact": f"{target}: {typ} of {sku}, qty {old}", "value": old})
                         apply(target, new)
                     else:  # would make stock negative: keep the original, drop the line
                         lines.pop()
@@ -95,6 +104,7 @@ def generate(seed: int, n_days: int = 10, files_per_day: int = 3, events_per_fil
                     if qty == 0:
                         typ, qty = "RECEIPT", rng.randint(20, 120)
                 events[eid] = [sku, typ, qty]
+                event_day[eid] = d
                 stock[sku] += SIGN[typ] * qty
                 lines.append(f"{eid} | day {d} | {typ} | sku={sku} | qty={qty}")
             filler = filler_paragraphs(rng, max(0, file_tokens - events_per_file * 22))
@@ -102,6 +112,7 @@ def generate(seed: int, n_days: int = 10, files_per_day: int = 3, events_per_fil
                           + "\n\nEvents:\n" + "\n".join(lines) + "\n\n" + "\n\n".join(filler[len(filler) // 2:]))
         day_files.append(ids)
         expected.append({s: stock[s] for s in tracked})
+        deps.append(today)
 
     names = ", ".join(tracked)
 
@@ -226,4 +237,5 @@ def generate(seed: int, n_days: int = 10, files_per_day: int = 3, events_per_fil
         ],
         check=lambda a: False, gold=gold, oracle=oracle, max_steps=40, rounds=rounds, round_score=score_round,
         context_limit=context_limit, step_observation_budget=step_observation_budget, disclose_limit=disclose_limit,
+        resources={"dependencies": deps},
     )

@@ -13,6 +13,7 @@ from typing import Any, Iterable
 from eam.agent.loop import DEFAULT_SYSTEM, run_agent
 from eam.bench.tasks import FAMILIES
 from eam.bench.tasks.common import TaskInstance
+from eam.bench.trace import new_run_id, write_trace
 from eam.cost import CostMeter
 from eam.llm.mock import MockLLM
 from eam.llm.routes import make_client
@@ -62,6 +63,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     rewrites, events = 0, Counter()
     tool_calls = 0
     all_events: list[dict[str, Any]] = []  # every session's events, for the optional transcript
+    session_messages: list[list[dict[str, Any]]] = []  # every scored session's messages, for the trace
     if context_limit:
         common["context_limit"] = context_limit
         common["context_gauge"] = inst.disclose_limit
@@ -84,6 +86,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         steps, peak, finished = 0, 0, True
         for k, prompt in enumerate(inst.rounds):
             r = run_agent(prompt, max_steps=inst.max_steps, **common)
+            session_messages.append(r.history)
             tool_calls += r.tool_calls
             all_events += [dict(e, session=k) for e in r.events]
             # an unfinished session (overflow, step limit) scores 0, except where the task grades its final state
@@ -101,6 +104,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         rewrites -= res.history_rewrites  # counted in the loop above
     else:
         res = run_agent(inst.prompt, max_steps=inst.max_steps, **common)
+        session_messages.append(res.history)
         tool_calls += res.tool_calls
         events.update(e["kind"] for e in res.events)
     res.steps += early_steps
@@ -113,7 +117,8 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         calls = [{"tag": c.tag, "prompt_tokens": c.usage.prompt_tokens, "cost": c.cost} for c in meter.records]
         (tdir / name).write_text(json.dumps({"messages": res.messages, "events": all_events or res.events,
                                              "calls": calls}, default=str)[:20_000_000])
-    return {
+    row = {
+        "run_id": new_run_id(),
         "family": inst.family,
         "instance": inst.instance_id,
         "spec": spec,
@@ -159,6 +164,10 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
         "answer": res.answer[:500],
         "gold": inst.gold,
     }
+    write_trace(row["run_id"], row=row, sessions=session_messages,
+                events=all_events or [dict(e, session=0) for e in res.events], calls=meter.records,
+                grades=inst.resources.get("grades"))
+    return row
 
 
 def run_suite(families_specs: dict[str, list[str]], *, backend: str, model_key: str, aux_key: str | None,
