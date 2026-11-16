@@ -359,6 +359,12 @@ skill.save_session(final_answer)
 `MemorySkill(..., compaction="handoff")` switches to NVIDIA's handoff recap (`handoff_prompt()` / `apply_handoff()`).
 Full loop: [`docs/automem.md`](docs/automem.md).
 
+Notes are typed records: `skill.write_note("cache fix", text, type="decision", files=["utils/cache.py"],
+supersedes="cache plan")` retires the older note from recall. Session results are saved as type `result`. Storage is
+pluggable and standard library only: `MemorySkill(store=SQLiteStore("~/.eam-memory/app.db"))` instead of the default
+JSON files, or `MemoryStore()` for short-lived agents (`eam.automem`). The rules themselves are pure functions in
+`eam.automem.core`, shared by the library and the MCP server.
+
 ### MCP server
 
 Add to `.mcp.json` (Claude Code) or your MCP client's configuration:
