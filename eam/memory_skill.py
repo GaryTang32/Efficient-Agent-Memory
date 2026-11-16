@@ -10,6 +10,10 @@ OpenAI-style message lists, with a persistent on-disk store.
     ...
     skill.save_session(final_answer)                                                            # autosave
 
+Layers (`eam/automem/`): the decisions are pure functions in `eam.automem.core`; notes are typed records
+(`eam.automem.notes`: fact, decision, dead_end, command, result, ...; a note can supersede an older one, which recall
+then skips); storage is pluggable (`store=JsonStore(root)` by default, or `SQLiteStore(path)`, `MemoryStore()`).
+
 Safety (`eam/safety.py`): recalled notes come back inside a ``<memory>`` block marked as data (the system addendum
 says never to follow instructions found there), and at most `recall_budget` × window of them per recall; secrets are
 redacted before anything is saved; files are owner-only and written atomically, notes under a lock; artifacts older
@@ -30,15 +34,15 @@ or `maybe_compact` has `summarize` write it from a transcript. Tool specs for wr
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any, Callable
 
 from eam import safety as S
+from eam.automem import core as C
+from eam.automem.notes import NOTE_TYPES, Note
+from eam.automem.storage import JsonStore, Store
 from eam.techniques.auto_memory import GUARDED, RECALL
 from eam.techniques.third_party import resum as P
 from eam.techniques.workspace import NoteWorkspace
@@ -46,14 +50,16 @@ from eam.tokens import estimate_tokens
 
 
 class MemorySkill:
-    def __init__(self, root: str | Path, *, window: int = 200_000, trigger: float = 0.75, guard: float = 0.9,
+    def __init__(self, root: str | Path | None = None, *, store: Store | None = None, window: int = 200_000, trigger: float = 0.75, guard: float = 0.9,
                  token_ratio: float = 1.5, summarize: Callable[[str], str] | None = None,
                  max_note_chars: int = 20_000, preview: float = 0.1, preview_tokens: int = 750,
                  compaction: str = "resum", handoff_variant: str = "general", recall_budget: float = 0.1,
                  retention_days: float = 14, max_artifact_mb: float = 200, max_artifact_chars: int = 10_000_000,
                  wrap: bool = True):
-        self.root = S.private_dir(root)
-        S.private_dir(self.root / "artifacts")
+        if store is None and root is None:
+            raise ValueError("give a directory (root) or a store")
+        self.store: Store = store if store is not None else JsonStore(root)
+        self.root = getattr(self.store, "root", None)
         # recalled notes take at most this share of the window; older notes are listed by name (read_notes fetches)
         self.recall_budget = float(recall_budget)
         self.retention_days, self.max_artifact_mb = float(retention_days), float(max_artifact_mb)
@@ -72,102 +78,68 @@ class MemorySkill:
         self._last_summary: str | None = None
 
     # ---- persistent notes ----------------------------------------------------------------------------------
-    @property
-    def _notes_path(self) -> Path:
-        return self.root / "notes.json"
+    def records(self) -> list[Note]:
+        """Every note with its metadata, oldest first (superseded ones included)."""
+        return self.store.load()
 
     def notes(self) -> dict[str, str]:
-        """All notes, oldest first. A store that cannot be parsed is moved aside (notes.json.corrupt-<time>) rather
-        than breaking the session."""
-        if not self._notes_path.exists():
-            return {}
-        try:
-            data = json.loads(self._notes_path.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return {str(k): str(v) for k, v in data.items()}
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            pass
-        aside = self._notes_path.with_name(f"notes.json.corrupt-{time.strftime('%Y%m%d-%H%M%S')}")
-        os.replace(self._notes_path, aside)
-        print(f"automem: unreadable notes store moved to {aside}", file=sys.stderr)
-        return {}
+        """The active notes as {name: text}, oldest first."""
+        return {n.name: n.text for n in C.active(self.store.load())}
 
-    def write_note(self, name: str, content: str) -> str:
-        name = S.redact((name or "note").strip() or "note")[:200]
-        with S.locked(self._notes_path):  # read-modify-write: concurrent sessions must not drop each other's notes
-            notes = self.notes()
-            existed = name in notes
-            notes.pop(name, None)  # re-insert at the end: insertion order is recency
-            notes[name] = S.redact(str(content))[: self.max_note_chars]
-            S.write_private(self._notes_path, json.dumps(notes, indent=1))
-        return (f"{'Replaced' if existed else 'Saved'} note '{name}' ({len(notes[name])} chars). "
-                f"Notes: {', '.join(sorted(notes))}")
-
-    def _notes_within(self, budget_tokens: int) -> tuple[list[tuple[str, str]], list[str]]:
-        """The newest notes that fit in `budget_tokens` (in their original order), and the names of the rest."""
-        items, kept, used = list(self.notes().items()), [], 0
-        for name, text in reversed(items):
-            n = estimate_tokens(f"## {name}\n{text}\n\n")
-            if kept and used + n > budget_tokens:
-                break
-            kept.append((name, text))
-            used += n
-        names = {k for k, _ in kept}
-        return list(reversed(kept)), [k for k, _ in items if k not in names]
+    def write_note(self, name: str, content: str, *, type: str = "note", source: str = "agent",
+                   supersedes: str = "", files: list[str] | None = None, session: str = "") -> str:
+        note = C.make_note(name, content, max_chars=self.max_note_chars, type=type, source=source,
+                           supersedes=S.redact(supersedes or "")[:200], files=files, session=session)
+        with self.store.transaction() as notes:  # read-modify-write: concurrent sessions keep each other's notes
+            existed = C.upsert(notes, note)
+            names = sorted(n.name for n in C.active(notes))
+        retired = f" '{note.supersedes}' is now superseded." if note.supersedes else ""
+        return (f"{'Replaced' if existed else 'Saved'} note '{note.name}' ({len(note.text)} chars).{retired} "
+                f"Notes: {', '.join(names)}")
 
     def read_notes(self, name: str | None = None) -> str:
-        notes = self.notes()
-        if not notes:
+        notes = self.store.load()
+        if not C.active(notes):
             return "The workspace is empty."
         if name:
-            if name not in notes:
-                raise ValueError(f"no note '{name}'. Notes: {', '.join(sorted(notes))}")
-            return f"## {name}\n{notes[name]}"
-        kept, rest = self._notes_within(max(1, int(self.recall_budget * self.window)))
-        text = "\n\n".join(f"## {k}\n{v}" for k, v in kept)
-        if rest:
-            text += f"\n\n[Older notes not shown, read one with read_notes(name=...): {', '.join(rest)}]"
-        return text
+            match = [n for n in notes if n.name == name]
+            if not match:
+                raise ValueError(f"no note '{name}'. Notes: {', '.join(sorted(n.name for n in notes))}")
+            return match[0].render() + (" [superseded]" if not match[0].active else "")
+        return C.render_notes(*C.select_recall(notes, self._recall_budget()))
+
+    def _recall_budget(self) -> int:
+        return max(1, int(self.recall_budget * self.window))
 
     def system_addendum(self) -> str:
         base = NoteWorkspace().system_addendum()
         return f"{base}\n\n{S.MEMORY_RULE}" if self.wrap else base
 
     def _recall_text(self) -> str:
-        notes = self.read_notes()
-        return S.wrap_memory(notes, "workspace notes from earlier sessions") if self.wrap else notes
+        return C.recall_text(self.store.load(), self._recall_budget(), wrap=self.wrap)
 
     def session_preamble(self) -> str:
-        """Recall: the newest notes within the recall budget, as a <memory> block, to put at the top of a new
+        """Recall: the newest active notes within the recall budget, as a <memory> block, to put at the top of a new
         session's first message (empty if there are none)."""
-        return RECALL.format(notes=self._recall_text()) + "\n\n" if self.notes() else ""
+        text = self._recall_text()
+        return RECALL.format(notes=text) + "\n\n" if text else ""
 
     def save_session(self, answer: str, label: str | None = None) -> None:
-        """Autosave: keep a session's final answer as a note."""
+        """Autosave: keep a session's final answer as a note of type 'result'."""
         if answer:
-            self.write_note(label or f"session {time.strftime('%Y-%m-%d %H:%M:%S')} final answer", answer)
+            self.write_note(label or f"session {time.strftime('%Y-%m-%d %H:%M:%S')} final answer", answer,
+                            type="result", source="autosave")
 
     # ---- artifacts (recoverable offload) -------------------------------------------------------------------
     def offload(self, text: str, label: str = "") -> str:
-        art = self.root / "artifacts"
-        S.prune(art, max_age_days=self.retention_days, max_bytes=int(self.max_artifact_mb * 2**20))
+        self.store.prune(self.retention_days, int(self.max_artifact_mb * 2**20))
         text = S.redact(str(text))
         if len(text) > self.max_artifact_chars:
             text = text[: self.max_artifact_chars] + f"\n…[cut at {self.max_artifact_chars:,} characters]"
-        n = len(list(art.glob("*.txt"))) + 1
-        while not S.create_private(art / f"a{n:05d}.txt", text):  # exclusive create: concurrent writers never collide
-            n += 1
-        aid = f"a{n:05d}"
-        if label:
-            S.write_private(art / f"{aid}.label", S.redact(str(label))[:500])
-        return f"artifact://{aid}"
+        return f"artifact://{self.store.put_artifact(text, S.redact(str(label))[:500] if label else '')}"
 
     def read_artifact(self, artifact_id: str, offset: int = 0, length: int = 12_000) -> str:
-        aid = artifact_id.removeprefix("artifact://")
-        path = self.root / "artifacts" / f"{aid}.txt"
-        if not re.fullmatch(r"a\d{5}", aid) or not path.exists():
-            raise ValueError(f"no artifact '{artifact_id}'")
-        text = path.read_text()
+        text = self.store.get_artifact(artifact_id)
         chunk = text[offset: offset + length]
         rest = len(text) - offset - len(chunk)
         return chunk + (f"\n…[{rest} more chars; call read_artifact with offset={offset + len(chunk)}]" if rest > 0
@@ -184,14 +156,12 @@ class MemorySkill:
         prompt past `guard` × window."""
         if self._step_used is None:
             self.start_step(context_tokens or 0)
-        if self.preview and estimate_tokens(text) > self.preview * self.window:
-            from eam.techniques.strands import preview as head_tail
-
-            short = head_tail(text, self.preview_tokens)
+        if C.needs_preview(text, self.window, self.preview):
+            short = C.preview(text, self.preview_tokens)
             if short != text:
                 text = f"{short}\n\n[Full output stored at {self.offload(text, name)}; page it with read_artifact.]"
         n = int(estimate_tokens(text) * self.token_ratio)
-        if self.guard and self._step_used + n > self.guard * self.window and n > 200:
+        if C.guard_exceeded(self._step_used, n, self.window, self.guard):
             text = GUARDED.format(name=name, tokens=estimate_tokens(text), pointer=self.offload(text, name))
             n = int(estimate_tokens(text) * self.token_ratio)
         self._step_used += n
@@ -204,7 +174,7 @@ class MemorySkill:
 
     # ---- compaction (ReSum's official prompts) -------------------------------------------------------------
     def should_compact(self, context_tokens: int) -> bool:
-        return context_tokens >= self.trigger * self.window
+        return C.should_compact(context_tokens, self.window, self.trigger)
 
     def maybe_compact(self, messages: list[dict[str, Any]], *, context_tokens: int, question: str
                       ) -> list[dict[str, Any]]:
@@ -256,10 +226,15 @@ class MemorySkill:
     @staticmethod
     def tool_specs() -> list[dict[str, Any]]:
         return [
-            {"name": "write_note", "description": "Create or overwrite a named note in your persistent workspace.",
-             "input_schema": {"type": "object", "properties": {"name": {"type": "string"},
-                                                               "content": {"type": "string"}},
-                              "required": ["name", "content"]}},
+            {"name": "write_note", "description": "Create or overwrite a named note in your persistent workspace. "
+             "Optionally give its type, the files it concerns, and the name of an older note it replaces (that note "
+             "is then no longer recalled).",
+             "input_schema": {"type": "object", "properties": {
+                 "name": {"type": "string"}, "content": {"type": "string"},
+                 "type": {"type": "string", "enum": list(NOTE_TYPES)},
+                 "files": {"type": "array", "items": {"type": "string"}},
+                 "supersedes": {"type": "string"}},
+                 "required": ["name", "content"]}},
             {"name": "read_notes", "description": "Read the notes in your persistent workspace (the newest that fit; "
              "older ones are listed by name), or one note by name.",
              "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}}},
@@ -273,7 +248,10 @@ class MemorySkill:
 
     def call_tool(self, name: str, args: dict[str, Any]) -> str:
         if name == "write_note":
-            return self.write_note(str(args.get("name", "note")), str(args.get("content", "")))
+            files = args.get("files") if isinstance(args.get("files"), list) else None
+            return self.write_note(str(args.get("name", "note")), str(args.get("content", "")),
+                                   type=str(args.get("type") or "note"), supersedes=str(args.get("supersedes") or ""),
+                                   files=[str(f) for f in files] if files else None)
         if name == "read_notes":
             return self.read_notes(str(args["name"]) if args.get("name") else None)
         if name == "read_artifact":

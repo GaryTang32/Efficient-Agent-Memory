@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+**Layers.** AutoMemory is split into a pure core, pluggable storage and thin host adapters (`eam/automem/`):
+- `eam.automem.core`: the decisions as pure functions (recall selection within a token budget, previews, the in-step
+  guard, the compaction trigger), shared by the library and the MCP server.
+- `eam.automem.storage`: `JsonStore` (the default, the same files as before), `SQLiteStore` (one owner-only file,
+  WAL journal, safe under concurrent writers) and `MemoryStore`, behind one interface and one conformance test suite.
+- `MemorySkill(store=...)` takes any of them; `MemorySkill(root)` works as before.
+
+**Typed notes.** Notes carry a type (fact, decision, dead_end, command, result, handoff or note), source, time, files
+and an optional `supersedes` link; a superseded note is no longer recalled. Recall headings show the type and date.
+The notes file moves to schema version 2; version 1 files are read as they are and rewritten on the next write. The
+MCP `write_note` tool and the library tool spec accept `type`, `files` and `supersedes`. The plugin tags its autosaved
+notes as `result`.
+
 ## 0.2.0 (2026-11-13): security release
 
 A review of what AutoMemory keeps between sessions found two high-severity issues and several smaller ones. All are

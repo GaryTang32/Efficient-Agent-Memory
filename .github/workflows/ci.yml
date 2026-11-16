@@ -39,7 +39,7 @@ jobs:
       - name: Adversarial tests (memory poisoning, secrets, file safety, concurrency)
         run: python -m pytest -q tests/test_security.py tests/test_lightweight.py
       - name: Static analysis of the shipped code (library, MCP server, plugin hooks)
-        run: bandit -q -ll -r eam/safety.py eam/memory_skill.py eam/mcp_server.py plugins/automem/hooks
+        run: bandit -q -ll -r eam/safety.py eam/memory_skill.py eam/mcp_server.py eam/automem plugins/automem/hooks
       - name: Dependency audit
         run: pip-audit --strict .
       - name: Secret scan of the history

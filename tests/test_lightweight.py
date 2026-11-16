@@ -20,7 +20,8 @@ def test_no_runtime_dependencies():
 
 
 def test_shipped_files_import_only_the_standard_library():
-    files = [ROOT / "eam/safety.py", *sorted((ROOT / "plugins/automem/hooks").glob("*.py"))]
+    files = [ROOT / "eam/safety.py", ROOT / "eam/memory_skill.py", ROOT / "eam/mcp_server.py",
+             *sorted((ROOT / "eam/automem").glob("*.py")), *sorted((ROOT / "plugins/automem/hooks").glob("*.py"))]
     local = {"automem_safety", "eam"}
     for f in files:
         for node in ast.walk(ast.parse(f.read_text())):

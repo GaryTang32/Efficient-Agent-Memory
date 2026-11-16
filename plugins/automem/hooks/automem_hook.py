@@ -204,7 +204,7 @@ def stop(d: dict) -> None:
         return None
     f = notes_file(d.get("cwd") or os.getcwd())
     entry = json.dumps({"time": time.strftime("%Y-%m-%d %H:%M"), "session": d.get("session_id", ""),
-                        "text": S.redact(text)[:1500]})
+                        "type": "result", "source": "autosave", "text": S.redact(text)[:1500]})
     with S.locked(f):  # sessions in the same project must not drop each other's notes
         lines = f.read_text(errors="replace").splitlines() if f.exists() else []
         lines = [ln for ln in lines if ln.strip()] + [entry]
