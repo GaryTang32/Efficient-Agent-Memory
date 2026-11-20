@@ -16,7 +16,8 @@ runs without a model call and never rewrites history that is already in the prom
                                  App. G) as the compaction instructions
     stop           Stop          autosave: the turn's final message is kept as a project note (no extra turn)
 
-Settings (environment variables):
+Settings (environment variables; accepted ranges in RANGES below and in the README; an out-of-range value falls
+back to its default):
     AUTOMEM_PREVIEW_CHARS  preview threshold per stream, characters (default 6000; 0 turns previews off)
     AUTOMEM_PREVIEW_KEEP   characters kept at the head and at the tail (default 1500 each)
     AUTOMEM_PREVIEW_TOKENS the same threshold in tokens (about 4 characters each); overrides AUTOMEM_PREVIEW_CHARS
@@ -69,18 +70,38 @@ to a file by AutoMemory, give the file path and a narrow command to retrieve it.
 # Claude Code's own compaction, which the PreCompact hook may extend but not replace.
 
 
-def _env_int(name: str, default: int) -> int:
+# accepted range per setting (low, high); 0 is also accepted where it turns a feature off. A value outside its range,
+# or not a number, falls back to the default: a memory hook must never break the session over a typo.
+RANGES = {"AUTOMEM_PREVIEW_CHARS": (500, 2_000_000), "AUTOMEM_PREVIEW_KEEP": (100, 200_000),
+          "AUTOMEM_PREVIEW_TOKENS": (125, 500_000), "AUTOMEM_PREVIEW_KEEP_TOKENS": (25, 50_000),
+          "AUTOMEM_PREVIEW_MAX_TOKENS": (500, 1_000_000), "AUTOMEM_PREVIEW_SHARE": (0.001, 0.5),
+          "AUTOMEM_RECALL_CHARS": (100, 200_000), "AUTOMEM_RECALL_TOKENS": (25, 50_000),
+          "AUTOMEM_RETENTION_DAYS": (1, 3650), "AUTOMEM_OUTPUT_MB": (1, 100_000),
+          "AUTOMEM_WINDOW": (1_000, 10_000_000), "CLAUDE_CODE_AUTO_COMPACT_WINDOW": (1_000, 10_000_000)}
+OFF_OK = {"AUTOMEM_PREVIEW_CHARS", "AUTOMEM_PREVIEW_TOKENS", "AUTOMEM_PREVIEW_MAX_TOKENS", "AUTOMEM_RECALL_CHARS",
+          "AUTOMEM_RECALL_TOKENS", "AUTOMEM_RETENTION_DAYS"}
+
+
+def _env_num(name: str, default, cast=int):
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
     try:
-        return int(os.environ.get(name, default))
+        value = cast(float(raw))
     except ValueError:
         return default
+    low, high = RANGES.get(name, (float("-inf"), float("inf")))
+    if (value == 0 and name in OFF_OK) or low <= value <= high:
+        return value
+    return default
+
+
+def _env_int(name: str, default: int) -> int:
+    return _env_num(name, default, int)
 
 
 def _env_float(name: str) -> float | None:
-    try:
-        return float(os.environ[name]) if os.environ.get(name) else None
-    except ValueError:
-        return None
+    return _env_num(name, None, float)
 
 
 def _chars(tokens_var: str, chars_var: str, default: int) -> int:

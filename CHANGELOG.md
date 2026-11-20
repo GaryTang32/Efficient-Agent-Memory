@@ -9,6 +9,11 @@
 - Settings can change per session, through `start_session(task, **settings)` or `next_session(**settings)`. A
   session that sets nothing goes back to the defaults. `next_session` works with every adapter.
 - The MCP server reads `EAM_MEMORY_COMPACT_AT` and `EAM_MEMORY_PREVIEW_MAX_TOKENS`.
+- Every library setting has an accepted range (`eam/automem/settings.py`). `MemorySkill` and `MemoryHooks` refuse a
+  value outside it, with an error naming the range. The plugin falls back to the default instead.
+- The plugin's sizes can be given in tokens (`AUTOMEM_PREVIEW_TOKENS`, `AUTOMEM_PREVIEW_KEEP_TOKENS`,
+  `AUTOMEM_RECALL_TOKENS`), or as a share of Claude Code's compaction window (`AUTOMEM_PREVIEW_SHARE`).
+- `docs/settings.md` lists all 54 settings with their defaults, ranges and where each default comes from.
 
 ## 0.3.0 (2026-11-20): framework adapters
 

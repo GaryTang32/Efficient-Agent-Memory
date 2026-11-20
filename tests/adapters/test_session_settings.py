@@ -37,7 +37,7 @@ def test_bad_settings_are_refused(tmp_path):
         with pytest.raises(ValueError):
             hooks.next_session(**bad)
     with pytest.raises(ValueError):
-        hooks.start_session("t", guard=0)
+        hooks.start_session("t", guard=1.5)
 
 
 def test_preview_cap_for_large_windows(tmp_path):
@@ -69,3 +69,31 @@ def test_default_cap_only_changes_large_windows(tmp_path):
     over = "x" * (4 * 17_000)  # about 17K tokens
     assert "artifact://" in MemoryHooks(tmp_path / "b", window=1_000_000).on_tool_result("t", over)
     assert MemoryHooks(tmp_path / "d", window=1_000_000, preview_max_tokens=0).on_tool_result("t", over) == over
+
+
+def test_settings_reference_covers_every_setting():
+    """docs/settings.md lists every library setting with its default, and every plugin variable."""
+    import re
+    from pathlib import Path
+
+    from eam.automem.settings import SETTINGS
+
+    root = Path(__file__).resolve().parents[2]
+    doc = (root / "docs" / "settings.md").read_text()
+    for name in [*SETTINGS, "compact_at"]:
+        assert f"| `{name}` |" in doc, name
+    plugin = (root / "plugins/automem/hooks/automem_hook.py").read_text()
+    for var in sorted(set(re.findall(r"AUTOMEM_[A-Z_]+", plugin))):
+        assert f"`{var}`" in doc, var
+
+
+def test_library_refuses_values_outside_the_range(tmp_path):
+    from eam.memory_skill import MemorySkill
+
+    for bad in ({"trigger": 1.5}, {"window": 10}, {"preview": 0.9}, {"compaction": "x"}, {"preview_max_tokens": 10}):
+        with pytest.raises(ValueError, match="must be"):
+            MemorySkill(tmp_path, **bad)
+    s = MemorySkill(tmp_path, guard=0, preview=0, preview_max_tokens=0)  # 0 turns each off
+    assert (s.guard, s.preview, s.preview_max_tokens) == (0, 0, None)
+    with pytest.raises(ValueError, match="compact_at"):
+        MemoryHooks(tmp_path, window=100_000, compact_at=200_000)

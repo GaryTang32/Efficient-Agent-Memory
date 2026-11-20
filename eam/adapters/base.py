@@ -30,6 +30,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from eam.automem.settings import check_all
 from eam.memory_skill import MemorySkill
 
 MEMORY_TOOLS = ("write_note", "read_notes", "read_artifact")
@@ -38,23 +39,12 @@ SESSION_SETTINGS = ("window", "trigger", "guard", "preview", "preview_tokens", "
                     "compaction", "handoff_variant")
 
 
-def _check(settings: dict[str, Any]) -> dict[str, Any]:
-    """Validate session settings; `compact_at` (tokens) becomes `trigger` (a share of the window)."""
-    out = dict(settings)
-    unknown = set(out) - set(SESSION_SETTINGS) - {"compact_at"}
+def _check(values: dict[str, Any]) -> dict[str, Any]:
+    """Validate session settings against eam/automem/settings.py; `compact_at` (tokens) becomes `trigger` later."""
+    unknown = set(values) - set(SESSION_SETTINGS) - {"compact_at"}
     if unknown:
         raise ValueError(f"unknown setting(s) {sorted(unknown)}; choose from {list(SESSION_SETTINGS) + ['compact_at']}")
-    if "window" in out and int(out["window"]) <= 0:
-        raise ValueError("window must be a positive number of tokens")
-    for k in ("trigger", "guard"):
-        if k in out and not 0 < float(out[k]) <= 1:
-            raise ValueError(f"{k} is a share of the window, between 0 and 1")
-    for k in ("preview", "recall_budget"):
-        if k in out and not 0 <= float(out[k]) <= 1:
-            raise ValueError(f"{k} is a share of the window, between 0 and 1")
-    if out.get("compaction", "resum") not in ("resum", "handoff"):
-        raise ValueError("compaction must be 'resum' or 'handoff'")
-    return out
+    return check_all(values)
 
 
 class MemoryHooks:
@@ -100,7 +90,9 @@ class MemoryHooks:
         for k, v in settings.items():
             setattr(self.skill, k, v)
         if at is not None:
-            self.skill.trigger = min(1.0, int(at) / self.skill.window)
+            if at > self.skill.window:
+                raise ValueError(f"compact_at ({at:,}) must not exceed window ({self.skill.window:,})")
+            self.skill.trigger = max(0.05, int(at) / self.skill.window)
 
     def next_session(self, **settings: Any) -> None:
         """Settings for the next session only (window, trigger or compact_at, guard, preview, preview_tokens,

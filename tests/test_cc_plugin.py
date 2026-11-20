@@ -113,3 +113,14 @@ def test_preview_sizes_in_tokens_and_relative_to_the_compaction_window(tmp_path)
     # head and tail in tokens: 500 tokens each = 2,000 characters
     upd = json.loads(run("post_tool_use", bash(40_000), tmp_path, AUTOMEM_PREVIEW_KEEP_TOKENS=500))
     assert len(upd["hookSpecificOutput"]["updatedToolOutput"]["stdout"]) < 4_400
+
+
+def test_out_of_range_settings_fall_back_to_the_defaults(tmp_path):
+    payload = {"tool_name": "Bash", "cwd": str(tmp_path), "tool_use_id": "toolu_y", "tool_input": {"command": "t"},
+               "tool_response": {"stdout": "line of output\n" * 1000, "stderr": "", "interrupted": False,
+                                 "isImage": False}}  # 15,000 characters
+    for bad in ({"AUTOMEM_PREVIEW_CHARS": "12"}, {"AUTOMEM_PREVIEW_CHARS": "lots"}, {"AUTOMEM_PREVIEW_TOKENS": "-5"},
+                {"AUTOMEM_PREVIEW_SHARE": "3", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000"}):
+        out = json.loads(run("post_tool_use", payload, tmp_path, **bad))  # the default 6000-character threshold
+        assert "[AutoMemory:" in out["hookSpecificOutput"]["updatedToolOutput"]["stdout"], bad
+    assert not run("post_tool_use", payload, tmp_path, AUTOMEM_PREVIEW_CHARS="0")  # 0 still turns previews off

@@ -41,6 +41,7 @@ from typing import Any, Callable
 
 from eam import safety as S
 from eam.automem import core as C
+from eam.automem import settings
 from eam.automem.notes import NOTE_TYPES, Note
 from eam.automem.storage import JsonStore, Store
 from eam.automem.prompts import GUARDED, RECALL, RECAP_SECTION, WORKSPACE, compaction_prompt
@@ -58,6 +59,14 @@ class MemorySkill:
                  wrap: bool = True):
         if store is None and root is None:
             raise ValueError("give a directory (root) or a store")
+        checked = settings.check_all({  # ranges and defaults: eam/automem/settings.py, docs/settings.md
+            "window": window, "trigger": trigger, "guard": guard, "token_ratio": token_ratio,
+            "max_note_chars": max_note_chars, "preview": preview, "preview_tokens": preview_tokens,
+            "preview_max_tokens": preview_max_tokens, "compaction": compaction, "handoff_variant": handoff_variant,
+            "recall_budget": recall_budget, "retention_days": retention_days, "max_artifact_mb": max_artifact_mb,
+            "max_artifact_chars": max_artifact_chars, "wrap": bool(wrap)})
+        window, trigger, guard, preview_max_tokens = (checked["window"], checked["trigger"], checked["guard"],
+                                                      checked["preview_max_tokens"])
         self.store: Store = store if store is not None else JsonStore(root)
         self.root = getattr(self.store, "root", None)
         # recalled notes take at most this share of the window; older notes are listed by name (read_notes fetches)
