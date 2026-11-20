@@ -247,6 +247,30 @@ outputs, and its agent filters test logs itself (`| tail`, `| grep FAIL`), so th
 do. A fresh session per unrelated task was 7–27% cheaper per issue than one long session. The plugin stays a safe,
 optional add-on; the memory layer pays off in agents without these built-ins and in multi-session work (section above).
 
+**Different Claude Code settings (2026-11-20, 36 sessions, $4.64).** One headless session per workday of 5 Django
+issues, with Claude Code's compaction window at 100K and at 500K (a 1M model compacting at 500K). The sessions ran
+without the plugin, with its defaults, and with "scaled" sizes: previews above 2% of the window, and a recall of
+4,000 tokens.
+
+| Model · compaction window | No plugin | Plugin, defaults | Plugin, scaled |
+|---|---|---|---|
+| Haiku · 100K | 13/15 · $0.0048 | 15/15 · $0.0055 | 15/15 · $0.0058 |
+| Haiku · 500K | 13/15 · $0.0052 | 13/15 · $0.0053 | 14/15 · $0.0055 |
+| Sonnet · 100K | 15/15 · $0.0444 | 15/15 · $0.0427 | 15/15 · $0.0498 |
+| Sonnet · 500K | 15/15 · $0.0444 | 14/15 · $0.0427 | 15/15 · $0.0529 |
+
+Issues resolved · cost per issue.
+- **The plugin works under both settings.** No session errored. Previews and the handoff recap fired where they
+  could: Claude Code compacted twice, on Haiku at 100K.
+- **The defaults change little.** Issues resolved were within one or two of no plugin, and cost per issue within
+  ±15%, which is inside the run-to-run spread.
+- **The scaled sizes cost Sonnet 12–19% more, with no gain.** Claude Code runs the session-start hook again on every
+  resumed turn, so the larger recall was re-sent with each issue. Sonnet also took more turns (5.0–5.3 against
+  4.0–4.7). Keep the recall size at its default.
+- **Limits.** Prompts peaked at 58–80K, so the 500K window was never approached and compaction rarely fired. Tool
+  outputs stayed under about 2,000 characters, so preview thresholds did not matter. The check shows that the plugin
+  does no harm under these settings. It does not show savings at 500K.
+
 ## Methods tested
 
 Every technique follows its official code or prompts where they exist, and each module's docstring lists its

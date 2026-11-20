@@ -111,7 +111,7 @@ falls back to the default. Claude Code's own `CLAUDE_CODE_AUTO_COMPACT_WINDOW` d
 | `AUTOMEM_PREVIEW_KEEP_TOKENS` | unset | 25 – 50,000 | The head and tail in tokens; overrides `AUTOMEM_PREVIEW_KEEP` |
 | `AUTOMEM_WINDOW` | unset | 1,000 – 10,000,000 | The window for `AUTOMEM_PREVIEW_SHARE` when Claude Code's is not set |
 | `AUTOMEM_NOTES` | `on` | `on` / `off` | Recall and autosave; `off` for independent tasks, where notes are overhead |
-| `AUTOMEM_RECALL_CHARS` | 3,000 | 100 – 200,000, or `0` = no recall | Chosen: the most recent notes, small next to Claude Code's own prompt |
+| `AUTOMEM_RECALL_CHARS` | 3,000 | 100 – 200,000, or `0` = no recall | Measured: raising it to 4,000 tokens cost Sonnet 12–19% more with no gain, because Claude Code recalls again on every resumed turn |
 | `AUTOMEM_RECALL_TOKENS` | unset | 25 – 50,000, or `0` = no recall | The same in tokens; overrides `AUTOMEM_RECALL_CHARS` |
 | `AUTOMEM_DATA` | `$CLAUDE_PLUGIN_DATA`, else `~/.automem` | a directory | Where state lives, one folder per project |
 | `AUTOMEM_RETENTION_DAYS` | 14 | 1 – 3,650, or `0` = keep | Chosen (security) |
@@ -127,8 +127,12 @@ For a 1M model compacting at 500K:
 
 ```json
 {"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000", "AUTOMEM_PREVIEW_SHARE": "0.02",
-         "AUTOMEM_PREVIEW_MAX_TOKENS": "16000", "AUTOMEM_RECALL_TOKENS": "4000"}}
+         "AUTOMEM_PREVIEW_MAX_TOKENS": "16000"}}
 ```
+
+Keep the recall size at its default unless sessions need more. Claude Code runs the session-start hook again on
+every resumed turn, so a larger recall is re-sent each time. In the settings check, 4,000 tokens of recall (against
+the default 3,000 characters) cost Sonnet 12–19% more, with no gain in issues fixed.
 
 ## Bench technique (research)
 

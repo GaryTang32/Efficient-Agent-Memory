@@ -51,12 +51,16 @@ model with compaction at 500K, for example:
 
 ```json
 {"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000",
-         "AUTOMEM_PREVIEW_SHARE": "0.02", "AUTOMEM_PREVIEW_MAX_TOKENS": "16000", "AUTOMEM_RECALL_TOKENS": "4000"}}
+         "AUTOMEM_PREVIEW_SHARE": "0.02", "AUTOMEM_PREVIEW_MAX_TOKENS": "16000"}}
 ```
 
 With that, Bash outputs above 10,000 tokens reach the model as head and tail. Claude Code itself cuts a Bash output
 at about 30,000 characters and saves the rest. The plugin then shows the head and the real tail from that saved copy,
 whatever the threshold.
+
+Keep the recall size at its default unless sessions need more. Claude Code runs the session-start hook again on
+every resumed turn, so a larger recall is re-sent each time. In the settings check, 4,000 tokens of recall (against
+the default 3,000 characters) cost Sonnet 12–19% more, with no gain in issues fixed.
 
 ## Measured inside Claude Code
 
