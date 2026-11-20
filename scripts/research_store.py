@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 # rows with the corrected grading (validation round, 2026-11-08, onward); older rows suggest hypotheses only
 EVIDENCE = ["sameday_*.jsonl", "oos_*.jsonl", "recheck_*.jsonl", "rank3_*.jsonl", "wrap_syn-*.jsonl",
-            "traced_swe-*.jsonl", "canary-*.jsonl"]
+            "traced_swe-*.jsonl", "canary-*.jsonl", "recall-*.jsonl"]
 CEILING = "naive@native"
 # the row fields the views use, with nested ones kept as JSON (inferring their varying structure costs gigabytes)
 RUN_COLUMNS = {
@@ -42,7 +42,8 @@ TRACE_COLUMNS = {
     "message": "BIGINT", "kind": "VARCHAR", "fields": "JSON", "tag": "VARCHAR", "model": "VARCHAR",
     "input_tokens": "BIGINT", "output_tokens": "BIGINT", "cache_read_tokens": "BIGINT", "cache_write_tokens": "BIGINT",
     "cost_usd": "DOUBLE", "latency_ms": "DOUBLE", "patch": "VARCHAR", "report": "VARCHAR", "resolved": "BOOLEAN",
-    "score": "DOUBLE", "spec": "VARCHAR", "instance": "VARCHAR",
+    "score": "DOUBLE", "spec": "VARCHAR", "instance": "VARCHAR", "from_round": "BIGINT", "fact": "VARCHAR",
+    "value": "VARCHAR", "event_id": "VARCHAR",
 }
 
 

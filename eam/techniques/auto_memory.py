@@ -113,6 +113,11 @@ class AutoMemory(Technique):
         notes = self._notes_text()
         return RECALL.format(notes=wrap_memory(notes, "workspace notes from earlier sessions") if self.wrap else notes)
 
+    def _log_recall(self, ctx, text: str, when: str) -> None:
+        """Recall measurement (step 4): what went into the prompt, its size, and when (session start or reset)."""
+        ctx.log("automem_recall", chars=len(self._notes_text()), notes=sorted(self._ws.notes), when=when,
+                tokens=estimate_tokens(text), recall_text=text)
+
     def _make_compactor(self, ctx):
         if self.compact == "resum":
             # ReSum's trigger is 0.9·(K·1024 − 1000); choose K so that it fires at `trigger` × window.
@@ -196,8 +201,9 @@ class AutoMemory(Technique):
         if self._refold:
             self._refold.on_session_start(ctx)  # puts the PROGRESS/STALE protocol into the first message
         if self.recall and self._ws_on and self._notes_text():
-            ctx.preamble.append(self._recall())
-            ctx.log("automem_recall", chars=len(self._notes_text()), notes=sorted(self._ws.notes))
+            text = self._recall()
+            ctx.preamble.append(text)
+            self._log_recall(ctx, text, "start")
 
     def before_call(self, ctx):
         if self._compactor is None:
@@ -222,7 +228,9 @@ class AutoMemory(Technique):
             if compacted:
                 ctx.state["automem_predicted"] = 0
                 if self.recall and self._ws_on and self._notes_text():  # the reset replaced the first message
-                    ctx.messages[0]["content"].append({"text": self._recall()})
+                    text = self._recall()
+                    ctx.messages[0]["content"].append({"text": text})
+                    self._log_recall(ctx, text, "reset")
                 if self._refold:  # the rebuilt history starts a new step numbering; the protocol stays visible
                     self._refold._reset()
                     ctx.messages[0]["content"].append({"text": prompt_layer(self._refold.k)[1]})
