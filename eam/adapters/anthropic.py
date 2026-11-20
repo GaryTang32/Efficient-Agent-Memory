@@ -13,7 +13,7 @@ Two parts, both on the same note store:
     mem = MemoryMiddleware("~/.eam-memory/project-x", window=200_000, summarize=cheap_llm)
     params = mem.start(task, system="You are a careful analyst.", tools=my_tools)
     while True:
-        response = client.messages.create(model="claude-opus-5-5", max_tokens=16000, **params)
+        response = client.messages.create(model=MODEL, max_tokens=16000, **params)
         if not mem.step(response, params["messages"], run_tool):   # run_tool(name, input) -> str
             break
 

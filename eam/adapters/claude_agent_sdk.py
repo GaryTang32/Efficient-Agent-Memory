@@ -4,7 +4,7 @@
     from eam.adapters.claude_agent_sdk import AgentMemory
 
     mem = AgentMemory("~/.eam-memory/project-x")
-    options = mem.apply(ClaudeAgentOptions(model="claude-sonnet-4-5"))   # or ClaudeAgentOptions(**mem.options())
+    options = mem.apply(ClaudeAgentOptions())   # or ClaudeAgentOptions(**mem.options())
     async for message in query(prompt="Count the widgets for day 2.", options=options):
         mem.observe(message)              # optional: real prompt sizes for the in-step guard
 

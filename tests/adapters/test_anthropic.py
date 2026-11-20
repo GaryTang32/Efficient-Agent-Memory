@@ -20,6 +20,8 @@ from eam.adapters.anthropic import MemoryMiddleware, NoteMemoryTool  # noqa: E40
 from eam.automem import JsonStore  # noqa: E402
 from eam.memory_skill import MemorySkill  # noqa: E402
 
+FAKE_MODEL = "fake-model"  # the fake client never sends a request; any name works
+
 
 def as_dict(b):
     return b if isinstance(b, dict) else b.to_dict()
@@ -69,7 +71,7 @@ def scripted(step: Step, n: int) -> Message:
                                       input=step.args)], "tool_use"
     else:
         content, stop = [TextBlock(type="text", text=step.name_or_text)], "end_turn"
-    return Message(id=f"msg_{n:02d}", type="message", role="assistant", model="claude-opus-5-5", content=content,
+    return Message(id=f"msg_{n:02d}", type="message", role="assistant", model=FAKE_MODEL, content=content,
                    stop_reason=stop, stop_sequence=None,
                    usage=Usage(input_tokens=step.prompt_tokens or 0, output_tokens=12))
 
@@ -103,7 +105,7 @@ class MessagesLoop:
         client = FakeClient(script)
         params = mem.start(task, system="You count widgets.", tools=TOOL_SPECS)
         while True:
-            response = client.messages.create(model="claude-opus-5-5", max_tokens=1024, **params)
+            response = client.messages.create(model=FAKE_MODEL, max_tokens=1024, **params)
             if not mem.step(response, params["messages"], run_tool):
                 break
         self.client = client
@@ -195,7 +197,7 @@ def test_requests_serialize_through_the_real_client(tmp_path):
                        http_client=DefaultHttpxClient(transport=httpx2.MockTransport(handler)))
     mem = MemoryMiddleware(tmp_path, window=WINDOW)
     params = mem.start("Count gadgets.", system="You count.", tools=TOOL_SPECS)
-    while mem.step(client.messages.create(model="claude-opus-5-5", max_tokens=1024, **params),
+    while mem.step(client.messages.create(model=FAKE_MODEL, max_tokens=1024, **params),
                    params["messages"], run_tool):
         pass
     assert len(bodies) == 2
@@ -302,11 +304,11 @@ def test_middleware_routes_the_memory_tool(tmp_path):
 
 def test_memory_tool_runs_in_the_sdk_tool_runner(tmp_path):
     """NoteMemoryTool is a BetaAbstractMemoryTool, so the SDK's tool runner calls it directly."""
-    replies = [{"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+    replies = [{"id": "msg_1", "type": "message", "role": "assistant", "model": FAKE_MODEL,
                 "stop_reason": "tool_use", "stop_sequence": None, "usage": {"input_tokens": 5, "output_tokens": 5},
                 "content": [{"type": "tool_use", "id": "toolu_1", "name": "memory",
                              "input": {"command": "create", "path": "/memories/r.md", "file_text": "from runner"}}]},
-               {"id": "msg_2", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+               {"id": "msg_2", "type": "message", "role": "assistant", "model": FAKE_MODEL,
                 "stop_reason": "end_turn", "stop_sequence": None, "usage": {"input_tokens": 5, "output_tokens": 5},
                 "content": [{"type": "text", "text": "saved"}]}]
     bodies = []
@@ -317,7 +319,7 @@ def test_memory_tool_runs_in_the_sdk_tool_runner(tmp_path):
 
     client = Anthropic(api_key="test-key", max_retries=0,
                        http_client=DefaultHttpxClient(transport=httpx2.MockTransport(handler)))
-    runner = client.beta.messages.tool_runner(model="claude-opus-5-5", max_tokens=1024,
+    runner = client.beta.messages.tool_runner(model=FAKE_MODEL, max_tokens=1024,
                                               tools=[NoteMemoryTool(tmp_path)],
                                               messages=[{"role": "user", "content": "remember this"}])
     assert runner.until_done().content[0].text == "saved"

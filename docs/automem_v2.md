@@ -216,6 +216,8 @@ nothing on Sonnet. The opposite mistake, no notes on work that builds across ses
 ## How to use
 
 AutoMemory v2 comes in four forms with the same rules. The core needs only the Python standard library (3.10+).
+Adapters for the Claude API, the Claude Agent SDK, LangGraph and the OpenAI Agents SDK build on the library: see
+[`adapters.md`](adapters.md).
 
 ```mermaid
 flowchart LR
