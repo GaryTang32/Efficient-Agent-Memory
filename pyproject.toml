@@ -22,5 +22,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["eam*"]
 
+# non-Python files the code reads at import time (ReFold's prompts) and the licences that must ship with them
+[tool.setuptools.package-data]
+"eam.techniques.third_party" = ["NOTICE.md", "refold/prompts.json", "refold/LICENSE"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
