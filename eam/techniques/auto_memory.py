@@ -50,9 +50,8 @@ from eam.techniques.refold import ReFold, prompt_layer
 from eam.techniques.resum import ReSum
 from eam.techniques.workspace import NoteWorkspace
 from eam.tokens import estimate_tokens
+from eam.automem.prompts import GUARDED, RECALL  # noqa: F401 (re-exported)
 
-GUARDED = ("[Output of {name} moved out of the context to keep it within the window ({tokens:,} tokens). "
-           "It is stored at {pointer}; read it with read_artifact (offset/length to page), one item per step.]")
 REBUILDS = ("resum_rebuild", "openclaw_rebuild", "handoff_rebuild")
 ADAPTIVE_Q = ("Decide whether the work in this session depends on other sessions of the same job.\n\n"
               "DEPENDENT: the job spans several sessions (days, rounds) and state carries between them: running totals, "
@@ -71,8 +70,6 @@ VERIFY = ("Before you finish: your last test run still reports failures. The end
           "answer. Then give your final answer again.")
 TEST_FAIL = re.compile(r"FAILED \((?:failures|errors)=|\b\d+ (?:failed|errors?)\b|^(?:FAIL|ERROR):", re.M)
 AUTOSAVE = re.compile(r"session \d+ final answer")
-RECALL = ("Your persistent workspace notes (saved in earlier sessions or before the conversation was "
-          "compacted):\n\n{notes}\n\nUse them; keep them up to date with write_note.")
 
 
 class AutoMemory(Technique):

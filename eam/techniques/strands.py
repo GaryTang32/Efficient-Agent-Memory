@@ -31,6 +31,7 @@ import re
 from html import escape
 
 from eam.agent.context import Tool
+from eam.automem.core import head_tail
 from eam.llm.types import CachePlan, Request, ToolSpec
 from eam.techniques.base import Technique
 
@@ -80,18 +81,7 @@ def _tok(text: str) -> int:
     return math.ceil(len(text) / 4)
 
 
-def preview(full: str, preview_tokens: int = 750, head_share: float = 0.6) -> str:
-    """strands methods/truncate.py::_build_preview (head_tail)."""
-    chars = preview_tokens * 4
-    if len(full) <= chars:
-        return full
-    head_n = int(chars * head_share)
-    tail_n = chars - head_n
-    head, tail = full[:head_n], full[-tail_n:] if tail_n > 0 else ""
-    marker = f"[... {len(full) - head_n - tail_n:,} chars elided ...]"
-    body = "\n\n".join(p for p in [head, marker, tail] if p)
-    out = f"[Truncated: 1 block, ~{_tok(full):,} tokens]\n\n{body}"
-    return full if len(out) >= len(full) else out
+preview = head_tail  # strands methods/truncate.py::_build_preview (head_tail), in eam.automem.core
 
 
 def _format_lines(lines, indices, matched):

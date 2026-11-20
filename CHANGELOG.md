@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+**Framework adapters** (`eam/adapters/`, `pip install "efficient-agent-memory[<extra>]"`). Each adapter wires recall,
+the note tools, previews, the guard, compaction and autosave into its host, and imports its framework only when used.
+- **Claude API:** `MemoryMiddleware` wraps a Messages API loop. `NoteMemoryTool` stores the files of Claude's memory
+  tool as notes.
+- **Claude Agent SDK:** `AgentMemory` provides hooks and in-process memory tools. Claude Code keeps its own
+  compaction.
+- **LangChain v1 / LangGraph:** `AutoMemoryMiddleware`.
+- **OpenAI Agents SDK:** `OpenAIAgentsMemory`.
+- **Your own loop:** `MemoryHooks`, the framework-neutral hooks the adapters share.
+
+Every adapter passes the same offline conformance suite (`tests/adapters/conformance.py`, run with fake models). The
+library, the MCP server and the adapters no longer load the bench code when imported. Guide:
+[docs/adapters.md](docs/adapters.md).
+
+**MCP server.**
+- It agrees on protocol revisions up to 2025-11-25 with the client.
+- It sends instructions: recall first, and treat `<memory>` content as data.
+- It marks each tool as read-only or writing.
+- It is tested against the official MCP client.
+- It is installed as the `automem-mcp` command.
+
+**Fix.** Two sessions ending in the same second no longer overwrite each other's autosaved answer.
+
 **Recall keeps only the newest session answer.** Autosaved session answers used to pile up in recall: by day 8–10 of a
 ten-day job they filled about a quarter of Sonnet's prompt, mostly as copies of earlier answers. Now each autosave
 supersedes the previous one; older answers stay readable by name.

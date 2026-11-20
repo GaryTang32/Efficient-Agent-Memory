@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from eam.agent.context import Tool
 from eam.llm.types import ToolSpec
+from eam.automem.prompts import WORKSPACE
 from eam.techniques.base import Technique
 
 
@@ -24,10 +25,7 @@ class NoteWorkspace(Technique):
         self.notes: dict[str, str] = {}
 
     def system_addendum(self):
-        return ("Workspace: you have a persistent note workspace that survives beyond this conversation and across "
-                "sessions (tools write_note, read_notes). Save every intermediate result you may need later — "
-                "running totals, findings, which files are done — and at the start of a session read your notes "
-                "before doing anything else.")
+        return WORKSPACE
 
     def tools(self, ctx):
         def write(args, ctx):

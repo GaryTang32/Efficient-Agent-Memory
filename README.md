@@ -40,7 +40,7 @@ OpenAI-compatible endpoint.
 | 🧪 **27 methods and variants, measured the same way** | Faithful ports of published methods (ReSum, AgentDiet, ReFold, SJC, CADOC, AKV, CORAL, SelfCompact, NVIDIA EoCC, MemoryOS, LightMem, Nemori, …), each placed between the same floor and ceiling. |
 | 🛠️ **Real repositories** | On SWE-bench Verified (100 Django and 75 SymPy issues), `automem_v2_lean` resolves as many issues inside a 16K window as the unoptimised agent with its full window. On Sonnet it costs **80%** of that agent over three runs (95% interval 72–90%); on Haiku the cost is the same. |
 | 🔁 **Checked twice** | A [validation round](#validation-round) re-ran every decision cell on one day, repeated cells to measure noise, audited the measurement code and added a second repository. It confirmed the two results above and withdrew four smaller claims; a follow-up with three runs per cell settled the cost question. |
-| 📦 **Installable** | One memory layer, four ways: a bench technique, a framework-agnostic Python library, an MCP server, and a Claude Code plugin. |
+| 📦 **Installable** | One memory layer, many hosts: a Python library, adapters for the Claude API, Claude Agent SDK, LangGraph and OpenAI Agents SDK, an MCP server, a Claude Code plugin, and a bench technique. |
 
 > **The core lesson:** fewer tokens is not fewer dollars. Re-sent history is cheap while it stays in the prompt cache
 > (0.05–0.1× the input price); rewriting it is billed as cache writes (1.25–2×). The methods that pay off act at
@@ -376,16 +376,33 @@ pluggable and standard library only: `MemorySkill(store=SQLiteStore("~/.eam-memo
 JSON files, or `MemoryStore()` for short-lived agents (`eam.automem`). The rules themselves are pure functions in
 `eam.automem.core`, shared by the library and the MCP server.
 
+### In your agent framework
+
+Adapters wire the same rules into the Claude API (a loop middleware, and storage for Claude's memory tool), the
+Claude Agent SDK, LangChain v1 / LangGraph agents and the OpenAI Agents SDK:
+
+```bash
+pip install "efficient-agent-memory[langgraph]"     # or [anthropic], [claude-agent-sdk], [openai-agents]
+```
+
+```python
+from eam.adapters.langgraph import AutoMemoryMiddleware
+
+agent = create_agent(model, tools, middleware=[AutoMemoryMiddleware("~/.eam-memory/my-project", window=200_000)])
+```
+
+Each adapter passes the same offline conformance suite. Guide: [`docs/adapters.md`](docs/adapters.md).
+
 ### MCP server
 
 Add to `.mcp.json` (Claude Code) or your MCP client's configuration:
 
 ```json
-{"mcpServers": {"automem": {"command": "python", "args": ["-m", "eam.mcp_server"],
+{"mcpServers": {"automem": {"command": "automem-mcp",
                             "env": {"EAM_MEMORY_DIR": "/path/to/project-memory", "EAM_MEMORY_WINDOW": "200000"}}}}
 ```
 
-Tools: `recall`, `write_note`, `read_notes`, `save_session`, `offload`, `read_artifact`, `context_budget`, `compact`,
+`automem-mcp` is installed with the package (`python -m eam.mcp_server` works too). Tools: `recall`, `write_note`, `read_notes`, `save_session`, `offload`, `read_artifact`, `context_budget`, `compact`,
 `handoff`.
 
 ---
@@ -526,8 +543,8 @@ flowchart TB
 
 | Path | What is there |
 |---|---|
-| [`eam/`](eam/) | Harness: backends, agent loop with technique hooks, cost meter, techniques, tasks, library, MCP server |
-| [`tests/`](tests/) | 269 offline tests, including a mock run of every method on every long task and the Claude Code plugin's hooks |
+| [`eam/`](eam/) | Harness: backends, agent loop with technique hooks, cost meter, techniques, tasks, library, MCP server, framework adapters (`eam/adapters/`) |
+| [`tests/`](tests/) | 393 offline tests, including a mock run of every method on every long task, the Claude Code plugin's hooks and every framework adapter (with fake models) |
 | [`plugins/automem/`](plugins/automem/) | The Claude Code plugin: hooks, skill, `/automem:handoff` |
 | [`scripts/`](scripts/) | Run scripts for every experiment, SWE-bench validation, docs generators |
 | [`docs/report.html`](docs/report.html) | The work report: work done, findings, results, the plugin and its pilot, to-do list ([rendered](https://claude.ai/artifact/89QC8QvXU4E3zCszkrnx2h)) |
@@ -536,6 +553,7 @@ flowchart TB
 | [`docs/methodology.md`](docs/methodology.md) | Tasks, environment rules, metric definitions, procedure |
 | [`docs/automem_v2.md`](docs/automem_v2.md) | AutoMemory v2 guide: how it works, presets, how to use, paper references |
 | [`docs/automem.md`](docs/automem.md) | AutoMemory: bench technique, library and MCP server |
+| [`docs/adapters.md`](docs/adapters.md) | AutoMemory in the Claude API, Claude Agent SDK, LangGraph and OpenAI Agents SDK |
 | [`docs/new_methods.md`](docs/new_methods.md) | The 2026-11 methods and NVIDIA EoCC: sources and deviations |
 | [`docs/backends.md`](docs/backends.md) | Claude Code CLI, Bedrock Converse, LiteLLM, OpenAI-compatible endpoints |
 | [`docs/plans/`](docs/plans/) | Plans and proposals with cost estimates |
@@ -556,7 +574,7 @@ git-ignored); every experiment's run script is in `scripts/`.
 |---|---|---|---|
 | Three runs of the SymPy and related-issue sets | Next | ≈ $45 | Lean's saving on Sonnet is established on Django only; on these sets each cell ran once and the intervals are wide. |
 | Cost on two price bases | Next | no API cost | List prices with caching (Bedrock and the CLI) and context-length pricing (self-hosted and long-context tiers) can rank methods differently. |
-| The plugin for agents without built-in caching and compaction | Next | no API cost | Inside Claude Code the plugin is neutral; custom agent loops and other CLIs lack these built-ins. |
+| Adapters for agents without built-in caching and compaction | Built; savings not yet measured there | no API cost to build | Adapters for the Claude API, Claude Agent SDK, LangGraph and OpenAI Agents SDK pass an offline conformance suite ([docs/adapters.md](docs/adapters.md)). Measuring their savings with real models needs API keys. |
 | Bedrock validation and native tool calls | Blocked: AWS credentials | — | Every result uses Claude Code CLI list prices and tools emulated as text; native tool calls remove the runaway replies at the source. Runbook: `scripts/run_bedrock_validation.sh`. |
 | GPT and other non-Claude models | Blocked: API credentials | — | No non-Claude model has been measured. |
 | Codex / OpenAI re-pricing | Not started | no API cost | Automatic caching at other prices may change which methods pay off. |
