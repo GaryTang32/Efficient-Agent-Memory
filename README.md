@@ -23,6 +23,15 @@ OpenAI-compatible endpoint.
 
 ---
 
+## What this repo does
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/overview-dark.svg">
+  <img alt="What Efficient Agent Memory does. The problem: context keeps growing, long tasks fail at the window, nothing carries over between sessions, and trimming history can cost more because it breaks the prompt cache. What the repo does: a test bench that measures 27 methods the same way, and AutoMemory, which recalls notes, previews large outputs, guards against overflow, resets once at 75% of the window and autosaves, installable as a Python library, MCP server or Claude Code plugin. What you get: the full-context agent's accuracy at 58-85% of its cost, about 35% of its peak prompt, as many real Django bugs fixed in a 16K window, and 0 of 20 planted instructions obeyed." src="docs/assets/overview-light.svg" width="100%">
+</picture>
+
+---
+
 ## Highlights
 
 | | |
