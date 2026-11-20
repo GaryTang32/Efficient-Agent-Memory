@@ -544,7 +544,7 @@ flowchart TB
 | Path | What is there |
 |---|---|
 | [`eam/`](eam/) | Harness: backends, agent loop with technique hooks, cost meter, techniques, tasks, library, MCP server, framework adapters (`eam/adapters/`) |
-| [`tests/`](tests/) | 269 offline tests, including a mock run of every method on every long task and the Claude Code plugin's hooks |
+| [`tests/`](tests/) | 393 offline tests, including a mock run of every method on every long task, the Claude Code plugin's hooks and every framework adapter (with fake models) |
 | [`plugins/automem/`](plugins/automem/) | The Claude Code plugin: hooks, skill, `/automem:handoff` |
 | [`scripts/`](scripts/) | Run scripts for every experiment, SWE-bench validation, docs generators |
 | [`docs/report.html`](docs/report.html) | The work report: work done, findings, results, the plugin and its pilot, to-do list ([rendered](https://claude.ai/artifact/89QC8QvXU4E3zCszkrnx2h)) |
@@ -574,7 +574,7 @@ git-ignored); every experiment's run script is in `scripts/`.
 |---|---|---|---|
 | Three runs of the SymPy and related-issue sets | Next | ≈ $45 | Lean's saving on Sonnet is established on Django only; on these sets each cell ran once and the intervals are wide. |
 | Cost on two price bases | Next | no API cost | List prices with caching (Bedrock and the CLI) and context-length pricing (self-hosted and long-context tiers) can rank methods differently. |
-| The plugin for agents without built-in caching and compaction | Next | no API cost | Inside Claude Code the plugin is neutral; custom agent loops and other CLIs lack these built-ins. |
+| Adapters for agents without built-in caching and compaction | Built; savings not yet measured there | no API cost to build | Adapters for the Claude API, Claude Agent SDK, LangGraph and OpenAI Agents SDK pass an offline conformance suite ([docs/adapters.md](docs/adapters.md)). Measuring their savings with real models needs API keys. |
 | Bedrock validation and native tool calls | Blocked: AWS credentials | — | Every result uses Claude Code CLI list prices and tools emulated as text; native tool calls remove the runaway replies at the source. Runbook: `scripts/run_bedrock_validation.sh`. |
 | GPT and other non-Claude models | Blocked: API credentials | — | No non-Claude model has been measured. |
 | Codex / OpenAI re-pricing | Not started | no API cost | Automatic caching at other prices may change which methods pay off. |
