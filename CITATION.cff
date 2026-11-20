@@ -4,8 +4,8 @@ title: "Efficient Agent Memory: a measured test bench and memory layer for long-
 authors:
   - family-names: Tang
     given-names: Gary
-version: 0.1.0
-date-released: 2026-11-06
+version: 0.3.0
+date-released: 2026-11-20
 license: MIT
 repository-code: "https://github.com/GaryTang32/Efficient-Agent-Memory"
 keywords:
