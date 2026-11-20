@@ -125,10 +125,14 @@ class MemorySkill:
         return RECALL.format(notes=text) + "\n\n" if text else ""
 
     def save_session(self, answer: str, label: str | None = None) -> None:
-        """Autosave: keep a session's final answer as a note of type 'result'."""
+        """Autosave: keep a session's final answer as a note of type 'result'. It supersedes the previous autosaved
+        answer, which leaves recall but stays readable by name: on a ten-day task, stale copies of earlier answers
+        were a third of the recalled notes and carried no fact a later session needed (docs/automem_v2.md)."""
         if answer:
-            self.write_note(label or f"session {time.strftime('%Y-%m-%d %H:%M:%S')} final answer", answer,
-                            type="result", source="autosave")
+            name = label or f"session {time.strftime('%Y-%m-%d %H:%M:%S')} final answer"
+            prev = [n.name for n in self.records() if n.source == "autosave" and n.type == "result" and n.active
+                    and n.name != name]
+            self.write_note(name, answer, type="result", source="autosave", supersedes=prev[-1] if prev else "")
 
     # ---- artifacts (recoverable offload) -------------------------------------------------------------------
     def offload(self, text: str, label: str = "") -> str:

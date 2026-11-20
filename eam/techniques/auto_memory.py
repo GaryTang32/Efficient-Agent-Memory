@@ -41,6 +41,8 @@ agent.
 
 from __future__ import annotations
 
+import re
+
 from eam.safety import MEMORY_RULE, wrap_memory
 from eam.techniques.base import Technique
 from eam.techniques.obs_mask import ObservationMasking
@@ -61,6 +63,14 @@ ADAPTIVE_Q = ("Decide whether the work in this session depends on other sessions
               "is needed later, for example one item of a numbered queue of separate issues, tickets or questions that "
               "are each solvable on their own, even when they come one after another.\n\n"
               "Answer with exactly one word: DEPENDENT or INDEPENDENT.\n\n<task>\n{task}\n</task>")
+NOTE_IDS = ("When later inputs may correct or refer back to earlier items by id, write those ids into your notes "
+            "together with the values you used (for example 'EV-123: shipment of SKU-9, qty 40'), so a later session "
+            "can apply a correction from your notes instead of re-reading old sources.")
+VERIFY = ("Before you finish: your last test run still reports failures. The end of its output:\n\n{tail}\n\n"
+          "Fix them, or, if they are expected (for example tests that check the old behaviour), say why in your final "
+          "answer. Then give your final answer again.")
+TEST_FAIL = re.compile(r"FAILED \((?:failures|errors)=|\b\d+ (?:failed|errors?)\b|^(?:FAIL|ERROR):", re.M)
+AUTOSAVE = re.compile(r"session \d+ final answer")
 RECALL = ("Your persistent workspace notes (saved in earlier sessions or before the conversation was "
           "compacted):\n\n{notes}\n\nUse them; keep them up to date with write_note.")
 
@@ -74,7 +84,8 @@ class AutoMemory(Technique):
     def __init__(self, workspace: bool | str = True, recall: bool = True, autosave: bool = True, guard: float = 0.9,
                  compact: str = "resum", trigger: float = 0.75, default_window: int = 200_000,
                  token_ratio: float = 1.5, keep_recent: int = 2, fold: bool = False, ingest: float = 0.0,
-                 ingest_preview: int = 750, handoff_variant: str = "general", wrap: bool = False):
+                 ingest_preview: int = 750, handoff_variant: str = "general", wrap: bool = False,
+                 recall_results: str = "all", note_ids: bool = False, verify: bool = False):
         self.adaptive = str(workspace).lower() == "adaptive"
         self.workspace = self.adaptive or (workspace not in (False, "false", "False", 0, "0"))
         self.recall = bool(recall) and self.workspace
@@ -92,6 +103,12 @@ class AutoMemory(Technique):
         self.ingest_preview = int(ingest_preview)
         self.handoff_variant = str(handoff_variant)
         self.wrap = str(wrap).lower() not in ("false", "0", "no", "off", "")
+        # step 5 switches (docs/automem_v2.md): recall only the newest autosaved answer ("latest"; older ones are
+        # listed by name), ask for ids with their values in notes, and send a final answer back once while the last
+        # test run still fails
+        self.recall_results = str(recall_results)
+        self.note_ids = str(note_ids).lower() not in ("false", "0", "no", "off", "")
+        self.verify = str(verify).lower() not in ("false", "0", "no", "off", "")
         self._refold = ReFold() if self.fold else None
         self._stash: dict[str, str] = {}
         self._ws = NoteWorkspace() if self.workspace else None
@@ -107,7 +124,16 @@ class AutoMemory(Technique):
     def _notes_text(self) -> str:
         if not self._ws or not self._ws.notes:
             return ""
-        return "\n\n".join(f"## {k}\n{v}" for k, v in sorted(self._ws.notes.items()))
+        items = sorted(self._ws.notes.items())
+        older: list[str] = []
+        if self.recall_results == "latest":
+            autos = [k for k in self._ws.notes if AUTOSAVE.fullmatch(k)]  # insertion order: oldest first
+            older = autos[:-1]
+            items = [(k, v) for k, v in items if k not in older]
+        text = "\n\n".join(f"## {k}\n{v}" for k, v in items)
+        if older:
+            text += f"\n\n[Older session answers not shown, read them with read_notes: {', '.join(older)}]"
+        return text
 
     def _recall(self) -> str:
         notes = self._notes_text()
@@ -180,6 +206,8 @@ class AutoMemory(Technique):
             parts.append(self._ws.system_addendum())
         if self._refold:
             parts.append(self._refold.system_addendum())
+        if self.note_ids and self._ws and self._ws_on:
+            parts.append(NOTE_IDS)
         if self.wrap and self._ws and self._ws_on and self.recall:
             parts.append(MEMORY_RULE)
         return "\n\n".join(parts) or None
@@ -197,6 +225,7 @@ class AutoMemory(Technique):
         if self._compactor is not None:
             self._compactor.on_session_start(ctx)
         ctx.state["automem_guard_step"] = (-1, 0)
+        ctx.state["automem_tests"] = None  # tail of the last failing test run, or None
         self._stash.clear()
         if self._refold:
             self._refold.on_session_start(ctx)  # puts the PROGRESS/STALE protocol into the first message
@@ -261,6 +290,8 @@ class AutoMemory(Technique):
 
     def on_tool_result(self, ctx, outcome):
         window = self._window(ctx)
+        if self.verify and "test" in outcome.name and not outcome.is_error:  # seen whole, before any preview
+            ctx.state["automem_tests"] = outcome.text[-1500:].strip() if TEST_FAIL.search(outcome.text) else None
         if self.ingest and not outcome.is_error and outcome.name != "retrieve_context" \
                 and estimate_tokens(outcome.text) > self.ingest * window:
             from eam.techniques.strands import preview
@@ -290,6 +321,13 @@ class AutoMemory(Technique):
         ctx.state["automem_predicted"] = used
         return outcome
 
+    def on_final(self, ctx, text):
+        tail = ctx.state.get("automem_tests") if self.verify else None
+        if tail:
+            ctx.log("automem_verify")
+            return VERIFY.format(tail=tail)
+        return None
+
     def on_session_end(self, ctx, answer):
         if self.autosave and answer and self._ws is not None:
             self._ws.notes[f"session {self._sessions} final answer"] = answer[: self._ws.max_note_chars]
@@ -298,4 +336,6 @@ class AutoMemory(Technique):
     def describe(self) -> str:
         return (f"automem(workspace={'adaptive' if self.adaptive else self.workspace}, recall={self.recall}, autosave={self.autosave}, "
                 f"guard={self.guard}, compact={self.compact}, trigger={self.trigger}, keep_recent={self.keep_recent}, "
-                f"fold={self.fold}, ingest={self.ingest}" + (", wrap=True)" if self.wrap else ")"))
+                f"fold={self.fold}, ingest={self.ingest}" + (", wrap=True" if self.wrap else "")
+                + (f", recall_results={self.recall_results}" if self.recall_results != "all" else "")
+                + (", note_ids=True" if self.note_ids else "") + (", verify=True" if self.verify else "") + ")")

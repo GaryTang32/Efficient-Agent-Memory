@@ -54,6 +54,11 @@ class Technique:
     def on_session_end(self, ctx: "AgentContext", answer: str) -> None:
         pass
 
+    def on_final(self, ctx: "AgentContext", text: str) -> str | None:
+        """Called when the agent gives its final answer. Return a message to send back instead (the agent continues),
+        or None to accept it. The loop asks at most once per session."""
+        return None
+
     def describe(self) -> str:
         params = {k: v for k, v in vars(self).items() if not k.startswith("_")}
         return f"{self.name}({', '.join(f'{k}={v}' for k, v in params.items())})"
@@ -108,6 +113,9 @@ class Pipeline(Technique):
     def on_session_end(self, ctx, answer):
         for t in self.techniques:
             t.on_session_end(ctx, answer)
+
+    def on_final(self, ctx, text):
+        return next((m for m in (t.on_final(ctx, text) for t in self.techniques) if m), None)
 
     def describe(self) -> str:
         return f"{self.name}[{', '.join(t.describe() for t in self.techniques)}]"
