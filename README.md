@@ -447,6 +447,34 @@ deviations. Each carries a provenance label (official, ported, baseline, provisi
 | Long-term memory | Note workspace (`fs_workspace`), raw-history RAG (`raw_rag`), MemoryOS / LightMem / Nemori (`ext_memory`) | USTC, Memory Tax studies, BUPT + Tencent, ZJU, Fudan + Shanda |
 | This project | AutoMemory v1/v2 (`automem`, presets) | — |
 
+### Top papers by lab region
+
+The five papers from each region that shaped AutoMemory or the repo's conclusions most, ranked. **Released** is the
+date of the first arXiv version. Results are score (0–1) and cost as a share of the ceiling's cost on the four synthetic
+tasks, Haiku then Sonnet.
+
+**Chinese labs**
+
+| # | Paper | Released | Lab | How the repo uses it | What we measured |
+|---|---|---|---|---|---|
+| 1 | ReSum ([2509.13313](https://arxiv.org/abs/2509.13313)) | 16 Sep 2025 | Alibaba Tongyi Lab | AutoMemory's default compaction: one summary at 75% of the window | Workspace + ReSum was the best first-round pairing: 0.89 · 126%, 0.94 · 75% |
+| 2 | FS-Researcher ([2602.01566](https://arxiv.org/abs/2602.01566), ACL'26) | 2 Feb 2026 | USTC + Metastone | AutoMemory's note workspace: notes outlive the conversation | Beat MemoryOS, LightMem and Nemori by 0.2–0.5 in score |
+| 3 | AgentDiet ([2509.23586](https://arxiv.org/abs/2509.23586), FSE'26) | 28 Sep 2025 | Peking University + ByteDance | Ported verbatim; trims the trajectory every step | Cost up to 410%: rewriting history breaks the cache (the core lesson) |
+| 4 | MemoryOS ([2506.06326](https://arxiv.org/abs/2506.06326), EMNLP'25) | 30 May 2025 | BUPT + Tencent | Long-term memory baseline, run from its own package with LightMem and Nemori | The three scored 0.54–0.61 at 114–179% on Haiku |
+| 5 | CADOC ([2609.37012](https://arxiv.org/abs/2609.37012)) | 29 Sep 2026 | Shanghai Jiao Tong University | Re-implemented; cache-aware object cards | 0.43 · 107%, 0.86 · 86% |
+
+**US labs**
+
+| # | Paper | Released | Lab | How the repo uses it | What we measured |
+|---|---|---|---|---|---|
+| 1 | EoCC, "You don't need long context" ([2611.05306](https://arxiv.org/abs/2611.05306)) | 3 Nov 2026 | NVIDIA | AutoMemory's handoff recap (`compact=handoff`), prompts verbatim | With AutoMemory: 0.83 · 79%, 1.00 · 66%; alone it lost 5 Django issues (no previews) |
+| 2 | Source-Judged Compaction ([2610.20927](https://arxiv.org/abs/2610.20927)) | 14 Oct 2026 | University of Virginia | AutoMemory option `compact=sjc`: drops summary lines no tool output supports | OpenClaw + SJC: 0.88 · 90%, 0.87 · 69% |
+| 3 | SelfCompact ([2606.23525](https://arxiv.org/abs/2606.23525), NeurIPS'26) | 22 Jun 2026 | Apple + Johns Hopkins | Ported from the official code; the agent writes its own summary | 0.75 · 179%, 0.93 · 134% |
+| 4 | ReFold ([2610.07863](https://arxiv.org/abs/2610.07863)) | 6 Oct 2026 | UC Santa Barbara + Intel | Official engine vendored; reversible folding | 0.43 · 56%, 0.97 · 108% |
+| 5 | Memory Tax ([2610.34073](https://arxiv.org/abs/2610.34073)) | 25 Oct 2026 | UIUC-led, with Renmin University | Raw-history retrieval as a memory baseline | 0.52 · 105%, 0.99 · 213% (three tasks) |
+
+AWS's Strands harness and Manus's context-engineering guide also shaped AutoMemory but are not papers.
+
 Literature: a sweep of 1,515 arXiv papers ([`docs/literature/2026-11-scan/`](docs/literature/2026-11-scan/)), a
 verified list of papers ([`docs/literature_review.md`](docs/literature_review.md)) and deep-reading notes
 ([`docs/papers/`](docs/papers/)).
