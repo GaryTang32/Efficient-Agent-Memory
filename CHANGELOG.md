@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**Docs.** The README is now a practical guide: what the repo does, install, a quick start per agent framework, how
+AutoMemory works, the methodology, results at a glance and how to use the bench. The full results, validation
+round, plugin pilots and methods moved to [docs/results.md](docs/results.md). The overview diagram shows the adapters.
+
 **Framework adapters** (`eam/adapters/`, `pip install "efficient-agent-memory[<extra>]"`). Each adapter wires recall,
 the note tools, previews, the guard, compaction and autosave into its host, and imports its framework only when used.
 - **Claude API:** `MemoryMiddleware` wraps a Messages API loop. `NoteMemoryTool` stores the files of Claude's memory

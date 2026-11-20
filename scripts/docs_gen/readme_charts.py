@@ -345,8 +345,9 @@ def overview_chart(t):
                     f'<text x="{x + 32}" y="{sy}" fill="{t["ink"]}" font-size="12">{E(st)}</text>')
     y3 = y2 + 74 + 20 * len(steps) + 12
     body.append(card(x, y3, w, top + colh - 8 - y3))
-    body.append(f'<text x="{x + 14}" y="{y3 + 24}" fill="{t["ink"]}" font-size="13.5" font-weight="600">Install it your way</text>')
-    body.append(lines(x + 14, y3 + 45, ["Python library · MCP server · Claude", "Code plugin · no runtime dependencies"], 12))
+    body.append(f'<text x="{x + 14}" y="{y3 + 24}" fill="{t["ink"]}" font-size="13.5" font-weight="600">3 · Install it, no dependencies</text>')
+    body.append(lines(x + 14, y3 + 45, ["Library, MCP server or Claude Code",
+                                        "plugin, or an adapter for Claude API,", "Agent SDK, LangGraph, OpenAI Agents."], 12))
 
     for ax in (xs[0] + cw + 8, xs[1] + cw + 18):
         ay = top + colh / 2
@@ -362,7 +363,8 @@ def overview_chart(t):
                "The problem: context grows, long tasks fail at the window, nothing carries over between sessions, and "
                "trimming history can cost more because it breaks the prompt cache. The repo measures 27 methods the "
                "same way and ships the best as AutoMemory (recall, previews, an overflow guard, one reset at 75% of the "
-               "window, autosave). Users get the full-context agent's accuracy at 58-85% of its cost, about 35% of its "
+               "window, autosave), installable as a library, an MCP server, a Claude Code plugin or an adapter for the Claude "
+               "API, Claude Agent SDK, LangGraph or OpenAI Agents SDK. Users get the full-context agent's accuracy at 58-85% of its cost, about 35% of its "
                "peak prompt, as many real bugs fixed in a 16K window, and notes wrapped against injected instructions.")
 
 
