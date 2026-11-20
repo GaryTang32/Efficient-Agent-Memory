@@ -42,6 +42,7 @@ class MemoryHooks:
         if summarize is not None and skill is not None:
             self.skill.summarize = summarize
         self.task = ""
+        self.recalled = ""  # the recall block of the current session (start_session = recalled + task)
         self.prompt_tokens = 0
         self.compactions = 0
         self.stats = {"calls": 0, "seconds": 0.0}
@@ -69,7 +70,8 @@ class MemoryHooks:
         """Begin a session: returns the first user message, the recalled notes followed by the task."""
         self.task, self.prompt_tokens, self.compactions = str(task), 0, 0
         self.skill.end_step()
-        return self.recall() + self.task
+        self.recalled = self.recall()
+        return self.recalled + self.task
 
     def end_session(self, answer: str) -> None:
         """Autosave the final answer; it supersedes the previous session's answer in recall."""

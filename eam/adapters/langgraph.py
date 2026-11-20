@@ -121,10 +121,10 @@ class AutoMemoryMiddleware(AgentMiddleware):
             return None
         last = humans[-1]
         task = last.text
-        first = self.hooks.start_session(task)
-        if len(humans) > 1 or first == task:  # a continued thread already has its recall; or nothing to recall
+        self.hooks.start_session(task)
+        recall = self.hooks.recalled
+        if len(humans) > 1 or not recall:  # a continued thread already has its recall; or nothing to recall
             return None
-        recall = first[: len(first) - len(task)]
         content = (recall + last.content if isinstance(last.content, str)
                    else [{"type": "text", "text": recall}, *last.content])
         return {"messages": [last.model_copy(update={"content": content})]}  # same id: add_messages replaces it

@@ -53,3 +53,19 @@ def _eocc():
     from eam.techniques.third_party import nvidia_eocc
 
     return nvidia_eocc
+
+
+# Instructions for a host's own compaction (the Agent SDK's PreCompact): keep NVIDIA's six-field handoff recap
+# (App. G). The Claude Code plugin has its own variant, which points to saved files instead of artifact:// pointers.
+HANDOFF = """When summarising this conversation, write a concise handoff recap; the conversation will continue from \
+the system prompt, the task and this recap. Record:
+1. Objective - one line describing the required result.
+2. Established facts - exact paths, relevant symbols or commands, observed values, and important errors/output. \
+Separate observations from unverified ideas.
+3. Applied changes - each changed/created file, what changed, and whether verified.
+4. Verification - exact checks run, outcomes, failures, obstacles, and workarounds.
+5. Dead ends - failed approaches that should not be repeated.
+6. Remaining plan - outstanding subgoals, in execution order; the immediate next command or edit; and the condition \
+for completion.
+Copy exact identifiers, numbers, file paths and line numbers as they appear. If needed output was truncated or saved \
+by AutoMemory (artifact://...), give the pointer so it can be read back with read_artifact."""

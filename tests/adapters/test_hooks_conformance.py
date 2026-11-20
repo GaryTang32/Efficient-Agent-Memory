@@ -110,3 +110,4 @@ def test_store_is_json(tmp_path):
     hooks.start_session("t")
     hooks.end_session("an answer long enough to keep")
     assert [n.type for n in JsonStore(tmp_path).load()] == ["result"]
+
