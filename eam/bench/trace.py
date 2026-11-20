@@ -10,8 +10,10 @@ appears in the run's result row:
     tool_call per tool call: name, input, output size, error flag (joined to its result by tool_use_id)
     event     per harness event (compaction, recall with note names, preview, guard offload, overflow); `fields`
               is a JSON string (DuckDB: json_extract(fields, '$.notes'))
-    call      per LLM call: tag, tokens (input, output, cache read and write), cost, latency
+    call      per LLM call: session, tag, tokens (input, output, cache read and write), cost, latency
     grade     per graded session where the task provides one (SWE-bench: the agent's patch and the test report)
+    dependency per fact a session needs from an earlier one, where the task provides them (ledger, ops): session,
+              kind (carry or correction), from_round, fact, value
 
 Text is redacted (`eam.safety.redact`) before it is written. Query with DuckDB, for example
 ``SELECT * FROM read_json('results/traces/*.jsonl.gz') WHERE "table" = 'event'``.
@@ -29,6 +31,7 @@ from typing import Any, Iterable
 from eam.safety import redact
 
 TEXT_CAP = 8_000  # characters kept per text block; the full length is recorded
+RECALL_CAP = 60_000  # recalled notes are kept nearly whole: step 4 checks which earlier facts they carried
 
 
 def new_run_id() -> str:
@@ -40,9 +43,9 @@ def trace_dir() -> Path | None:
     return None if d.lower() in ("off", "0", "false", "no", "") else Path(d)
 
 
-def _text(s: Any) -> dict[str, Any]:
+def _text(s: Any, cap: int = TEXT_CAP) -> dict[str, Any]:
     s = s if isinstance(s, str) else json.dumps(s, default=str)
-    return {"text": redact(s[:TEXT_CAP]), "chars": len(s)}
+    return {"text": redact(s[:cap]), "chars": len(s)}
 
 
 def _blocks(content: Any) -> Iterable[dict[str, Any]]:
@@ -81,7 +84,8 @@ def _message_records(session: int, messages: list[dict[str, Any]]) -> Iterable[d
 
 
 def write_trace(run_id: str, *, row: dict[str, Any], sessions: list[list[dict[str, Any]]],
-                events: list[dict[str, Any]], calls: list[Any], grades: list[dict[str, Any]] | None = None
+                events: list[dict[str, Any]], calls: list[Any], grades: list[dict[str, Any]] | None = None,
+                call_sessions: list[int] | None = None, dependencies: list[list[dict[str, Any]]] | None = None
                 ) -> Path | None:
     """Write one run's trace; returns its path (None when traces are off). Never raises: a trace must not fail a run."""
     d = trace_dir()
@@ -100,13 +104,14 @@ def write_trace(run_id: str, *, row: dict[str, Any], sessions: list[list[dict[st
                          **_text(answers[k] if k < len(answers) else "")})
             recs.extend(_message_records(k, msgs))
         for e in events:
-            fields = {key: (_text(v)["text"] if isinstance(v, str) else v) for key, v in e.items()
-                      if key not in ("kind", "session", "step", "raw")}
+            fields = {key: (_text(v, RECALL_CAP if key == "recall_text" else TEXT_CAP)["text"] if isinstance(v, str)
+                            else v) for key, v in e.items() if key not in ("kind", "session", "step", "raw")}
             recs.append({"table": "event", "session": e.get("session"), "step": e.get("step"), "kind": e.get("kind"),
                          "fields": json.dumps(fields, default=str)})  # a JSON string: one schema for every kind
         for i, c in enumerate(calls):
             u = c.usage
-            recs.append({"table": "call", "index": i, "tag": c.tag, "model": c.model_key,
+            sess = call_sessions[i] if call_sessions and i < len(call_sessions) else None
+            recs.append({"table": "call", "index": i, "session": sess, "tag": c.tag, "model": c.model_key,
                          "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
                          "cache_read_tokens": u.cache_read_tokens, "cache_write_tokens": u.cache_write_tokens,
                          "cost_usd": c.cost, "latency_ms": c.latency_ms})
@@ -114,6 +119,11 @@ def write_trace(run_id: str, *, row: dict[str, Any], sessions: list[list[dict[st
             if g:
                 recs.append({"table": "grade", "session": g.get("session", k), "resolved": g.get("resolved"),
                              "patch": _text(g.get("patch", "")), "report": _text(g.get("detail", ""))})
+        for k, facts in enumerate(dependencies or []):
+            for f in facts or []:
+                recs.append({"table": "dependency", "session": k, "kind": f.get("kind"),
+                             "from_round": f.get("from_round"), "fact": str(f.get("fact")), "event_id": f.get("event"),
+                             "value": json.dumps(f.get("value"), default=str)})
         path = d / f"{run_id}.jsonl.gz"
         tmp = path.with_suffix(".tmp")
         with gzip.open(tmp, "wt", encoding="utf-8") as fh:

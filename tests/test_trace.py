@@ -55,3 +55,15 @@ def test_the_trace_keeps_what_compaction_removed(tmp_path, monkeypatch):
     assert [r for r in recs if r["table"] == "tool_call"].__len__() == row["tool_calls"]
     if rebuilt:  # the reset message holding the summary is in the record as well
         assert any("summary" in m["text"].lower() for m in msgs)
+
+
+def test_recall_measurement_records(tmp_path, monkeypatch):
+    """Step 4: recall events carry their size and text, every LLM call knows its session, and the facts each
+    session needs from earlier ones are in the trace."""
+    row, recs = _trace(tmp_path, monkeypatch, "ledger_audit", "automem:ingest=0.1")
+    recall = [json.loads(r["fields"]) for r in recs if r["table"] == "event" and r["kind"] == "automem_recall"]
+    assert recall and all(f["tokens"] > 0 and f["recall_text"] and f["when"] in ("start", "reset") for f in recall)
+    calls = [r for r in recs if r["table"] == "call"]
+    assert {c["session"] for c in calls} >= {0, 1, 2}
+    deps = [r for r in recs if r["table"] == "dependency"]
+    assert {d["session"] for d in deps} == {1, 2} and all(d["kind"] == "carry" and d["value"] for d in deps)

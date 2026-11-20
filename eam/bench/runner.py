@@ -63,6 +63,7 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     rewrites, events = 0, Counter()
     tool_calls = 0
     all_events: list[dict[str, Any]] = []  # every session's events, for the optional transcript
+    call_sessions: list[int | None] = []  # the scored session of each LLM call (multi-round tasks), for the trace
     session_messages: list[list[dict[str, Any]]] = []  # every scored session's messages, for the trace
     if context_limit:
         common["context_limit"] = context_limit
@@ -85,7 +86,9 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     if inst.rounds:  # multi-round tasks: one fresh session per round; technique objects (memory) persist
         steps, peak, finished = 0, 0, True
         for k, prompt in enumerate(inst.rounds):
+            call_sessions += [None] * (len(meter.records) - len(call_sessions))  # earlier unscored sessions
             r = run_agent(prompt, max_steps=inst.max_steps, **common)
+            call_sessions += [k] * (len(meter.records) - len(call_sessions))
             session_messages.append(r.history)
             tool_calls += r.tool_calls
             all_events += [dict(e, session=k) for e in r.events]
@@ -166,7 +169,8 @@ def run_instance(inst: TaskInstance, spec: str, *, backend: str, model: ModelPro
     }
     write_trace(row["run_id"], row=row, sessions=session_messages,
                 events=all_events or [dict(e, session=0) for e in res.events], calls=meter.records,
-                grades=inst.resources.get("grades"))
+                grades=inst.resources.get("grades"), call_sessions=call_sessions or None,
+                dependencies=inst.resources.get("dependencies"))
     return row
 
 
