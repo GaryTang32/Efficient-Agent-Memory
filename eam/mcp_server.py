@@ -178,7 +178,7 @@ def main() -> None:
     window = int(os.environ.get("EAM_MEMORY_WINDOW", 200_000))
     # optional: the reset point in tokens (e.g. 400000 on a 1M-token model), and a cap on the preview threshold
     compact_at = int(os.environ.get("EAM_MEMORY_COMPACT_AT") or 0)
-    preview_max = int(os.environ.get("EAM_MEMORY_PREVIEW_MAX_TOKENS") or 0) or None
+    preview_max = int(os.environ.get("EAM_MEMORY_PREVIEW_MAX_TOKENS", 16_000)) or None  # 0: no cap
     trigger = min(1.0, compact_at / window) if compact_at else 0.75
     server = Server(MemorySkill(root, window=window, trigger=trigger, preview_max_tokens=preview_max,
                                 summarize=_summarizer()))

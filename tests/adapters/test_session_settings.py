@@ -45,7 +45,8 @@ def test_preview_cap_for_large_windows(tmp_path):
     assert not C.needs_preview(text, 1_000_000, 0.1)          # 10% of 1M lets 100K-token outputs in whole
     assert C.needs_preview(text, 1_000_000, 0.1, max_tokens=8_000)
     assert C.needs_preview(text, 16_000, 0.1, max_tokens=8_000)  # small windows: the share decides, as measured
-    hooks = MemoryHooks(tmp_path, window=1_000_000, preview_max_tokens=8_000)
+    hooks = MemoryHooks(tmp_path, window=1_000_000)  # the default cap: 16K tokens
+    assert hooks.settings["preview_max_tokens"] == 16_000
     hooks.start_session("t")
     shown = hooks.on_tool_result("cat_log", text)
     assert "artifact://" in shown and len(shown) < 10_000
@@ -57,3 +58,14 @@ def test_adapters_pick_up_next_session(tmp_path):
     hooks.next_session(compact_at=300_000)
     first = hooks.start_session("task")  # what an adapter calls internally
     assert first.endswith("task") and hooks.settings["trigger"] == 0.3
+
+
+def test_default_cap_only_changes_large_windows(tmp_path):
+    """16K tokens is 10% of a 160K window: windows up to 160K (every measured setting) preview exactly as before."""
+    for window in (16_000, 32_000, 48_000, 160_000):
+        for tokens in (1_000, 4_000, 12_000, 15_900, 16_100, 40_000):
+            text = "x" * (4 * tokens)
+            assert C.needs_preview(text, window, 0.1, 16_000) == C.needs_preview(text, window, 0.1), (window, tokens)
+    over = "x" * (4 * 17_000)  # about 17K tokens
+    assert "artifact://" in MemoryHooks(tmp_path / "b", window=1_000_000).on_tool_result("t", over)
+    assert MemoryHooks(tmp_path / "d", window=1_000_000, preview_max_tokens=0).on_tool_result("t", over) == over

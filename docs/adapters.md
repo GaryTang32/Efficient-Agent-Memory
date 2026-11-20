@@ -165,7 +165,7 @@ history, so the read cost per step grows with the reset point. Choose the reset 
 
 ```python
 hooks = MemoryHooks(root, window=1_000_000, compact_at=400_000,   # reset at 400K, not 750K
-                    preview_max_tokens=8_000,                      # outputs above 8K tokens enter as head + tail
+                    preview_max_tokens=16_000,                     # the default: outputs above 16K tokens enter as head + tail
                     recall_budget=0.02,                            # recalled notes: at most 20K tokens
                     summarize=cheap_llm)
 ```
@@ -191,12 +191,12 @@ agent.invoke(...)                     # back to the defaults: 500K
 | `window` | 200,000 | The model's window, or the budget you want to manage |
 | `compact_at` / `trigger` | 0.75 × window | The reset point; lower is cheaper per step (see below) |
 | `guard` | 0.9 | Share of the window one step may fill before outputs are moved out |
-| `preview` / `preview_max_tokens` | 10% of the window / no cap | Cap it (for example 8,000): at 1M, 10% lets 100K-token outputs in whole |
+| `preview` / `preview_max_tokens` | 10% of the window, at most 16,000 tokens | The cap only matters above a 160K window: at 1M, 10% alone would let 100K-token outputs in whole. Lower it to preview more, or set 0 for no cap |
 | `recall_budget` | 0.1 | Lower it (for example 0.02): 10% of 1M is 100K tokens of notes |
 | `compaction` | `resum` | `handoff` lets the agent write the recap as its own next turn, from the cache |
 | `preview_tokens`, `handoff_variant` | 750, `general` | Size of a preview; `swe` for coding |
 
-MCP server: `EAM_MEMORY_WINDOW`, `EAM_MEMORY_COMPACT_AT` and `EAM_MEMORY_PREVIEW_MAX_TOKENS`.
+MCP server: `EAM_MEMORY_WINDOW`, `EAM_MEMORY_COMPACT_AT` and `EAM_MEMORY_PREVIEW_MAX_TOKENS` (default 16000, 0 for no cap).
 
 **What the reset point costs.** This is an estimate, not a measurement. The benchmark measured windows of 16–48K, and
 nothing yet at 1M. It assumes a large-window model priced at $2 per million input tokens, cache reads at 0.05× and

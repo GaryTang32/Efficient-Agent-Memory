@@ -19,8 +19,14 @@ runs without a model call and never rewrites history that is already in the prom
 Settings (environment variables):
     AUTOMEM_PREVIEW_CHARS  preview threshold per stream, characters (default 6000; 0 turns previews off)
     AUTOMEM_PREVIEW_KEEP   characters kept at the head and at the tail (default 1500 each)
+    AUTOMEM_PREVIEW_TOKENS the same threshold in tokens (about 4 characters each); overrides AUTOMEM_PREVIEW_CHARS
+    AUTOMEM_PREVIEW_SHARE  the threshold as a share of Claude Code's compaction window (CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+                           or AUTOMEM_WINDOW, in tokens), e.g. 0.02 of 500000 = 10000 tokens; capped by
+                           AUTOMEM_PREVIEW_MAX_TOKENS (default 16000)
+    AUTOMEM_PREVIEW_KEEP_TOKENS  head and tail size in tokens; overrides AUTOMEM_PREVIEW_KEEP
     AUTOMEM_NOTES          on | off: recall and autosave (default on)
     AUTOMEM_RECALL_CHARS   most recent notes recalled, characters (default 3000)
+    AUTOMEM_RECALL_TOKENS  the same in tokens; overrides AUTOMEM_RECALL_CHARS
     AUTOMEM_DATA           where state lives (default: $CLAUDE_PLUGIN_DATA, else ~/.automem)
     AUTOMEM_RETENTION_DAYS saved outputs older than this are deleted (default 14; 0 keeps them)
     AUTOMEM_OUTPUT_MB      saved outputs per project are kept under this size, oldest deleted first (default 200)
@@ -68,6 +74,33 @@ def _env_int(name: str, default: int) -> int:
         return int(os.environ.get(name, default))
     except ValueError:
         return default
+
+
+def _env_float(name: str) -> float | None:
+    try:
+        return float(os.environ[name]) if os.environ.get(name) else None
+    except ValueError:
+        return None
+
+
+def _chars(tokens_var: str, chars_var: str, default: int) -> int:
+    """A size from a token setting (4 characters per token), else its character setting, else the default."""
+    tokens = _env_int(tokens_var, -1)
+    return tokens * 4 if tokens >= 0 else _env_int(chars_var, default)
+
+
+def preview_limits() -> tuple[int, int]:
+    """(threshold, head/tail size) in characters. Precedence: AUTOMEM_PREVIEW_TOKENS, then AUTOMEM_PREVIEW_SHARE of the
+    compaction window (capped by AUTOMEM_PREVIEW_MAX_TOKENS), then AUTOMEM_PREVIEW_CHARS."""
+    keep = _chars("AUTOMEM_PREVIEW_KEEP_TOKENS", "AUTOMEM_PREVIEW_KEEP", 1500)
+    if _env_int("AUTOMEM_PREVIEW_TOKENS", -1) >= 0:
+        return _env_int("AUTOMEM_PREVIEW_TOKENS", 0) * 4, keep
+    share = _env_float("AUTOMEM_PREVIEW_SHARE")
+    window = _env_int("AUTOMEM_WINDOW", 0) or _env_int("CLAUDE_CODE_AUTO_COMPACT_WINDOW", 0)
+    if share is not None and window > 0:
+        cap = _env_int("AUTOMEM_PREVIEW_MAX_TOKENS", 16_000) or window
+        return int(min(share * window, cap)) * 4, keep
+    return _env_int("AUTOMEM_PREVIEW_CHARS", 6000), keep
 
 
 def data_dir() -> Path:
@@ -121,7 +154,7 @@ def read_persisted(path: Path) -> str:
 
 
 def post_tool_use(d: dict) -> dict | None:
-    limit, keep = _env_int("AUTOMEM_PREVIEW_CHARS", 6000), _env_int("AUTOMEM_PREVIEW_KEEP", 1500)
+    limit, keep = preview_limits()
     resp = d.get("tool_response")
     if not limit or d.get("tool_name") != "Bash" or not isinstance(resp, dict):
         return None
@@ -182,7 +215,7 @@ def session_start(d: dict) -> dict | None:
     if not f.exists():
         return None
     notes = read_notes(f)
-    budget, picked = _env_int("AUTOMEM_RECALL_CHARS", 3000), []
+    budget, picked = _chars("AUTOMEM_RECALL_TOKENS", "AUTOMEM_RECALL_CHARS", 3000), []
     for n in reversed(notes):  # most recent first, within the budget
         entry = f"- {n.get('time', '')}: {n.get('text', '').strip()}"
         if sum(len(e) for e in picked) + len(entry) > budget:

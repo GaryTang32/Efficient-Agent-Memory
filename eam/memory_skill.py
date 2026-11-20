@@ -52,7 +52,7 @@ class MemorySkill:
     def __init__(self, root: str | Path | None = None, *, store: Store | None = None, window: int = 200_000, trigger: float = 0.75, guard: float = 0.9,
                  token_ratio: float = 1.5, summarize: Callable[[str], str] | None = None,
                  max_note_chars: int = 20_000, preview: float = 0.1, preview_tokens: int = 750,
-                 preview_max_tokens: int | None = None,
+                 preview_max_tokens: int | None = 16_000,
                  compaction: str = "resum", handoff_variant: str = "general", recall_budget: float = 0.1,
                  retention_days: float = 14, max_artifact_mb: float = 200, max_artifact_chars: int = 10_000_000,
                  wrap: bool = True):
@@ -71,7 +71,8 @@ class MemorySkill:
         # v2: outputs above `preview` × window enter the context as a head/tail preview; the full text is an
         # artifact (read_artifact pages it). 0 = off (v1 behaviour).
         self.preview, self.preview_tokens = float(preview), int(preview_tokens)
-        # caps the preview threshold in tokens (None: share × window only, as measured)
+        # caps the preview threshold in tokens: only windows above 160K reach it (10% of the window is smaller below
+        # that, so every measured setting is unchanged); 0 or None removes the cap
         self.preview_max_tokens = int(preview_max_tokens) if preview_max_tokens else None
         if compaction not in ("resum", "handoff"):
             raise ValueError("compaction must be 'resum' or 'handoff'")

@@ -4,8 +4,8 @@
 
 **Large windows and per-session settings.**
 - `MemoryHooks(..., compact_at=400_000)` sets the reset point in tokens.
-- `preview_max_tokens` caps the preview threshold, so that with a 1M-token window, 100K-token outputs no longer enter
-  whole.
+- `preview_max_tokens` (default 16,000) caps the preview threshold, so that with a 1M-token window, 100K-token
+  outputs no longer enter whole. Windows up to 160K are unchanged, including every measured setting.
 - Settings can change per session, through `start_session(task, **settings)` or `next_session(**settings)`. A
   session that sets nothing goes back to the defaults. `next_session` works with every adapter.
 - The MCP server reads `EAM_MEMORY_COMPACT_AT` and `EAM_MEMORY_PREVIEW_MAX_TOKENS`.
