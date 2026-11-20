@@ -200,12 +200,12 @@ flowchart TD
 
 | Preset | Spec | Use it for |
 |---|---|---|
-| `automem_v2` | `automem:ingest=0.1` | **The default.** Multi-session work that builds on earlier results |
-| `automem_v2_strong` | `automem:ingest=0.1,compact=sjc` | Strong agent models, with a cheaper summariser (`#aux=`). It lowered two tasks on Haiku. |
-| `automem_v2_slim` | `automem:ingest=0.1,fold=true` | The smallest working context, at a little more cost |
+| `automem_v2` | `automem:ingest=0.1,recall_results=latest` | **The default.** Multi-session work that builds on earlier results |
+| `automem_v2_strong` | `automem:ingest=0.1,compact=sjc,recall_results=latest` | Strong agent models, with a cheaper summariser (`#aux=`). It lowered two tasks on Haiku. |
+| `automem_v2_slim` | `automem:ingest=0.1,fold=true,recall_results=latest` | The smallest working context, at a little more cost |
 | `automem_v2_lean` | `automem:workspace=false,ingest=0.1` | Coding issues or tickets, one per session |
 | `automem_v2_lean_handoff` | `automem:workspace=false,ingest=0.1,compact=handoff,handoff_variant=swe` | The same, with NVIDIA's handoff recap at resets (level with `automem_v2_lean` over three runs) |
-| `automem_v2_adaptive` | `automem:workspace=adaptive,ingest=0.1` | An unknown workload on a strong model: the summariser decides per session whether to keep notes |
+| `automem_v2_adaptive` | `automem:workspace=adaptive,ingest=0.1,recall_results=latest` | An unknown workload on a strong model: the summariser decides per session whether to keep notes |
 
 When unsure, pick `automem_v2`. Taking notes on unrelated coding issues cost up to 90 points of cost on Haiku and
 nothing on Sonnet. The opposite mistake, no notes on work that builds across sessions, cost 100–160 points and about
@@ -328,6 +328,9 @@ or `-t "automem:ingest=0.1,recall=false"`.
 | `handoff_variant` | `handoff_variant` | `general` | `swe` for coding work, with the `handoff` compactors |
 | `fold` | (bench only) | `false` | ReFold's de-duplication and folding (`automem_v2_slim`) |
 | `wrap` | `wrap` | bench `false`, library `true` | Recalled notes are wrapped as data, with a rule never to follow instructions inside |
+| `recall_results` | (library: always `latest`) | `latest` in the note-keeping presets, `all` in a bare `automem:` spec | `latest`: only the newest autosaved session answer is recalled; older ones are listed by name and readable with `read_notes` |
+| `note_ids` | (bench only) | `false` | Asks the agent to note ids alongside the values it used. Fewer re-reads on Haiku, no gain in cost or score (step 5) |
+| `verify` | (bench only) | `false` | A final answer goes back once while the last test run still fails |
 | | `recall_budget` | `0.1` | Recall takes at most this share of the window; older notes are listed by name |
 | | `retention_days`, `max_artifact_mb` | `14`, `200` | Stored outputs are deleted after 14 days or beyond 200 MB per project |
 

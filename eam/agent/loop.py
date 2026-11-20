@@ -172,6 +172,7 @@ def run_agent(
     history = list(ctx.messages)  # append-only record for traces
 
     answer, finished, rewrites, nudges = "", False, 0, 0
+    final_checked = False  # techniques may send the final answer back once per session (Technique.on_final)
     n_tool_calls = 0
     sizer = _PromptSizer()
     prev_snapshot: list[str] = []
@@ -258,6 +259,14 @@ def run_agent(
                 ctx.messages.append({"role": "user", "content": [{"text": NUDGE.format(marker=final_marker)}]})
                 history.append(ctx.messages[-1])
                 continue
+            if tag == "main" and not final_checked:
+                check = next((m for m in (t.on_final(ctx, resp.text) for t in techniques) if m), None)
+                if check:
+                    final_checked = True
+                    ctx.log("final_check")
+                    ctx.messages.append({"role": "user", "content": [{"text": check}]})
+                    history.append(ctx.messages[-1])
+                    continue
             answer, finished = resp.text, True
             break
 

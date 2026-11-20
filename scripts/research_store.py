@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 # rows with the corrected grading (validation round, 2026-11-08, onward); older rows suggest hypotheses only
 EVIDENCE = ["sameday_*.jsonl", "oos_*.jsonl", "recheck_*.jsonl", "rank3_*.jsonl", "wrap_syn-*.jsonl",
-            "traced_swe-*.jsonl", "canary-*.jsonl", "recall-*.jsonl"]
+            "traced_swe-*.jsonl", "canary-*.jsonl", "recall-*.jsonl", "step5-*.jsonl", "step5_swe-*.jsonl"]
 CEILING = "naive@native"
 # the row fields the views use, with nested ones kept as JSON (inferring their varying structure costs gigabytes)
 RUN_COLUMNS = {
@@ -93,11 +93,12 @@ INVARIANTS = {
             SELECT c.file, c.model, c.spec, len(c.days) AS days, len(list_filter(c.days, lambda d: NOT
                    list_contains(coalesce(ceil.days, []), d))) AS days_without_ceiling
             FROM cells c LEFT JOIN cells ceil ON ceil.file = c.file AND ceil.model = c.model AND ceil.spec = '{CEILING}'
-            WHERE c.spec <> '{CEILING}' AND c.file NOT LIKE '%_rep-%'
+            WHERE c.spec <> '{CEILING}' AND c.file NOT LIKE '%_rep-%' AND c.file NOT LIKE 'step5_swe-%'
                   AND (ceil.days IS NULL OR len(list_filter(c.days, lambda d: NOT list_contains(ceil.days, d))) > 0)""",
 }
 
 
+# step5_swe-* compares a fix with a same-day lean control, not with the ceiling.
 # files that break an invariant on purpose, with the reason (the first column of a failing row is the file)
 KNOWN = {"recheck_eocc16k-haiku.jsonl": "EoCC alone re-graded alone, compared with another day's cells; superseded by "
                                         "rank3 run 2, where it ran next to its ceiling"}
