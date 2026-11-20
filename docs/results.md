@@ -209,13 +209,13 @@ Django issues, and EoCC alone was run next to its ceiling on both models, all wi
 8–10 of the ten-day `ops_stream` job the notes took 26–29% of Sonnet's prompt, mostly stale autosaved copies of
 earlier sessions' answers. Haiku's notes missed many facts later sessions needed, so it re-opened old files instead.
 
-**Step 5** tested three fixes that add no model call, each against a baseline from the same day (76 runs):
+**Step 5** tested three fixes that add no model call, each against a baseline from the same day (118 runs):
 
 | Fix | Result | Decision |
 |---|---|---|
 | Recall only the newest autosaved answer | `ops_stream`: Sonnet's notes 26% → 16% of the prompt at 95% of the cost, 99% of needed facts carried; Haiku cost 82% of baseline, needed facts carried 73% → 82%, fewer old files re-opened. Three-round audit: within noise | Default in the library and the note-keeping presets |
 | Ids in notes (`note_ids`) | Fewer re-reads on Haiku; no gain in score or cost; Sonnet cost 26% more on the audit task | Off by default |
-| Send a final answer back once while the last test run still fails (`verify`) | Haiku: more Django issues resolved at the same cost, but not significant (sign test p ≈ 0.2); Sonnet: level | Off by default; worth trying on smaller models |
+| Send a final answer back once while the last test run still fails (`verify`) | Haiku, 9 runs of 5 workdays: 157 issues resolved against 147, 39 won and 29 lost (sign test p = 0.27), at 95% of the cost; the check fired 58 times. Sonnet, 3 runs: 30 against 31 | Off by default; worth trying on smaller models |
 
 ## Claude Code plugin pilots
 
