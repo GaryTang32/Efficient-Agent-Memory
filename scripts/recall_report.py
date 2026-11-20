@@ -78,6 +78,17 @@ def carried(dep: dict, text: str) -> bool:
     return False
 
 
+def latest_autosave_only(text: str) -> str:
+    """The recall text as it would be if each autosaved session answer superseded the previous one: only the newest
+    'session N final answer' is shown, older ones are listed by name (what step 5 would change)."""
+    head, *parts = re.split(r"\n## ", text)
+    auto = [p for p in parts if re.match(r"session \d+ final answer", p)]
+    keep = [p for p in parts if p not in auto[:-1]]
+    out = head + "".join("\n## " + p for p in keep)
+    old = [p.split("\n", 1)[0] for p in auto[:-1]]
+    return out + (f"\n\n[Older notes not shown, read one with read_notes(name=...): {', '.join(old)}]" if old else "")
+
+
 def earlier_day_opens(tool_calls: list[dict], session: int) -> int:
     """ops_stream: files of earlier days opened again (D01-A ... on day 3 and later)."""
     n = 0
@@ -96,9 +107,11 @@ def sessions_of(row: dict, t: dict[str, list[dict]]) -> list[dict]:
         if e["kind"] == "automem_recall":
             recall[e["session"]].append(json.loads(e["fields"]))
     calls = defaultdict(list)
+    cost = defaultdict(float)  # prompt-side cost in units of the input price: cache write 2x (CLI), read 0.1x
     for c in t["call"]:
         if c.get("tag") == "main" and c.get("session") is not None:
             calls[c["session"]].append(c["input_tokens"] + c["cache_read_tokens"] + c["cache_write_tokens"])
+            cost[c["session"]] += c["input_tokens"] + 2 * c["cache_write_tokens"] + 0.1 * c["cache_read_tokens"]
     deps = defaultdict(list)
     for d in t["dependency"]:
         deps[d["session"]].append(d)
@@ -113,10 +126,19 @@ def sessions_of(row: dict, t: dict[str, list[dict]]) -> list[dict]:
         prompt = st.mean(calls[s]) if calls[s] else 0
         need = deps[s]
         got = [carried(d, text) for d in need]
+        resets = sum(r.get("when") == "reset" for r in recall[s])
+        n = len(calls[s])
+        # the notes are written to the cache once per session (and again after each reset), then read cheaply
+        recall_cost = tokens * (2 * (1 + resets) + 0.1 * max(0, n - 1 - resets))
+        slim = latest_autosave_only(text) if text else ""
         out.append({
             "family": row["family"], "model": row["model"].removeprefix("cc-"), "instance": row["instance"],
             "session": s, "recall_tokens": tokens, "resets": sum(r.get("when") == "reset" for r in recall[s]),
             "mean_prompt": prompt, "share": tokens / prompt if prompt else 0.0, "calls": len(calls[s]),
+            "cost_share": min(1.0, recall_cost / cost[s]) if cost[s] else 0.0,
+            "slim_share": (tokens * len(slim) / len(text)) / prompt if prompt and text else 0.0,
+            "slim_carried": sum(carried(d, slim) for d in need),
+            "kinds_missing": [d["kind"] for d, g in zip(need, got) if not g],
             "needed": len(need), "carried": sum(got),
             "score": (row.get("round_scores") or [row.get("score")])[s] if s < len(row.get("round_scores") or [1]) else None,
             "reread": earlier_day_opens(tools[s], s) if row["family"] == "ops_stream" else 0,
@@ -152,6 +174,21 @@ def report(sessions: list[dict]) -> str:
         out.append(f"| {m} | {f} | {len(with_recall)} of {len(ss)} | {pct(st.median(shares))} | {pct(p90)} | "
                    f"{pct(shares[-1])} | {st.mean(s['recall_tokens'] for s in with_recall):,.0f} | {verdict} |")
 
+    out.append("\n## In dollars, and with stale autosaves superseded\n")
+    out.append("Cost share: the notes' part of the session's prompt-side cost (cache write 2x, read 0.1x). "
+               "Superseded: the same sessions if each autosaved answer replaced the previous one in recall.\n")
+    out.append("| Model | Task | Cost share, median / max | Share now, last 3 sessions | Share superseded, last 3 "
+               "sessions | Facts carried now / superseded |")
+    out.append("|---|---|---|---|---|---|")
+    for (m, f), ss in sorted(groups.items()):
+        wr = [s for s in ss if s["recall_tokens"]]
+        if not wr:
+            continue
+        last = [s for s in wr if s["session"] >= max(x["session"] for x in wr) - 2]
+        out.append(f"| {m} | {f} | {pct(st.median(s['cost_share'] for s in wr))} / {pct(max(s['cost_share'] for s in wr))} | "
+                   f"{pct(st.median(s['share'] for s in last))} | {pct(st.median(s['slim_share'] for s in last))} | "
+                   f"{sum(s['carried'] for s in wr)} / {sum(s['slim_carried'] for s in wr)} of {sum(s['needed'] for s in wr)} |")
+
     out.append("\n## Growth: recall tokens by session (median over runs)\n")
     for (m, f), ss in sorted(groups.items()):
         by = defaultdict(list)
@@ -178,6 +215,13 @@ def report(sessions: list[dict]) -> str:
                    f"{fmt(part)} | {st.mean(s['reread'] for s in need):.2f} | "
                    f"{st.mean(s['read_notes'] for s in ss):.2f} |")
 
+    miss = defaultdict(lambda: defaultdict(int))
+    for s in sessions:
+        for k in s["kinds_missing"]:
+            miss[(s["model"], s["family"])][k] += 1
+    if miss:
+        out.append("\nFacts missing from the notes, by kind: " + "; ".join(
+            f"{m} {f}: " + ", ".join(f"{v} {k}" for k, v in sorted(d.items())) for (m, f), d in sorted(miss.items())))
     out.append("\n## Decision\n")
     out.append("Selective recall **is** worth building: notes exceed 15% of the prompt in at least one cell."
                if over else "Selective recall is **not** needed now: notes stay under 15% of the prompt in every cell "
