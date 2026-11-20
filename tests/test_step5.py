@@ -63,3 +63,11 @@ def test_runs_with_the_new_switches_finish():
         row = run_instance(FAMILIES[fam](0), "automem:ingest=0.1,recall_results=latest,note_ids=true,verify=true",
                            backend="mock", model=M, aux_model=M, models=MOCK_MODELS)
         assert not row.get("error") and row["sessions"] >= 1
+
+
+def test_note_keeping_presets_recall_latest_answer_only():
+    from eam.presets import PRESETS
+
+    for name in ("automem_v2", "automem_v2_strong", "automem_v2_slim", "automem_v2_adaptive"):
+        assert PRESETS[name]().recall_results == "latest", name
+    assert PRESETS["automem_v2_lean"]().recall_results == "all"  # no notes to recall

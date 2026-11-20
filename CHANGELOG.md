@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+**Recall keeps only the newest session answer.** Autosaved session answers used to pile up in recall: by day 8–10 of a
+ten-day job they filled about a quarter of Sonnet's prompt, mostly as copies of earlier answers. Now each autosave
+supersedes the previous one; older answers stay readable by name.
+- The library (`MemorySkill.save_session`) does this by default.
+- The note-keeping bench presets (`automem_v2`, `_strong`, `_slim`, `_adaptive`) set `recall_results=latest`.
+- Step 5 measured it against step 4's runs. On ops_stream the notes fell from 26% to 16% of Sonnet's prompt at 95%
+  of the cost, with 99% of needed facts carried. Haiku cost 82% of baseline, carried 82% of needed facts instead of
+  73%, and re-opened fewer old files. On the three-round audit task the changes were within run-to-run noise.
+
+**New bench switches, off by default.**
+- `note_ids=true` asks for ids alongside the values noted. It cut Haiku's re-reading of old files, but not its
+  cost or score.
+- `verify=true` sends a final answer back once while the agent's last test run still fails. It uses a new
+  `Technique.on_final` hook.
+
 **Layers.** AutoMemory is split into a pure core, pluggable storage and thin host adapters (`eam/automem/`):
 - `eam.automem.core`: the decisions as pure functions (recall selection within a token budget, previews, the in-step
   guard, the compaction trigger), shared by the library and the MCP server.

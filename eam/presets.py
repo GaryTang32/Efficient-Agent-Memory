@@ -102,17 +102,19 @@ class AutoMemory(Technique):
 
 def automem_v2() -> Technique:
     """AutoMemory v2 default (docs/results/2026-11-04-automemory-v2.md): v1 + head/tail previews at ingestion for
-    outputs above 10% of the window."""
+    outputs above 10% of the window. Since step 5 only the newest autosaved session answer is recalled; older ones
+    stay readable by name (on the ten-day ops_stream task notes fell from 26% to 16% of Sonnet's prompt and Haiku's
+    cost to 82%, with the facts each session needs still carried)."""
     from eam.techniques.auto_memory import AutoMemory as AM
 
-    return AM(ingest=0.1)
+    return AM(ingest=0.1, recall_results="latest")
 
 
 def automem_v2_slim() -> Technique:
     """AutoMemory v2 "slim" mode: v2 + ReFold dedup/folding; smallest peak context, a little more cost."""
     from eam.techniques.auto_memory import AutoMemory as AM
 
-    return AM(ingest=0.1, fold=True)
+    return AM(ingest=0.1, fold=True, recall_results="latest")
 
 
 def automem_v2_strong() -> Technique:
@@ -121,7 +123,7 @@ def automem_v2_strong() -> Technique:
     Not for weaker agent models: on Haiku it lowered research_corpus and ledger_audit."""
     from eam.techniques.auto_memory import AutoMemory as AM
 
-    return AM(ingest=0.1, compact="sjc")
+    return AM(ingest=0.1, compact="sjc", recall_results="latest")
 
 
 def automem_v2_lean() -> Technique:
@@ -152,7 +154,7 @@ def automem_v2_adaptive() -> Technique:
     not the default."""
     from eam.techniques.auto_memory import AutoMemory as AM
 
-    return AM(workspace="adaptive", ingest=0.1)
+    return AM(workspace="adaptive", ingest=0.1, recall_results="latest")
 
 
 PRESETS: dict[str, Callable[[], Technique]] = {
