@@ -16,9 +16,9 @@ OUT = Path(__file__).resolve().parents[2] / "docs" / "assets"
 
 THEMES = {
     "light": dict(ink="#0b0b0b", ink2="#52514e", muted="#6f6d68", grid="#e1e0d9", axis="#c3c2b7",
-                  ours="#2a78d6", pub="#eb6834", ref="#898781", ring="#ffffff"),
+                  ours="#2a78d6", pub="#eb6834", ref="#898781", ring="#ffffff", card="#ffffff", panel="#eaf2fc"),
     "dark": dict(ink="#f0efec", ink2="#c3c2b7", muted="#9b9990", grid="#2c2c2a", axis="#4a4a46",
-                 ours="#3987e5", pub="#d95926", ref="#898781", ring="#0d1117"),
+                 ours="#3987e5", pub="#d95926", ref="#898781", ring="#0d1117", card="#161b22", panel="#13233a"),
 }
 FONT = 'font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif"'
 
@@ -277,9 +277,99 @@ def roadmap_chart(t):
                "repository outside Python.")
 
 
+# What the repo does, as one picture: the problem, the two parts of the repo, what a user gets
+OVERVIEW_PROBLEM = [
+    ("Context keeps growing", ["Every tool output is re-sent on every", "call, so a long task fills the window."]),
+    ("Long tasks fail at the window", ["The agent stops or loses track", "before the fix is in."]),
+    ("Nothing carries over", ["Each new session starts from zero", "and redoes the same exploration."]),
+    ("Saving tokens can cost more", ["Cached history is re-sent at 0.05–0.1×;", "rewriting it is billed at 1.25–2×."]),
+]
+OVERVIEW_GAIN = [
+    ("58–85%", "of the cost, same accuracy", ["Matches the full-context agent on long", "tasks (Sonnet 58%, Haiku 85%)."]),
+    ("~35%", "of the peak prompt", ["The largest prompt sent is about a", "third of the full-context agent's."]),
+    ("16K", "window, same issues fixed", ["Real Django bugs: as many fixed as with", "the full window, 80% cost on Sonnet."]),
+    ("0 / 20", "planted instructions obeyed", ["Notes are wrapped as data (4 of 20", "were obeyed unwrapped)."]),
+]
+
+
+def overview_chart(t):
+    W, top, cw = 960, 92, 270
+    xs = (20, 345, 670)
+    body = [f'<text x="20" y="30" fill="{t["ink"]}" font-size="17" font-weight="700">Efficient Agent Memory</text>',
+            f'<text x="20" y="52" fill="{t["ink2"]}" font-size="13">Make long-running LLM agents cheaper and leaner, '
+            f'with no loss of accuracy.</text>']
+    for x, head in zip(xs, ("THE PROBLEM", "WHAT THE REPO DOES", "WHAT YOU GET")):
+        body.append(f'<text x="{x}" y="{top - 10}" fill="{t["muted"]}" font-size="11.5" font-weight="600" '
+                    f'letter-spacing="1">{head}</text>')
+
+    def card(x, y, w, h, bar=None):
+        out = f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" fill="{t["card"]}" stroke="{t["grid"]}"/>'
+        if bar:
+            out += f'<rect x="{x}" y="{y + 6}" width="3.5" height="{h - 12}" rx="1.75" fill="{bar}"/>'
+        return out
+
+    def lines(x, y, rows, size=12.5, fill=None, dy=17):
+        return "".join(f'<text x="{x}" y="{y + i * dy}" fill="{fill or t["ink2"]}" font-size="{size}">{E(r)}</text>'
+                       for i, r in enumerate(rows))
+
+    ph, gap = 98, 12
+    for i, (title, rows) in enumerate(OVERVIEW_PROBLEM):
+        y = top + i * (ph + gap)
+        body.append(card(xs[0], y, cw, ph, t["pub"]))
+        body.append(f'<text x="{xs[0] + 16}" y="{y + 32}" fill="{t["ink"]}" font-size="13.5" font-weight="600">{E(title)}</text>')
+        body.append(lines(xs[0] + 16, y + 55, rows))
+    gh = 98
+    for i, (num, title, rows) in enumerate(OVERVIEW_GAIN):
+        y = top + i * (gh + gap)
+        body.append(card(xs[2], y, cw, gh, t["ours"]))
+        body.append(f'<text x="{xs[2] + 16}" y="{y + 30}" fill="{t["ours"]}" font-size="22" font-weight="700">{E(num)}</text>'
+                    f'<text x="{xs[2] + 16}" y="{y + 50}" fill="{t["ink"]}" font-size="13" font-weight="600">{E(title)}</text>')
+        body.append(lines(xs[2] + 16, y + 70, rows, 12))
+    colh = 4 * gh + 3 * gap
+    px, pw = xs[1] - 10, cw + 20
+    body.append(f'<rect x="{px}" y="{top - 4}" width="{pw}" height="{colh + 8}" rx="12" fill="{t["panel"]}"/>')
+    x, w = xs[1] + 4, cw - 8
+    body.append(card(x, top + 8, w, 112))
+    body.append(f'<text x="{x + 14}" y="{top + 32}" fill="{t["ink"]}" font-size="13.5" font-weight="600">1 · Test bench</text>')
+    body.append(lines(x + 14, top + 53, ["27 methods and variants from papers,", "about 3,700 runs on Claude Haiku and",
+                                         "Sonnet, each between the same floor", "(no memory) and ceiling (full context)."], 12))
+    y2 = top + 132
+    steps = ["recall notes at session start", "preview large outputs", "guard against overflow",
+             "one reset at 75% of the window", "autosave the answer as a note"]
+    body.append(card(x, y2, w, 74 + 20 * len(steps)))
+    body.append(f'<text x="{x + 14}" y="{y2 + 24}" fill="{t["ink"]}" font-size="13.5" font-weight="600">2 · AutoMemory</text>')
+    body.append(lines(x + 14, y2 + 45, ["The best methods, combined. It never", "rewrites cached history each step:"], 12))
+    for k, st in enumerate(steps):
+        sy = y2 + 82 + k * 20
+        body.append(f'<circle cx="{x + 20}" cy="{sy - 4}" r="3.5" fill="{t["ours"]}"/>'
+                    f'<text x="{x + 32}" y="{sy}" fill="{t["ink"]}" font-size="12">{E(st)}</text>')
+    y3 = y2 + 74 + 20 * len(steps) + 12
+    body.append(card(x, y3, w, top + colh - 8 - y3))
+    body.append(f'<text x="{x + 14}" y="{y3 + 24}" fill="{t["ink"]}" font-size="13.5" font-weight="600">Install it your way</text>')
+    body.append(lines(x + 14, y3 + 45, ["Python library · MCP server · Claude", "Code plugin · no runtime dependencies"], 12))
+
+    for ax in (xs[0] + cw + 8, xs[1] + cw + 18):
+        ay = top + colh / 2
+        body.append(f'<path d="M{ax} {ay} h16 M{ax + 10} {ay - 6} l6 6 l-6 6" fill="none" stroke="{t["muted"]}" '
+                    f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')
+    ly = top + colh + 26
+    body.append(f'<rect x="20" y="{ly}" width="{W - 40}" height="52" rx="8" fill="{t["card"]}" stroke="{t["grid"]}"/>'
+                f'<text x="36" y="{ly + 22}" fill="{t["ink"]}" font-size="13" font-weight="600">The core lesson: '
+                f'fewer tokens is not fewer dollars.</text>'
+                f'<text x="36" y="{ly + 40}" fill="{t["ink2"]}" font-size="12">Cached history is cheap to re-send. The '
+                f'methods that pay off act when an output arrives or at a rare reset; trimming every step cost up to 6×.</text>')
+    return svg(W, ly + 68, "".join(body), "What Efficient Agent Memory does",
+               "The problem: context grows, long tasks fail at the window, nothing carries over between sessions, and "
+               "trimming history can cost more because it breaks the prompt cache. The repo measures 27 methods the "
+               "same way and ships the best as AutoMemory (recall, previews, an overflow guard, one reset at 75% of the "
+               "window, autosave). Users get the full-context agent's accuracy at 58-85% of its cost, about 35% of its "
+               "peak prompt, as many real bugs fixed in a 16K window, and notes wrapped against injected instructions.")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for name, fn in (("synthetic-frontier", synth_chart), ("swe-16k", swe_chart), ("roadmap", roadmap_chart)):
+    for name, fn in (("synthetic-frontier", synth_chart), ("swe-16k", swe_chart), ("roadmap", roadmap_chart),
+                     ("overview", overview_chart)):
         for mode, t in THEMES.items():
             (OUT / f"{name}-{mode}.svg").write_text(fn(t))
     print("wrote", sorted(p.name for p in OUT.glob("*.svg")))
