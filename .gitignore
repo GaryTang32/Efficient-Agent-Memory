@@ -9,6 +9,7 @@ config/models.json
 # Downloaded papers and anything derived from them (PDFs, sources, text extracts): local reading copies, never redistributed
 /papers/
 .venv-memory/
+.venv-adapters/
 
 # Experiment results, logs and analyses stay local
 docs/results/

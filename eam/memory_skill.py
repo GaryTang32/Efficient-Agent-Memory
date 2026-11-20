@@ -43,9 +43,8 @@ from eam import safety as S
 from eam.automem import core as C
 from eam.automem.notes import NOTE_TYPES, Note
 from eam.automem.storage import JsonStore, Store
-from eam.techniques.auto_memory import GUARDED, RECALL
+from eam.automem.prompts import GUARDED, RECALL, RECAP_SECTION, WORKSPACE, compaction_prompt
 from eam.techniques.third_party import resum as P
-from eam.techniques.workspace import NoteWorkspace
 from eam.tokens import estimate_tokens
 
 
@@ -112,7 +111,7 @@ class MemorySkill:
         return max(1, int(self.recall_budget * self.window))
 
     def system_addendum(self) -> str:
-        base = NoteWorkspace().system_addendum()
+        base = WORKSPACE
         return f"{base}\n\n{S.MEMORY_RULE}" if self.wrap else base
 
     def _recall_text(self) -> str:
@@ -129,8 +128,13 @@ class MemorySkill:
         answer, which leaves recall but stays readable by name: on a ten-day task, stale copies of earlier answers
         were a third of the recalled notes and carried no fact a later session needed (docs/automem_v2.md)."""
         if answer:
+            records = self.records()
             name = label or f"session {time.strftime('%Y-%m-%d %H:%M:%S')} final answer"
-            prev = [n.name for n in self.records() if n.source == "autosave" and n.type == "result" and n.active
+            if not label:  # two sessions ending in the same second must not overwrite each other's answer
+                taken, base, k = {n.name for n in records}, name, 2
+                while name in taken:
+                    name, k = f"{base} ({k})", k + 1
+            prev = [n.name for n in records if n.source == "autosave" and n.type == "result" and n.active
                     and n.name != name]
             self.write_note(name, answer, type="result", source="autosave", supersedes=prev[-1] if prev else "")
 
@@ -210,15 +214,11 @@ class MemorySkill:
     # ---- handoff compaction (NVIDIA EoCC, arXiv 2611.05306) -------------------------------------------------
     def handoff_prompt(self) -> str:
         """The paper's compaction prompt (App. G), to send as a user message; the reply is the recap."""
-        from eam.techniques.eocc import compaction_prompt
-
         return compaction_prompt(self.handoff_variant)
 
     def apply_handoff(self, messages: list[dict[str, Any]], recap: str, *, question: str
                       ) -> list[dict[str, Any]]:
         """Reset to the system message, the task, the notes and the recap (nothing else is kept)."""
-        from eam.techniques.eocc import RECAP_SECTION
-
         system = [m for m in messages[:1] if m.get("role") == "system"]
         text = f"Task: {question}"
         if self.notes():

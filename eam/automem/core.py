@@ -82,9 +82,22 @@ def needs_preview(text: str, window: int, share: float) -> bool:
 
 def preview(text: str, preview_tokens: int) -> str:
     """Head and tail of `text` (Strands' head_tail preview); `text` itself when it is short enough."""
-    from eam.techniques.strands import preview as head_tail
-
     return head_tail(text, preview_tokens)
+
+
+def head_tail(full: str, preview_tokens: int = 750, head_share: float = 0.6) -> str:
+    """Strands' head_tail preview (strands methods/truncate.py::_build_preview), kept here so the library needs no
+    bench code; eam.techniques.strands uses this one."""
+    chars = preview_tokens * 4
+    if len(full) <= chars:
+        return full
+    head_n = int(chars * head_share)
+    tail_n = chars - head_n
+    head, tail = full[:head_n], full[-tail_n:] if tail_n > 0 else ""
+    marker = f"[... {len(full) - head_n - tail_n:,} chars elided ...]"
+    body = "\n\n".join(p for p in [head, marker, tail] if p)
+    out = f"[Truncated: 1 block, ~{-(-len(full) // 4):,} tokens]\n\n{body}"
+    return full if len(out) >= len(full) else out
 
 
 def guard_exceeded(step_used: int, adding: int, window: int, guard: float) -> bool:
