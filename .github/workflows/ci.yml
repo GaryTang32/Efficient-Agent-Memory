@@ -26,6 +26,21 @@ jobs:
         env:
           EAM_CLAUDE_WAIT_FOR_LIMIT: "0"
 
+  adapters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the wheel and install it with every adapter's framework
+        run: |
+          pip install build
+          python -m build --wheel
+          pip install "$(ls dist/*.whl)[adapters,dev]"
+      - name: Adapter conformance (fake models; no API keys, no network)
+        run: python -m pytest -q tests/adapters
+
   security:
     runs-on: ubuntu-latest
     steps:
@@ -39,7 +54,7 @@ jobs:
       - name: Adversarial tests (memory poisoning, secrets, file safety, concurrency)
         run: python -m pytest -q tests/test_security.py tests/test_lightweight.py
       - name: Static analysis of the shipped code (library, MCP server, plugin hooks)
-        run: bandit -q -ll -r eam/safety.py eam/memory_skill.py eam/mcp_server.py eam/automem plugins/automem/hooks
+        run: bandit -q -ll -r eam/safety.py eam/memory_skill.py eam/mcp_server.py eam/automem eam/adapters plugins/automem/hooks
       - name: Dependency audit
         run: pip-audit --strict .
       - name: Secret scan of the history

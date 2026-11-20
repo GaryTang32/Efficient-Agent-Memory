@@ -1,22 +1,43 @@
 [project]
 name = "efficient-agent-memory"
-version = "0.2.0"
-description = "Test bench for agent memory and context-management techniques on Amazon Bedrock"
+version = "0.3.0"
+description = "AutoMemory: slim, persistent context for LLM agents (library, MCP server, framework adapters), and the test bench that measured it"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["llm", "agents", "memory", "context", "compaction", "mcp", "claude", "langgraph"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# AutoMemory needs only the standard library; each adapter's framework is an extra (below)
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/GaryTang32/Efficient-Agent-Memory"
+Documentation = "https://github.com/GaryTang32/Efficient-Agent-Memory/blob/main/docs/adapters.md"
 
 [project.optional-dependencies]
 bedrock = ["boto3>=1.35"]
 compression = ["llmlingua>=0.2"]
 dev = ["pytest>=8"]
 research = ["duckdb>=1.1"]  # scripts/research_store.py only; AutoMemory itself needs nothing
+# framework adapters (eam.adapters.*), tested offline against these versions
+anthropic = ["anthropic>=2.11"]
+claude-agent-sdk = ["claude-agent-sdk>=0.2.186"]
+langgraph = ["langchain>=1.5", "langgraph>=1.2"]
+openai-agents = ["openai-agents>=0.25"]
+adapters = ["anthropic>=2.11", "claude-agent-sdk>=0.2.186", "langchain>=1.5", "langgraph>=1.2", "openai-agents>=0.25", "mcp>=2.3"]
 
 [project.scripts]
 eam-bench = "eam.bench.__main__:main"
+automem-mcp = "eam.mcp_server:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

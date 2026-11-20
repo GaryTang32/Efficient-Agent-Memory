@@ -14,3 +14,4 @@ config/models.json
 # Experiment results, logs and analyses stay local
 docs/results/
 scripts/docs_gen/overview_data.json
+/build/
