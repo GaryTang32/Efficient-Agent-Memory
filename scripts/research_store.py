@@ -3,6 +3,7 @@
     pip install duckdb                       # research tooling only; AutoMemory itself needs no dependency
     python scripts/research_store.py invariants          # measurement checks on every evidence row
     python scripts/research_store.py disagreements       # issues where a setting and its ceiling disagree
+    python scripts/research_store.py canary              # drift of the daily canary cell (scripts/run_canary.sh)
     python scripts/research_store.py sql "SELECT ..."    # any query over the views below
 
 Views:
@@ -20,7 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 # rows with the corrected grading (validation round, 2026-11-08, onward); older rows suggest hypotheses only
-EVIDENCE = ["sameday_*.jsonl", "oos_*.jsonl", "recheck_*.jsonl", "rank3_*.jsonl", "wrap_syn-*.jsonl"]
+EVIDENCE = ["sameday_*.jsonl", "oos_*.jsonl", "recheck_*.jsonl", "rank3_*.jsonl", "wrap_syn-*.jsonl",
+            "traced_swe-*.jsonl", "canary-*.jsonl"]
 CEILING = "naive@native"
 # the row fields the views use, with nested ones kept as JSON (inferring their varying structure costs gigabytes)
 RUN_COLUMNS = {
@@ -30,6 +32,17 @@ RUN_COLUMNS = {
     "unfinished_sessions": "BIGINT", "steps": "BIGINT", "tool_calls": "BIGINT", "sessions": "BIGINT",
     "cost_usd": "DOUBLE", "usage": "JSON", "calls": "BIGINT", "by_tag": "JSON", "peak_prompt_tokens": "BIGINT",
     "events": "JSON", "gold": "VARCHAR",
+}
+
+# every field of the trace tables (eam/bench/trace.py), so DuckDB does not infer the union of their shapes
+TRACE_COLUMNS = {
+    "table": "VARCHAR", "run_id": "VARCHAR", "session": "BIGINT", "index": "BIGINT", "step": "BIGINT",
+    "role": "VARCHAR", "text": "VARCHAR", "chars": "BIGINT", "tool_uses": "JSON", "tool_results": "JSON",
+    "tool_use_id": "VARCHAR", "name": "VARCHAR", "input": "JSON", "error": "VARCHAR", "output_chars": "BIGINT",
+    "message": "BIGINT", "kind": "VARCHAR", "fields": "JSON", "tag": "VARCHAR", "model": "VARCHAR",
+    "input_tokens": "BIGINT", "output_tokens": "BIGINT", "cache_read_tokens": "BIGINT", "cache_write_tokens": "BIGINT",
+    "cost_usd": "DOUBLE", "latency_ms": "DOUBLE", "patch": "VARCHAR", "report": "VARCHAR", "resolved": "BOOLEAN",
+    "score": "DOUBLE", "spec": "VARCHAR", "instance": "VARCHAR",
 }
 
 
@@ -52,8 +65,9 @@ def connect():
         FROM x""")
     traces = sorted((RESULTS / "traces").glob("*.jsonl.gz"))
     if traces:
+        cols = ", ".join(f"'{k}': '{v}'" for k, v in TRACE_COLUMNS.items())
         con.execute(f"""CREATE VIEW traces AS SELECT * FROM read_json('{RESULTS / "traces"}/*.jsonl.gz',
-                        format='newline_delimited', union_by_name=true)""")
+                        format='newline_delimited', columns={{{cols}}})""")
     return con
 
 
@@ -124,6 +138,27 @@ def disagreements(con, model: str | None, limit: int) -> None:
         ORDER BY abs(sum(s.score) - sum(c.score)) DESC, s.model, s.spec, s.issue LIMIT {limit}"""))
 
 
+def canary(con) -> int:
+    """Per model and day, the canary ceiling's issues resolved and cost; DRIFT when it moves by more than 2 issues or
+    15% in cost from the median of the earlier days."""
+    days = con.execute(f"""SELECT model, regexp_extract(file, 'canary-(\\d{{4}}-\\d{{2}}-\\d{{2}})', 1) AS day,
+                                  sum(list_sum(round_scores)) AS resolved, sum(cost_usd) AS cost, count(*) AS workdays
+                           FROM runs WHERE file LIKE 'canary-%' AND spec = '{CEILING}' GROUP BY ALL ORDER BY model, day
+                        """).fetchall()
+    drift = 0
+    print("| model | day | ceiling resolved | ceiling cost | flag |\n|---|---|---|---|---|")
+    for i, (model, day, resolved, cost, n) in enumerate(days):
+        earlier = [d for d in days[:i] if d[0] == model]
+        flag = ""
+        if earlier:
+            res_med = sorted(d[2] for d in earlier)[len(earlier) // 2]
+            cost_med = sorted(d[3] for d in earlier)[len(earlier) // 2]
+            if abs(resolved - res_med) > 2 or (cost_med and abs(cost - cost_med) / cost_med > 0.15):
+                flag, drift = f"DRIFT (median {res_med:.0f} issues, ${cost_med:.2f})", drift + 1
+        print(f"| {model} | {day} | {resolved:.0f} of {5 * n} | ${cost:.2f} | {flag} |")
+    return drift
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -131,12 +166,15 @@ def main() -> None:
     d = sub.add_parser("disagreements")
     d.add_argument("--model")
     d.add_argument("--limit", type=int, default=60)
+    sub.add_parser("canary")
     q = sub.add_parser("sql")
     q.add_argument("query")
     a = ap.parse_args()
     con = connect()
     if a.cmd == "invariants":
         sys.exit(1 if invariants(con) else 0)
+    if a.cmd == "canary":
+        sys.exit(1 if canary(con) else 0)
     if a.cmd == "disagreements":
         disagreements(con, a.model, a.limit)
     else:
