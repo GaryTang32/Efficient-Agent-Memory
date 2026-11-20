@@ -78,6 +78,8 @@ flowchart TD
 | In-step guard | `guard=0.9` | A step of many tool calls cannot overflow the window | Removed the overflows of parallel tool calls |
 | Compaction | `compact=resum\|handoff\|sjc\|…`, `trigger=0.75` | One reset at 75% of the window, keeping the last two steps | Without it: 0.04–0.62 in score |
 
+Full guide to AutoMemory v2, with diagrams, usage, settings and paper references: [`docs/automem_v2.md`](docs/automem_v2.md).
+
 ---
 
 ## Results
@@ -532,6 +534,7 @@ flowchart TB
 | [`docs/overview.html`](docs/overview.html) | The interactive overview: each method's mechanism, diagrams, charts ([rendered](https://claude.ai/artifact/JVkigqm5XYpmwbN2F11xdF)) |
 | [`docs/problem_statement.md`](docs/problem_statement.md) | Why this matters for everyday coding agents (Codex, Claude Code) |
 | [`docs/methodology.md`](docs/methodology.md) | Tasks, environment rules, metric definitions, procedure |
+| [`docs/automem_v2.md`](docs/automem_v2.md) | AutoMemory v2 guide: how it works, presets, how to use, paper references |
 | [`docs/automem.md`](docs/automem.md) | AutoMemory: bench technique, library and MCP server |
 | [`docs/new_methods.md`](docs/new_methods.md) | The 2026-11 methods and NVIDIA EoCC: sources and deviations |
 | [`docs/backends.md`](docs/backends.md) | Claude Code CLI, Bedrock Converse, LiteLLM, OpenAI-compatible endpoints |
