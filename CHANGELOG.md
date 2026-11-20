@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-20): framework adapters
+
+AutoMemory in the agent framework you already use (Claude API, Claude Agent SDK, LangGraph, OpenAI Agents SDK), a
+refreshed MCP server, a lighter install, and a recall fix measured on a ten-day job. The core still needs only the
+Python standard library.
 
 **Docs.** The README is now a practical guide: what the repo does, install, a quick start per agent framework, how
 AutoMemory works, the methodology, results at a glance and how to use the bench. The full results, validation
