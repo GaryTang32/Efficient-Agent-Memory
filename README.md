@@ -207,6 +207,12 @@ cost, fewer issues resolved). When unsure, keep notes on. The full preset family
 | `recall_budget` | 0.1 | Recalled notes take at most this share of the window |
 | `compaction` | `resum` | `resum` or `handoff` (NVIDIA's six-field recap) |
 | `store` | JSON files | `SQLiteStore(path)` for many notes or concurrent writers, `MemoryStore()` for short-lived agents |
+| `compact_at` | — | The reset point in tokens instead of a share: `window=1_000_000, compact_at=400_000` resets at 400K |
+| `preview_max_tokens` | no cap | Caps the preview threshold for large windows (at 1M, 10% would let 100K-token outputs in whole) |
+
+Settings can change per session: `hooks.start_session(task, compact_at=200_000)` or `hooks.next_session(...)` (works
+with every adapter); a session that sets nothing uses the defaults. For 1M-token models, see
+[large context windows](docs/adapters.md#large-context-windows-and-per-session-settings).
 
 ---
 

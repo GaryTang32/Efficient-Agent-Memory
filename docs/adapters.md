@@ -157,6 +157,70 @@ while True:
     messages = hooks.compact(messages)                          # unchanged until the window is 75% full
 ```
 
+## Large context windows and per-session settings
+
+`window` is the context budget AutoMemory manages, not necessarily the model's maximum, and every threshold is a share
+of it. On a 1M-token model, resetting at 75% means prompts of up to 750K tokens. Each call re-reads that whole cached
+history, so the read cost per step grows with the reset point. Choose the reset point by cost:
+
+```python
+hooks = MemoryHooks(root, window=1_000_000, compact_at=400_000,   # reset at 400K, not 750K
+                    preview_max_tokens=8_000,                      # outputs above 8K tokens enter as head + tail
+                    recall_budget=0.02,                            # recalled notes: at most 20K tokens
+                    summarize=cheap_llm)
+```
+
+These are equivalent ways to reset at 400K or 360K:
+- `window=1_000_000, compact_at=400_000`, which resets at 400K;
+- `window=1_000_000, trigger=0.4`, which also resets at 400K;
+- `window=400_000, trigger=0.9`, which resets at 360K and also moves the guard to 90% of 400K.
+
+**Per-session settings.** Settings given to `start_session(task, ...)`, or to `next_session(...)` before a session
+begins, apply to that session only. A session that sets nothing gets the defaults the hooks were created with.
+`next_session` works with every adapter, because the adapters start their sessions through these hooks:
+
+```python
+memory = AutoMemoryMiddleware(root, window=1_000_000, compact_at=500_000)   # the defaults
+memory.hooks.next_session(compact_at=200_000, compaction="handoff")          # only the next run
+agent.invoke(...)                     # this session resets at 200K
+agent.invoke(...)                     # back to the defaults: 500K
+```
+
+| Setting | Default | For large windows |
+|---|---|---|
+| `window` | 200,000 | The model's window, or the budget you want to manage |
+| `compact_at` / `trigger` | 0.75 × window | The reset point; lower is cheaper per step (see below) |
+| `guard` | 0.9 | Share of the window one step may fill before outputs are moved out |
+| `preview` / `preview_max_tokens` | 10% of the window / no cap | Cap it (for example 8,000): at 1M, 10% lets 100K-token outputs in whole |
+| `recall_budget` | 0.1 | Lower it (for example 0.02): 10% of 1M is 100K tokens of notes |
+| `compaction` | `resum` | `handoff` lets the agent write the recap as its own next turn, from the cache |
+| `preview_tokens`, `handoff_variant` | 750, `general` | Size of a preview; `swe` for coding |
+
+MCP server: `EAM_MEMORY_WINDOW`, `EAM_MEMORY_COMPACT_AT` and `EAM_MEMORY_PREVIEW_MAX_TOKENS`.
+
+**What the reset point costs.** This is an estimate, not a measurement. The benchmark measured windows of 16–48K, and
+nothing yet at 1M. It assumes a large-window model priced at $2 per million input tokens, cache reads at 0.05× and
+writes at 1.25×, a reset that leaves about 20K tokens, and about 5K new tokens per step:
+
+| Reset at | Average prompt | Cache reads per step | Steps between resets |
+|---|---|---|---|
+| 750K | ≈ 385K | ≈ $0.039 | ≈ 146 |
+| 400K | ≈ 210K | ≈ $0.021 | ≈ 76 |
+| 200K | ≈ 110K | ≈ $0.011 | ≈ 36 |
+
+- **New tokens cost the same either way.** Writing each step's new tokens to the cache costs about $0.0125, whatever
+  the reset point.
+- **Reads.** Halving the reset point roughly halves the cache reads per step.
+- **The reset itself.** A ReSum summary sends the whole history to the summariser as new, uncached text; a 400K
+  history at $0.10–2 per million is $0.04–0.80 per reset. With `compaction="handoff"`, the agent writes the recap as
+  its next turn, reading the history from the cache: about $0.04 at 400K, plus $0.01–0.02 for the recap's
+  output tokens.
+- **Accuracy.** What a lower reset point risks is accuracy, since each reset keeps a summary instead of the history.
+  On this repository's coding tasks, a 16K window with resets at 12K resolved as many issues as the full window. Treat
+  that as a hint for large windows, not a result.
+- **Inside Claude Code or the Claude Agent SDK,** compaction is the host's own. Set its threshold there; AutoMemory
+  only shapes what the summary keeps.
+
 ## Writing a new adapter
 
 Build it on `MemoryHooks`, then pass the conformance suite in

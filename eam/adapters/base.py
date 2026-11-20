@@ -33,14 +33,42 @@ from typing import Any, Callable, Iterator
 from eam.memory_skill import MemorySkill
 
 MEMORY_TOOLS = ("write_note", "read_notes", "read_artifact")
+# what a session may set for itself; anything it does not set keeps the agent's defaults
+SESSION_SETTINGS = ("window", "trigger", "guard", "preview", "preview_tokens", "preview_max_tokens", "recall_budget",
+                    "compaction", "handoff_variant")
+
+
+def _check(settings: dict[str, Any]) -> dict[str, Any]:
+    """Validate session settings; `compact_at` (tokens) becomes `trigger` (a share of the window)."""
+    out = dict(settings)
+    unknown = set(out) - set(SESSION_SETTINGS) - {"compact_at"}
+    if unknown:
+        raise ValueError(f"unknown setting(s) {sorted(unknown)}; choose from {list(SESSION_SETTINGS) + ['compact_at']}")
+    if "window" in out and int(out["window"]) <= 0:
+        raise ValueError("window must be a positive number of tokens")
+    for k in ("trigger", "guard"):
+        if k in out and not 0 < float(out[k]) <= 1:
+            raise ValueError(f"{k} is a share of the window, between 0 and 1")
+    for k in ("preview", "recall_budget"):
+        if k in out and not 0 <= float(out[k]) <= 1:
+            raise ValueError(f"{k} is a share of the window, between 0 and 1")
+    if out.get("compaction", "resum") not in ("resum", "handoff"):
+        raise ValueError("compaction must be 'resum' or 'handoff'")
+    return out
 
 
 class MemoryHooks:
     def __init__(self, root: str | Path | None = None, *, skill: MemorySkill | None = None,
-                 summarize: Callable[[str], str] | None = None, **skill_kwargs: Any):
+                 summarize: Callable[[str], str] | None = None, compact_at: int | None = None, **skill_kwargs: Any):
+        """`compact_at` sets the reset point in tokens instead of as `trigger` (a share of `window`): with a 1M-token
+        model, `window=1_000_000, compact_at=400_000` resets at 400K."""
         self.skill = skill if skill is not None else MemorySkill(root, summarize=summarize, **skill_kwargs)
         if summarize is not None and skill is not None:
             self.skill.summarize = summarize
+        if compact_at is not None:
+            self._set({"compact_at": compact_at})
+        self.defaults = {k: getattr(self.skill, k) for k in SESSION_SETTINGS}  # what every session starts from
+        self._next: dict[str, Any] = {}
         self.task = ""
         self.recalled = ""  # the recall block of the current session (start_session = recalled + task)
         self.prompt_tokens = 0
@@ -66,8 +94,34 @@ class MemoryHooks:
         with self._timed():
             return self.skill.session_preamble()
 
-    def start_session(self, task: str) -> str:
-        """Begin a session: returns the first user message, the recalled notes followed by the task."""
+    def _set(self, settings: dict[str, Any]) -> None:
+        settings = _check(settings)
+        at = settings.pop("compact_at", None)
+        for k, v in settings.items():
+            setattr(self.skill, k, v)
+        if at is not None:
+            self.skill.trigger = min(1.0, int(at) / self.skill.window)
+
+    def next_session(self, **settings: Any) -> None:
+        """Settings for the next session only (window, trigger or compact_at, guard, preview, preview_tokens,
+        preview_max_tokens, recall_budget, compaction, handoff_variant). The session after it goes back to the
+        defaults. Works with every adapter, since they all start sessions through these hooks."""
+        self._next.update(_check(settings))
+
+    @property
+    def settings(self) -> dict[str, Any]:
+        """The settings of the current session."""
+        return {k: getattr(self.skill, k) for k in SESSION_SETTINGS}
+
+    def start_session(self, task: str, **settings: Any) -> str:
+        """Begin a session: returns the first user message, the recalled notes followed by the task. Keyword
+        settings (or those given to `next_session`) apply to this session only; the rest are the defaults."""
+        overrides = {**self._next, **_check(settings)}
+        self._next = {}
+        for k, v in self.defaults.items():
+            setattr(self.skill, k, v)
+        if overrides:
+            self._set(overrides)
         self.task, self.prompt_tokens, self.compactions = str(task), 0, 0
         self.skill.end_step()
         self.recalled = self.recall()
