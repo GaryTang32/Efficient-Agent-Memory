@@ -40,6 +40,7 @@ The earlier Claude Code checks could not show a difference:
 | The prompt cache lasts **5 minutes** by default | Days run back to back would keep the cache warm; real days start cold |
 | Claude Code's own prompt is about 10–12K tokens; a cold start costs about $0.03 on Sonnet | Feeds the cost estimates |
 | Two identical Sonnet sessions on the same 5 issues differed in cost by a spread of 0.02–0.17 in log ratio (median about 0.07); issues fixed by 0–1 of 5 | Sets the sample sizes (section 8) |
+| *(Found in step 0.)* The earlier pilots passed this machine's whole environment to Claude Code: effort `xhigh`, a 32K thinking budget, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=92` and debug mode, none of them Claude Code's defaults | The runner passes only the path, home, proxy and certificate variables, plus each arm's own switches. Everything else is Claude Code's default |
 
 ## 3. Hypotheses: one per mechanism, each with a place where it can act
 
@@ -99,8 +100,11 @@ setting.
 ### F1: a 10-day stock ledger
 
 F1 is built from the benchmark's `ops_stream` generator, which predates the plugin.
-- **Setup:** 10 days and 6 tracked products. Each day's data is copied into the working folder only on that day.
-  The answer key is stored outside the folder and is never readable by the agent.
+- **Setup:** 10 days and 6 tracked products. Each day's reports are served by `tools/report.py` on that day only,
+  and the previous day's are removed. Otherwise the file system would stand in for memory: an agent could re-read
+  every earlier day each morning, and notes would be irrelevant. (Found in step 0.) The prompt says the reports
+  are replaced overnight. Saving them is allowed in every arm, as a real agent might, and is logged.
+- **The answer key** is held by the runner and written to disk only after the run.
 - **Three outputs a day,** sized so that each case of section 2 happens:
 
   | Output | Size | Claude Code alone | With the plugin |
@@ -224,7 +228,7 @@ are archived into the logs and deleted.
 
 | Step | What | Cost |
 |---|---|---|
-| **0. Build** | The plugin's full mode (`AUTOMEM_WORKSPACE=on`, the `automem-mcp` note tools, the hooks reading and writing the same note store); the F1 generator, daily release and grader; the runner (arms, cells, environment, gaps, logging, snapshots); the analysis script; an offline rehearsal with a stand-in `claude` program that makes no model calls | $0 |
+| **0. Build** (done 2026-11-21) | The plugin's full mode (`AUTOMEM_WORKSPACE=on`, the `automem-mcp` note tools, the hooks reading and writing the same note store); the F1 generator, daily release and grader; the runner (arms, cells, environment, gaps, logging, snapshots); the analysis script; an offline rehearsal with a stand-in `claude` program that makes no model calls | $0 |
 | **1. Pilot** | Cell N at half length (5 days): A and A′ × 2 instances; A0, A+, L and V2 × 1. Cell R100 at full length: A and V2 × 1, with one 61-minute gap between days 5 and 6 | ≈ $11 |
 | **Checkpoint** | A report to you: gate results, measured cost per run, noise, instance counts, the re-estimated budget, and whether to run R500. Main runs start only after you approve | $0 |
 | **2. Main runs** | The matrix of section 5 | tiers below |
@@ -238,7 +242,7 @@ are archived into the logs and deleted.
 | **G2 Isolation** | Separate project and memory folders per run; the key is never opened; day *k* sees only day *k*'s data |
 | **G3 Realistic baseline** | A writes Claude Code's auto memory and loads it on day ≥ 2; A0 writes none; microcompact events are logged |
 | **G4 Cold days** | Each day's first call writes at least Claude Code's prompt (about 10K tokens) to the cache |
-| **G5 Mechanisms fire** | In A, the audit log is cut and the 15K reports arrive in full. In L and V2, all three previews fire. R100 compacts at least twice. V2 writes notes and recalls them on day ≥ 2. A+ writes `NOTES.md` |
+| **G5 Mechanisms fire** | In A, the audit log is cut and the 15K reports arrive in full. In L and V2, each of the three reports is previewed at least once per run (an agent may filter later reports itself). R100 compacts at least twice. V2 writes notes and recalls them on day ≥ 2. A+ writes `NOTES.md` |
 | **G6 Grader** | The key scores 70/70; stale answers fail; 100% of answers parse |
 | **G7 Noise** | A against A′: spread of the log cost ratio ≤ 0.35; accuracy within 10 points |
 | **G8 Cost** | Within ±50% of the estimates |
