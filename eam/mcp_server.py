@@ -99,6 +99,13 @@ def _summarizer():
     return summarize
 
 
+def exposed() -> list[dict[str, Any]]:
+    """The tools to list: all of them, or only those named in EAM_MEMORY_TOOLS (comma-separated), so a client that
+    allows only the note tools does not carry the other schemas in every prompt."""
+    names = {n.strip() for n in os.environ.get("EAM_MEMORY_TOOLS", "").split(",") if n.strip()}
+    return [t for t in TOOLS if not names or t["name"] in names]
+
+
 class Server:
     def __init__(self, skill: MemorySkill):
         self.skill = skill
@@ -156,10 +163,12 @@ class Server:
             elif method == "tools/list":
                 result = {"tools": [{"name": t["name"], "title": t["name"].replace("_", " ").capitalize(),
                                      "description": t["description"], "inputSchema": t["input_schema"],
-                                     "annotations": ANNOTATIONS.get(t["name"], {})} for t in TOOLS]}
+                                     "annotations": ANNOTATIONS.get(t["name"], {})} for t in exposed()]}
             elif method == "tools/call":
                 p = msg.get("params") or {}
                 try:
+                    if p.get("name") not in {t["name"] for t in exposed()}:
+                        raise ValueError(f"unknown tool '{p.get('name')}'")
                     text, err = self.call(p.get("name", ""), p.get("arguments") or {}), False
                 except Exception as exc:  # tool errors go back to the model, not as protocol errors
                     text, err = f"Error: {exc}", True

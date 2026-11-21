@@ -19,7 +19,7 @@
   value outside it, with an error naming the range. The plugin falls back to the default instead.
 - The plugin's sizes can be given in tokens (`AUTOMEM_PREVIEW_TOKENS`, `AUTOMEM_PREVIEW_KEEP_TOKENS`,
   `AUTOMEM_RECALL_TOKENS`), or as a share of Claude Code's compaction window (`AUTOMEM_PREVIEW_SHARE`).
-- `docs/settings.md` lists all 58 settings with their defaults, ranges and where each default comes from.
+- `docs/settings.md` lists all 59 settings with their defaults, ranges and where each default comes from.
 
 ## 0.3.0 (2026-11-20): framework adapters
 

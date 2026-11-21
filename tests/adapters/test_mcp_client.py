@@ -54,3 +54,25 @@ def test_official_client_round_trip(tmp_path):
     assert "42 widgets" in recall and "<memory" in recall and "Day 1 done" in recall
     assert SECRET not in recall, "the secret was stored unredacted"
     assert "Error" in missing or "no note" in missing
+
+
+def test_only_the_named_tools_are_listed(tmp_path):
+    async def body(s):
+        names = {t.name for t in (await s.list_tools()).tools}
+        blocked = await s.call_tool("compact", {"question": "q", "history": "h"})
+        return names, blocked
+
+    async def run():
+        env = {**os.environ, "EAM_MEMORY_DIR": str(tmp_path), "EAM_MEMORY_TOOLS": "write_note,read_notes"}
+        params = StdioServerParameters(command=sys.executable, args=["-m", "eam.mcp_server"], env=env)
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                try:
+                    return await body(session)
+                except Exception as exc:  # the client may raise on a protocol error
+                    return {t.name for t in (await session.list_tools()).tools}, exc
+
+    names, blocked = asyncio.run(run())
+    assert names == {"write_note", "read_notes"}
+    assert isinstance(blocked, Exception) or getattr(blocked, "is_error", False)

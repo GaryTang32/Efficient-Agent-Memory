@@ -87,7 +87,8 @@ def mcp_config(run_dir: Path, window: int) -> Path:
     path = run_dir / "mcp.json"
     path.write_text(json.dumps({"mcpServers": {"automem": {
         "command": sys.executable, "args": ["-m", "eam.mcp_server"],
-        "env": {"EAM_MEMORY_DIR": str(run_dir / "store"), "EAM_MEMORY_WINDOW": str(window), "PYTHONPATH": str(ROOT)}}}},
+        "env": {"EAM_MEMORY_DIR": str(run_dir / "store"), "EAM_MEMORY_WINDOW": str(window), "PYTHONPATH": str(ROOT),
+                "EAM_MEMORY_TOOLS": "write_note,read_notes,read_artifact"}}}},
         indent=1))
     return path
 

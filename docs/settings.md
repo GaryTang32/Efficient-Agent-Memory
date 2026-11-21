@@ -1,6 +1,6 @@
 # Settings reference
 
-AutoMemory has **58 settings** in four places. None is hard-coded: each has a default, and each can be set by the
+AutoMemory has **59 settings** in four places. None is hard-coded: each has a default, and each can be set by the
 user. The ranges are wide on purpose. They refuse values that cannot work, such as a reset after the window is full
 or a negative size, not values that are merely unmeasured. The library refuses an out-of-range value with an error
 naming the accepted range. The Claude Code plugin falls back to the default instead, because a hook must never break
@@ -9,7 +9,7 @@ a session.
 | Where | Settings | How you set them |
 |---|---|---|
 | [Library and adapters](#library-and-adapters) (`MemorySkill`, `MemoryHooks`, every adapter) | 16 | Keyword arguments; per session with `start_session(task, ...)` or `next_session(...)` |
-| [MCP server](#mcp-server) (`automem-mcp`) | 7 | Environment variables |
+| [MCP server](#mcp-server) (`automem-mcp`) | 8 | Environment variables |
 | [Claude Code plugin](#claude-code-plugin) | 18 | Environment variables, in your shell or the `env` block of Claude Code's `settings.json` |
 | [Bench technique](#bench-technique-research) (`automem:...` specs) | 17 | Spec options, for research runs on the bench |
 
@@ -92,6 +92,7 @@ estimate, see [adapters.md](adapters.md#large-context-windows-and-per-session-se
 | `EAM_MEMORY_ROUTE` | unset | a bench route, e.g. `claude-cli` | When set, the `compact` tool runs the summary itself |
 | `EAM_MEMORY_MODEL` | `cc-haiku` | a model key in the models config | The model for that summary |
 | `EAM_MODELS_CONFIG` | `config/models.json` | a path | Where model keys are defined |
+| `EAM_MEMORY_TOOLS` | all tools | comma-separated tool names | List only these tools, e.g. `write_note,read_notes,read_artifact`, so clients that allow only the note tools don't carry the other schemas |
 
 In the MCP server, the other library settings keep their defaults.
 
