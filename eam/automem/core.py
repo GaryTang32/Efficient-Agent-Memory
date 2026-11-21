@@ -75,9 +75,13 @@ def recall_text(notes: list[Note], budget_tokens: int, *, wrap: bool = True) -> 
 
 
 # ---- context decisions ----------------------------------------------------------------------------------------------
-def needs_preview(text: str, window: int, share: float) -> bool:
-    """An output above `share` × window enters the context as a preview (v2 rule; share 0 turns it off)."""
-    return bool(share) and estimate_tokens(text) > share * window
+def needs_preview(text: str, window: int, share: float, max_tokens: int | None = None) -> bool:
+    """An output above `share` × window enters the context as a preview (v2 rule; share 0 turns it off). With a large
+    window, `max_tokens` caps that threshold: at 1M tokens, 10% would let 100K-token outputs in whole."""
+    if not share:
+        return False
+    limit = share * window if not max_tokens else min(share * window, max_tokens)
+    return estimate_tokens(text) > limit
 
 
 def preview(text: str, preview_tokens: int) -> str:

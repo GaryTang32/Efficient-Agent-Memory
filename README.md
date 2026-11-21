@@ -207,6 +207,13 @@ cost, fewer issues resolved). When unsure, keep notes on. The full preset family
 | `recall_budget` | 0.1 | Recalled notes take at most this share of the window |
 | `compaction` | `resum` | `resum` or `handoff` (NVIDIA's six-field recap) |
 | `store` | JSON files | `SQLiteStore(path)` for many notes or concurrent writers, `MemoryStore()` for short-lived agents |
+| `compact_at` | — | The reset point in tokens instead of a share: `window=1_000_000, compact_at=400_000` resets at 400K |
+| `preview_max_tokens` | 16,000 | Caps the preview threshold, so large windows still preview long outputs (at 1M, 10% alone would let 100K-token outputs in whole); it only matters above a 160K window |
+
+Settings can change per session: `hooks.start_session(task, compact_at=200_000)` or `hooks.next_session(...)` (works
+with every adapter); a session that sets nothing uses the defaults. Every setting, its default, its accepted range and where the default comes
+from: [`docs/settings.md`](docs/settings.md). For 1M-token models, see
+[large context windows](docs/adapters.md#large-context-windows-and-per-session-settings).
 
 ---
 
@@ -318,7 +325,7 @@ For Bedrock, copy `config/models.example.json` to `config/models.json`, fill in 
 | [`eam/bench/`](eam/bench/), [`eam/techniques/`](eam/techniques/), [`eam/llm/`](eam/llm/), [`eam/agent/`](eam/agent/) | The bench: tasks and runner, the 27 methods, model backends, the agent loop and cost meter |
 | [`tests/`](tests/) | 393 offline tests, including every method on every long task and every adapter with a fake model |
 | [`scripts/`](scripts/) | The run script of every experiment, SWE-bench tooling, reports, docs generators |
-| [`docs/`](docs/) | [results](docs/results.md) · [methodology](docs/methodology.md) · [AutoMemory v2 guide](docs/automem_v2.md) · [adapters](docs/adapters.md) · [backends](docs/backends.md) · [literature](docs/literature_review.md) · [interactive overview](docs/overview.html) |
+| [`docs/`](docs/) | [results](docs/results.md) · [settings](docs/settings.md) · [methodology](docs/methodology.md) · [AutoMemory v2 guide](docs/automem_v2.md) · [adapters](docs/adapters.md) · [backends](docs/backends.md) · [literature](docs/literature_review.md) · [interactive overview](docs/overview.html) |
 
 Raw result rows, logs and detailed reports stay out of the repository (`results/` and `docs/results/` are
 git-ignored).

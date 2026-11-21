@@ -6,6 +6,9 @@ module(s) of the changed app before finishing an issue (long logs), and compacti
 with and without the AutoMemory plugin; graded as SWE-bench grades.
 
     python scripts/run_cc_long.py --model sonnet --workdays 6 --issues 5 --first 20 --out results/cc_long-sonnet.jsonl
+
+Settings: `plain`, `plugin`, or `plugin+VAR=VALUE,VAR=VALUE` for the plugin with its environment variables set (for
+example `plugin+AUTOMEM_PREVIEW_SHARE=0.02`). `--compact-window` sets CLAUDE_CODE_AUTO_COMPACT_WINDOW for every setting.
 """
 
 from __future__ import annotations
@@ -82,12 +85,24 @@ def parse(lines: list[str]) -> dict:
             "max_tool_result_chars": max(outlen, default=0)}
 
 
-def run_workday(w: int, setting: str, model: str, ids: list[str], inst: dict, budget: float) -> dict:
+def plugin_env(setting: str) -> dict[str, str]:
+    """`plugin+A=1,B=2` -> {"A": "1", "B": "2"}; only AUTOMEM_* variables."""
+    _, _, spec = setting.partition("+")
+    env = dict(kv.split("=", 1) for kv in spec.split(",") if "=" in kv)
+    bad = [k for k in env if not k.startswith("AUTOMEM_")]
+    if bad:
+        raise ValueError(f"only AUTOMEM_* variables can be set per setting: {bad}")
+    return env
+
+
+def run_workday(w: int, setting: str, model: str, ids: list[str], inst: dict, budget: float,
+                compact_window: int = 100_000) -> dict:
     base = Path(tempfile.mkdtemp(prefix=f"eam-cc-long-{w}-{setting}-"))
     data = Path(tempfile.mkdtemp(prefix="automem-long-"))
     dirs = []
     t0 = time.time()
-    row = {"workday": w, "setting": setting, "model": model, "issues": ids, "turns": []}
+    row = {"workday": w, "setting": setting, "model": model, "compact_window": compact_window, "issues": ids,
+           "turns": []}
     try:
         for k, iid in enumerate(ids, 1):
             d = base / f"issue{k}"
@@ -95,7 +110,7 @@ def run_workday(w: int, setting: str, model: str, ids: list[str], inst: dict, bu
                             inst[iid]["base_commit"]], check=True, capture_output=True)
             dirs.append(d)
         env = {**os.environ, "AUTOMEM_DATA": str(data), "PYTHONDONTWRITEBYTECODE": "1",
-               "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "100000"}
+               "CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(compact_window), **plugin_env(setting)}
         sid = None
         for k, iid in enumerate(ids, 1):
             issue = inst[iid]["problem_statement"].strip()
@@ -106,7 +121,7 @@ def run_workday(w: int, setting: str, model: str, ids: list[str], inst: dict, bu
                    "--max-budget-usd", str(budget)]
             if sid:
                 cmd += ["--resume", sid]
-            if setting == "plugin":
+            if setting.startswith("plugin"):
                 cmd += ["--plugin-dir", str(PLUGIN)]
             try:
                 p = subprocess.run(cmd, cwd=base, capture_output=True, text=True, timeout=3600, env=env)
@@ -162,8 +177,12 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--budget", type=float, default=None, help="per-turn cap in USD (default 1 Haiku, 3 others)")
     ap.add_argument("--validation", default=str(ROOT / "results" / "swe_validation_wide.jsonl"))
+    ap.add_argument("--compact-window", type=int, default=100_000,
+                    help="CLAUDE_CODE_AUTO_COMPACT_WINDOW (Claude Code's minimum is 100000)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    for s in a.settings:
+        plugin_env(s)  # fail early on a bad setting
     E.ensure_setup()
     inst = E.instances()
     ids = validated(Path(a.validation))
@@ -175,12 +194,12 @@ def main() -> None:
     print(f"{len(jobs)} sessions of {a.issues} issues, model {a.model}", flush=True)
     with ThreadPoolExecutor(a.workers) as ex, out.open("a") as f:
         futs = [ex.submit(run_workday, w, s, a.model, ids[a.first + w * a.issues: a.first + (w + 1) * a.issues], inst,
-                          budget) for w, s in jobs]
+                          budget, a.compact_window) for w, s in jobs]
         for fut in as_completed(futs):
             r = fut.result()
             f.write(json.dumps(r) + "\n")
             f.flush()
-            print(f"workday {r['workday']} {r['setting']:6s} resolved={r['resolved']}/{len(r['issues'])} "
+            print(f"workday {r['workday']} {r['setting']} resolved={r['resolved']}/{len(r['issues'])} "
                   f"${r['cost_usd']:.3f} peak={r['peak']:,} compactions={r['compactions']} previews={r['previews']} "
                   f"cc_saved={r['cc_saved']} {r.get('errors', '')}", flush=True)
 

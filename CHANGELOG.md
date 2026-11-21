@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+**Large windows and per-session settings.**
+- `MemoryHooks(..., compact_at=400_000)` sets the reset point in tokens.
+- `preview_max_tokens` (default 16,000) caps the preview threshold, so that with a 1M-token window, 100K-token
+  outputs no longer enter whole. Windows up to 160K are unchanged, including every measured setting.
+- Settings can change per session, through `start_session(task, **settings)` or `next_session(**settings)`. A
+  session that sets nothing goes back to the defaults. `next_session` works with every adapter.
+- The MCP server reads `EAM_MEMORY_COMPACT_AT` and `EAM_MEMORY_PREVIEW_MAX_TOKENS`.
+- Every library setting has an accepted range (`eam/automem/settings.py`). `MemorySkill` and `MemoryHooks` refuse a
+  value outside it, with an error naming the range. The plugin falls back to the default instead.
+- The plugin's sizes can be given in tokens (`AUTOMEM_PREVIEW_TOKENS`, `AUTOMEM_PREVIEW_KEEP_TOKENS`,
+  `AUTOMEM_RECALL_TOKENS`), or as a share of Claude Code's compaction window (`AUTOMEM_PREVIEW_SHARE`).
+- `docs/settings.md` lists all 54 settings with their defaults, ranges and where each default comes from.
+
 ## 0.3.0 (2026-11-20): framework adapters
 
 AutoMemory in the agent framework you already use (Claude API, Claude Agent SDK, LangGraph, OpenAI Agents SDK), a

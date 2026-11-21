@@ -89,3 +89,38 @@ def test_bad_input_never_breaks_the_session(tmp_path):
     r = subprocess.run([sys.executable, str(HOOK), "post_tool_use"], input="not json", capture_output=True, text=True,
                        env={"AUTOMEM_DATA": str(tmp_path)}, timeout=30)
     assert r.returncode == 0 and r.stdout == ""
+
+
+def test_preview_sizes_in_tokens_and_relative_to_the_compaction_window(tmp_path):
+    """AUTOMEM_PREVIEW_TOKENS, AUTOMEM_PREVIEW_SHARE (of CLAUDE_CODE_AUTO_COMPACT_WINDOW, capped by
+    AUTOMEM_PREVIEW_MAX_TOKENS) and AUTOMEM_PREVIEW_KEEP_TOKENS set the preview sizes in tokens."""
+    def bash(n_chars):
+        return {"tool_name": "Bash", "cwd": str(tmp_path), "tool_use_id": "toolu_x", "tool_input": {"command": "t"},
+                "tool_response": {"stdout": ("line of output\n" * (n_chars // 15 + 1))[:n_chars], "stderr": "",
+                                  "interrupted": False, "isImage": False}}
+
+    assert run("post_tool_use", bash(20_000), tmp_path)                                    # default: 6000 chars
+    assert not run("post_tool_use", bash(20_000), tmp_path, AUTOMEM_PREVIEW_TOKENS=8000)    # 32,000 chars
+    assert run("post_tool_use", bash(40_000), tmp_path, AUTOMEM_PREVIEW_TOKENS=8000)
+    # 2% of a 500K compaction window = 10,000 tokens = 40,000 characters
+    w = {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": 500_000, "AUTOMEM_PREVIEW_SHARE": 0.02}
+    assert not run("post_tool_use", bash(39_000), tmp_path, **w)
+    assert run("post_tool_use", bash(41_000), tmp_path, **w)
+    # the cap: 10% of 500K would be 50K tokens; the default cap keeps it at 16K tokens = 64,000 characters
+    big = {**w, "AUTOMEM_PREVIEW_SHARE": 0.1}
+    assert run("post_tool_use", bash(70_000), tmp_path, **big)
+    assert not run("post_tool_use", bash(70_000), tmp_path, **big, AUTOMEM_PREVIEW_MAX_TOKENS=0)
+    # head and tail in tokens: 500 tokens each = 2,000 characters
+    upd = json.loads(run("post_tool_use", bash(40_000), tmp_path, AUTOMEM_PREVIEW_KEEP_TOKENS=500))
+    assert len(upd["hookSpecificOutput"]["updatedToolOutput"]["stdout"]) < 4_400
+
+
+def test_out_of_range_settings_fall_back_to_the_defaults(tmp_path):
+    payload = {"tool_name": "Bash", "cwd": str(tmp_path), "tool_use_id": "toolu_y", "tool_input": {"command": "t"},
+               "tool_response": {"stdout": "line of output\n" * 1000, "stderr": "", "interrupted": False,
+                                 "isImage": False}}  # 15,000 characters
+    for bad in ({"AUTOMEM_PREVIEW_CHARS": "12"}, {"AUTOMEM_PREVIEW_CHARS": "lots"}, {"AUTOMEM_PREVIEW_TOKENS": "-5"},
+                {"AUTOMEM_PREVIEW_SHARE": "3", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000"}):
+        out = json.loads(run("post_tool_use", payload, tmp_path, **bad))  # the default 6000-character threshold
+        assert "[AutoMemory:" in out["hookSpecificOutput"]["updatedToolOutput"]["stdout"], bad
+    assert not run("post_tool_use", payload, tmp_path, AUTOMEM_PREVIEW_CHARS="0")  # 0 still turns previews off
