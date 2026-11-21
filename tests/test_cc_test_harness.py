@@ -45,6 +45,28 @@ def test_commands_differ_only_by_the_arm(tmp_path):
     assert "mcp__automem__write_note" in tools and "mcp__automem__write_note" not in base[base.index("--allowedTools") + 1]
     cfg = json.loads((tmp_path / "mcp.json").read_text())["mcpServers"]["automem"]
     assert cfg["env"]["EAM_MEMORY_DIR"].endswith("store") and cfg["args"] == ["-m", "eam.mcp_server"]
+    # a new system line each day, the same for every arm: yesterday's conversation is not read back from the cache
+    day3 = R.command(["claude"], "task", "A", tmp_path, 100_000, "sonnet", 2.0, "sid-1", line=R.system_line("R100", 3))
+    assert day3[day3.index("--append-system-prompt") + 1] == "Today is workday 3 of this job."
+    assert R.system_line("R100", 3) != R.system_line("R100", 4) and "issue 2" in R.system_line("F2", 2)
+    assert R.CELLS["R100"]["inbox_chars"] == 100_000 and "inbox_chars" not in R.CELLS["N"]
+
+
+def test_isolation_and_behaviour_counters():
+    cwd = "/tmp/N-A-i0-abc123/work"
+    ev = [{"type": "assistant", "message": {"id": "m1", "content": [
+              {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "grep -rl EV-1 / 2>/dev/null"}},
+              {"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "/tmp/N-A-i0-abc123/work/inbox/m.txt"}},
+              {"type": "tool_use", "id": "t3", "name": "Bash", "input": {"command": "ls ~/.claude/projects/*/"}},
+              {"type": "tool_use", "id": "t4", "name": "Bash", "input": {"command": f"cat {R.ROOT}/scripts/cc_ledger.py"}}],
+              "usage": {}}},
+          {"type": "user", "message": {"content": [
+              {"type": "tool_result", "tool_use_id": "t1", "content": "/tmp/N-V2-i0-zz9/work/NOTES.md\n/tmp/N-A-i0-abc123/x"},
+              {"type": "tool_result", "tool_use_id": "t3", "content": "-tmp-N-A-i0-abc123-work"}]}}]
+    s = R.parse_stream([json.dumps(e) for e in ev], cwd)
+    assert R.own_run_name(cwd) == "N-A-i0" and s["isolation_flags"] == ["N-V2-i0"]  # another run's file: a leak
+    assert s["disk_searches"] == 1 and s["inbox_reads"] == 1 and s["own_log_reads"] == 1
+    assert len(s["hidden_access"]) == 1 and "scripts/cc_ledger.py" in s["hidden_access"][0]
 
 
 def test_stream_parsing(tmp_path):
@@ -88,3 +110,41 @@ def test_rehearsal_end_to_end(tmp_path):
     report = subprocess.run([sys.executable, str(ROOT / "scripts" / "analyze_cc_test.py"), str(out), "--gates"],
                             check=True, capture_output=True, text=True, env=env).stdout
     assert "| V2 vs A | the verdict |" in report and "| G1 logging | PASS |" in report and "| G2 isolation | PASS |" in report
+
+
+def test_rehearsal_long_session_with_inbox(tmp_path):
+    """R100 with the inbox: the stand-in reads every message, the resumed session compacts, the test's own code is
+    hidden from the session, and the gates read it."""
+    env = {**os.environ, "HOME": str(tmp_path / "home")}
+    (tmp_path / "home").mkdir()
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "run_cc_test.py"), "--cell", "R100", "--arms", "A", "Aplus",
+                    "V2", "--instances", "1", "--days", "3", "--gap-min", "0", "--claude-bin",
+                    str(ROOT / "scripts" / "fake_claude.py"), "--fake-mode", "oracle", "--out", str(tmp_path / "out"),
+                    "--work-base", str(tmp_path / "base"), "--isolation", ISOLATION, "--cap-usd", "50"],
+                   check=True, capture_output=True, text=True, env=env, timeout=300, cwd=tmp_path)
+    rows = [json.loads(line) for line in (tmp_path / "out" / "rows.jsonl").read_text().splitlines()]
+    assert {r["arm"] for r in rows} == {"A", "Aplus", "V2"} and all(r["correct"] == 21 for r in rows)
+    assert all(r["compactions"] >= 1 for r in rows)
+    assert all(d["inbox_reads"] >= 10 for r in rows for d in r["days"])
+    if ISOLATION == "namespace":  # the stand-in listed the repository's scripts folder: empty inside the session
+        import gzip
+        with gzip.open(tmp_path / "out" / "runs" / "R100-A-i0" / "day_01.stream.jsonl.gz", "rt") as fh:
+            lines = fh.read().splitlines()
+        listing = [b["content"] for e in map(json.loads, lines) if e.get("type") == "user"
+                   for b in e["message"]["content"] if b.get("tool_use_id", "").endswith("_ls")]
+        assert listing == [""]
+    report = subprocess.run([sys.executable, str(ROOT / "scripts" / "analyze_cc_test.py"), str(tmp_path / "out"),
+                             "--gates"], check=True, capture_output=True, text=True, env=env).stdout
+    assert "| G2 isolation | PASS |" in report and "| G6 grader | PASS |" in report and "| G7 noise | N/A |" in report
+
+
+def test_spending_cap_stops_new_sessions(tmp_path):
+    env = {**os.environ, "HOME": str(tmp_path / "home")}
+    (tmp_path / "home").mkdir()
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "run_cc_test.py"), "--cell", "N", "--arms", "A",
+                    "--instances", "2", "--parallel", "1", "--days", "3", "--gap-min", "0", "--claude-bin",
+                    str(ROOT / "scripts" / "fake_claude.py"), "--fake-mode", "oracle", "--out", str(tmp_path / "out"),
+                    "--work-base", str(tmp_path / "base"), "--isolation", ISOLATION, "--cap-usd", "0.0001"],
+                   check=True, capture_output=True, text=True, env=env, timeout=300, cwd=tmp_path)
+    rows = [json.loads(line) for line in (tmp_path / "out" / "rows.jsonl").read_text().splitlines()]
+    assert len(rows) == 1 and rows[0]["discarded"].startswith("spending cap") and len(rows[0]["days"]) == 1

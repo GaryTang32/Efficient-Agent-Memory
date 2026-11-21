@@ -7,7 +7,8 @@ Code does (head plus a saved copy), calls the plugin's real hook script (session
 stop) when --plugin-dir is given, writes Claude Code auto memory when it is on, writes notes through the AutoMemory
 store in full mode and NOTES.md when asked, compacts when its synthetic context passes the window, keeps a transcript
 in ~/.claude/projects/<folder>/, and answers. FAKE_MODE=oracle answers from FAKE_KEY (rehearsal only); stale repeats
-day 1's answer; anything else answers nothing useful.
+day 1's answer; anything else answers nothing useful. It reads every inbox message when the prompt has an inbox (so a
+resumed session fills up and compacts), and lists FAKE_REPO/scripts (the runner hides it: the listing must be empty).
 """
 
 from __future__ import annotations
@@ -109,6 +110,14 @@ def main() -> None:
     run_hook("session_start", {"cwd": str(Path.cwd()), "source": "resume" if resume else "startup", "session_id": sid})
 
     day = int(m.group(1)) if (m := re.search(r"today is day (\d+) of", prompt)) else 1
+    repo = Path(os.environ.get("FAKE_REPO") or Path(__file__).resolve().parents[1])
+    if os.environ.get("FAKE_REPO"):
+        listing = subprocess.run(["ls", "-A", str(repo / "scripts")], capture_output=True, text=True,
+                                 check=False).stdout
+        tool("Bash", {"command": f"ls -A {repo / 'scripts'}"}, listing, f"toolu_{sid[:6]}_{day}_ls")
+    if "inbox/" in prompt and Path("inbox").is_dir():
+        for j, f in enumerate(sorted(Path("inbox").iterdir())):
+            tool("Read", {"file_path": str(f.resolve())}, f.read_text(), f"toolu_{sid[:6]}_{day}_in{j}")
     if "tools/report.py" in prompt:
         kinds = (["opening"] if day == 1 else []) + ["receipts", "shipments", "audit"]
         for i, kind in enumerate(kinds):
@@ -122,7 +131,7 @@ def main() -> None:
         call([{"type": "tool_use", "id": f"toolu_mem_{day}", "name": "Write",
                "input": {"file_path": str(mem / "MEMORY.md"), "content": "..."}}], 100)
     if os.environ.get("AUTOMEM_WORKSPACE") == "on" and os.environ.get("AUTOMEM_STORE"):
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        sys.path.insert(0, str(repo))
         from eam.memory_skill import MemorySkill
 
         MemorySkill(os.environ["AUTOMEM_STORE"]).write_note(f"day {day} events", f"events seen on day {day}", type="fact")

@@ -29,8 +29,9 @@ B = 10_000
 COMPARISONS = [("V2", "A", "the verdict"), ("V2", "Aplus", "beats a notes prompt"), ("V2", "L", "what the notes add"),
                ("L", "A", "what previews and the recap add"), ("A", "A0", "what Claude Code's auto memory adds"),
                ("A2", "A", "noise (identical arms)")]
-# estimated cost per run for the cost gate (plan, section 12); the pilot's N runs are half length
-ESTIMATE = {"N": 1.50, "R100": 2.40, "R500": 4.60, "F2": 0.40}
+# estimated cost per full run for the cost gate: N measured in the first pilot; R100 re-estimated for the inbox
+# (plan, section 16); F2 from the plan
+ESTIMATE = {"N": 0.97, "R100": 6.00, "R500": 15.00, "F2": 0.40}
 
 
 def load(dirs: list[str]) -> list[dict]:
@@ -94,9 +95,9 @@ def holm(ps: list[float]) -> list[float]:
 
 
 def arm_table(rows: list[dict], cell: str) -> list[str]:
-    out = [f"| Arm | Runs | Accuracy | Cost / run | Cost per correct | Tokens per correct | Peak prompt | "
-           "Compactions | Microcompacts | Report previews | Claude Code cuts | Note writes | Auto-memory writes | "
-           "NOTES.md writes | Cap hits | Timeouts | Isolation flags |", "|" + "---|" * 17]
+    out = [f"| Arm | Runs | Accuracy | Refusals | Cost / run | Cost per correct | Tokens per correct | Peak prompt | "
+           "Compactions | Microcompacts | Previews | Claude Code cuts | Note writes | Auto-memory writes | "
+           "NOTES.md writes | Own-log reads | Cap hits | Timeouts | Other runs seen |", "|" + "---|" * 19]
     by = defaultdict(list)
     for r in rows:
         if r["cell"] == cell:
@@ -107,13 +108,15 @@ def arm_table(rows: list[dict], cell: str) -> list[str]:
             continue
         days = [d for r in rs for d in r["days"]]
         tpc = [r["tokens_per_correct"] for r in rs if r["tokens_per_correct"]]
-        out.append(f"| {arm} | {len(rs)} | {100 * st.mean(r['accuracy'] for r in rs):.1f}% | "
+        refusals = sum(not d["grade"]["parsed"] and not d.get("format_error") for d in days)
+        out.append(f"| {arm} | {len(rs)} | {100 * st.mean(r['accuracy'] for r in rs):.1f}% | {refusals} | "
                    f"${st.mean(r['cost'] for r in rs):.3f} | ${pooled_cpc(rs):.4f} | "
-                   f"{st.mean(tpc):,.0f} | {max(r['peak_prompt'] for r in rs):,} | "
+                   f"{st.mean(tpc) if tpc else 0:,.0f} | {max(r['peak_prompt'] for r in rs):,} | "
                    f"{sum(r['compactions'] for r in rs)} | {sum(r['microcompacts'] for r in rs)} | "
-                   f"{sum(d.get('report_previews') or 0 for d in days)} | {sum(d.get('report_cc_cut') or 0 for d in days)} | "
+                   f"{sum(d.get('previews') or 0 for d in days)} | {sum(d.get('cc_cut') or 0 for d in days)} | "
                    f"{sum(d.get('note_writes') or 0 for d in days)} | {sum(d.get('auto_memory_writes') or 0 for d in days)} | "
-                   f"{sum(d.get('notes_md_writes') or 0 for d in days)} | {sum(r['cap_hits'] for r in rs)} | "
+                   f"{sum(d.get('notes_md_writes') or 0 for d in days)} | "
+                   f"{sum(1 for d in days if d.get('own_log_reads'))} | {sum(r['cap_hits'] for r in rs)} | "
                    f"{sum(r['timeouts'] for r in rs)} | {sum(len(d.get('isolation_flags') or []) for d in days)} |")
     return out
 
@@ -173,12 +176,13 @@ def exercised(rows: list[dict], cell: str) -> list[str]:
         if r["cell"] == cell:
             by[r["arm"]].append(r)
     days = lambda arm: [d for r in by.get(arm, []) for d in r["days"]]  # noqa: E731
-    h1 = sum(d.get("auto_memory_writes") or 0 for d in days("A")) + sum(d.get("note_writes") or 0 for d in days("V2"))
-    h2 = sum(d.get("report_previews") or 0 for d in days("L") + days("V2"))
+    h1 = (sum(d.get("auto_memory_writes") or 0 for d in days("A")) + sum(d.get("note_writes") or 0 for d in days("V2"))
+          + sum(d.get("notes_md_writes") or 0 for d in days("Aplus")))
+    h2 = sum(d.get("previews") or 0 for d in days("L") + days("V2"))
     h3 = sum(r["compactions"] for arm in by for r in by[arm])
     line = lambda name, n: f"- {name}: {'exercised' if n else 'NOT exercised'} ({n})"  # noqa: E731
-    return ["", "Mechanisms:", line("H1 notes across sessions (auto-memory writes in A + note writes in V2)", h1),
-            line("H2 previews (report previews in L and V2)", h2), line("H3 compaction (compactions, all arms)", h3)]
+    return ["", "Mechanisms:", line("H1 notes (auto-memory writes in A, note writes in V2, NOTES.md writes in A+)", h1),
+            line("H2 previews (previews in L and V2)", h2), line("H3 compaction (compactions, all arms)", h3)]
 
 
 # ---- pilot gates ---------------------------------------------------------------------------------------------------
@@ -188,8 +192,8 @@ def gates(rows: list[dict]) -> list[str]:
 
     res = []
 
-    def gate(name, ok, detail):
-        res.append(f"| {name} | {'PASS' if ok else 'FAIL'} | {detail} |")
+    def gate(name, ok, detail):  # ok None: not measured in these runs
+        res.append(f"| {name} | {'N/A' if ok is None else 'PASS' if ok else 'FAIL'} | {detail} |")
 
     # G1 logging
     missing = []
@@ -200,70 +204,89 @@ def gates(rows: list[dict]) -> list[str]:
         if not list((d / "transcripts").glob("*.jsonl")):
             missing.append(f"{r['run']}/transcripts")
     gate("G1 logging", not missing, f"{len(missing)} missing" + (f": {missing[:3]}" if missing else ""))
-    # G2 isolation
-    flags = [f for r in rows for d in r["days"] for f in d.get("isolation_flags") or []]
-    gate("G2 isolation", not flags, f"{len(flags)} accesses outside the run" + (f": {flags[:2]}" if flags else ""))
-    # G3 realistic baseline
+    # G2 isolation: no session saw another run's files. Attempts at hidden folders and reads of the run's own earlier
+    # logs are recorded, not failures (the folders are empty in the session; the logs are Claude Code as shipped)
+    cross = sorted({f"{r['run']}<-{n}" for r in rows for d in r["days"] for n in d.get("isolation_flags") or []})
+    hidden = sum(len(d.get("hidden_access") or []) for r in rows for d in r["days"])
+    searches = sum(d.get("disk_searches") or 0 for r in rows for d in r["days"])
+    own_logs = sum(1 for r in rows for d in r["days"] if d.get("own_log_reads"))
+    n_days = sum(len(r["days"]) for r in rows)
+    gate("G2 isolation", not cross, f"{len(cross)} sessions saw another run's files{(': ' + str(cross[:3])) if cross else ''}"
+         f"; recorded: {hidden} attempts at hidden folders, {searches} whole-disk searches, own earlier logs read in "
+         f"{own_logs}/{n_days} sessions")
+    # G3 realistic baseline: Claude Code's auto memory is on in A (its instructions are in the prompt) and off in A0;
+    # whether the model writes to it is a result, recorded
+    def first_call(r, day):
+        f = Path(r["_dir"]) / "runs" / r["run"] / f"day_{day:02d}.calls.jsonl"
+        text = f.read_text() if f.exists() else ""
+        return json.loads(text.splitlines()[0]) if text.strip() else {}
+
+    a_runs = [r for r in rows if r["arm"] == "A" and r["cell"] != "F2"]
+    a_snap = bool(a_runs) and all((Path(r["_dir"]) / "runs" / r["run"] / "snapshots" / f"day_{len(r['days']):02d}" /
+                                   "claude_auto_memory").exists() for r in a_runs)
+    by = {(r["cell"], r["arm"], r["instance"]): r for r in rows}
+    gaps = [first_call(by[k], 1).get("prompt", 0) - first_call(by[(k[0], "A0", k[2])], 1).get("prompt", 0)
+            for k in by if k[1] == "A" and (k[0], "A0", k[2]) in by]
     a_mem = sum(d.get("auto_memory_writes") or 0 for r in rows if r["arm"] in ("A", "A2") for d in r["days"])
     a0_mem = sum(d.get("auto_memory_writes") or 0 for r in rows if r["arm"] == "A0" for d in r["days"])
-    a_snap = all((Path(r["_dir"]) / "runs" / r["run"] / "snapshots" / f"day_{len(r['days']):02d}" /
-                  "claude_auto_memory").exists() for r in rows if r["arm"] == "A")
-    micro = sum(r["microcompacts"] for r in rows)
-    gate("G3 realistic baseline", a_mem > 0 and a0_mem == 0 and a_snap,
-         f"auto-memory writes A/A2 {a_mem}, A0 {a0_mem}; A memory folder present {a_snap}; microcompacts logged {micro}")
-    # G4 cold days: each day's first call writes at least Claude Code's own prompt to the cache
-    cold, total = 0, 0
-    for r in rows:
-        if r["cell"] not in ("N", "R100", "R500"):
-            continue
-        for x in r["days"]:
-            f = Path(r["_dir"]) / "runs" / r["run"] / f"day_{x['day']:02d}.calls.jsonl"
-            first = json.loads(f.read_text().splitlines()[0]) if f.exists() and f.read_text().strip() else {}
-            total += 1
-            cold += first.get("cache_write", 0) >= 8_000
-    gate("G4 cold days", total and cold == total, f"{cold}/{total} days start by writing >= 8K tokens to the cache")
+    gate("G3 realistic baseline", a_snap and a0_mem == 0 and all(g >= 300 for g in gaps),
+         f"A memory folder present {a_snap}; A's prompt minus A0's on day 1: {gaps or 'no A0 in these runs'}; "
+         f"recorded: auto-memory writes A/A2 {a_mem}, A0 {a0_mem}; microcompacts {sum(r['microcompacts'] for r in rows)}")
+    # G4 cold days: no day reads yesterday's conversation back from the prompt cache (only Claude Code's shared prompt)
+    reads = [(r["run"], x["day"], first_call(r, x["day"]).get("cache_read", 0)) for r in rows
+             if r["cell"] in ("N", "R100", "R500") for x in r["days"] if x["day"] > 1]
+    warm = [x for x in reads if x[2] > 20_000]
+    gate("G4 cold days", bool(reads) and not warm, f"{len(reads) - len(warm)}/{len(reads)} later days start cold "
+         f"(first call reads <= 20K tokens from the cache; largest {max((x[2] for x in reads), default=0):,})"
+         + (f"; warm: {warm[:3]}" if warm else ""))
     # G5 mechanisms fire
-    def kinds(arm, key):
-        out = defaultdict(int)
-        for r in rows:
-            if r["arm"] == arm:
-                for d in r["days"]:
-                    for k, v in (d.get("report_kinds") or {}).items():
-                        out[k] += v.get(key, 0)
-        return out
-    a_cut, l_prev, v_prev = kinds("A", "cc_cut"), kinds("L", "preview"), kinds("V2", "preview")
-    r100 = [r for r in rows if r["cell"] == "R100" and r["arm"] == "A"]
-    v2 = [r for r in rows if r["arm"] == "V2"]
+    r_runs = [r for r in rows if r["cell"] in ("R100", "R500")]
+    r_days = [d for r in r_runs for d in r["days"]]
+    v2 = [r for r in rows if r["arm"] == "V2" and r["cell"] != "F2"]
     recall_v2 = 0
     for r in v2:
         f = Path(r["_dir"]) / "runs" / r["run"] / "hook_timing.jsonl"
         if f.exists():
             recall_v2 += sum(1 for line in f.read_text().splitlines() if json.loads(line).get("recall_chars"))
-    checks = {
-        "A cuts the audit log": a_cut.get("audit", 0) > 0,
-        "A gets the 15K reports in full": a_cut.get("receipts", 0) == 0 and a_cut.get("shipments", 0) == 0,
-        "L previews all three": all(l_prev.get(k, 0) > 0 for k in ("receipts", "shipments", "audit")),
-        "V2 previews all three": all(v_prev.get(k, 0) > 0 for k in ("receipts", "shipments", "audit")),
-        "R100 compacts at least twice": bool(r100) and all(r["compactions"] >= 2 for r in r100),
-        "V2 writes notes": sum(d.get("note_writes") or 0 for r in v2 for d in r["days"]) > 0,
-        "V2 recalls on day >= 2": recall_v2 > 0,
-        "A+ writes NOTES.md": sum(d.get("notes_md_writes") or 0 for r in rows if r["arm"] == "Aplus" for d in r["days"]) > 0,
-    }
-    gate("G5 mechanisms fire", all(checks.values()), "; ".join(f"{k}: {'yes' if v else 'NO'}" for k, v in checks.items()))
-    # G6 grader
-    seeds = sorted({r["seed"] for r in rows if r["cell"] != "F2"})
-    oracle_ok = all(L.solve(L.generate(s, days=max(len(r["days"]) for r in rows if r["seed"] == s))) ==
-                    L.generate(s, days=max(len(r["days"]) for r in rows if r["seed"] == s))["key"] for s in seeds)
-    parsed = [d["grade"]["parsed"] for r in rows if r["cell"] != "F2" for d in r["days"]]
-    gate("G6 grader", oracle_ok and all(parsed), f"key reproducible from reports {oracle_ok}; answers parsed "
-         f"{sum(parsed)}/{len(parsed)}")
+    checks = {}
+    if r_runs:
+        checks["every R run compacts at least twice"] = all(r["compactions"] >= 2 for r in r_runs)
+        checks["the inbox is read on >= 90% of R days"] = sum((d.get("inbox_reads") or 0) > 0 for d in r_days) \
+            >= 0.9 * len(r_days)
+    if v2:
+        checks["V2 writes notes"] = sum(d.get("note_writes") or 0 for r in v2 for d in r["days"]) > 0
+        checks["V2 recalls them (a later day or after compaction)"] = recall_v2 > 0
+    if any(r["arm"] == "Aplus" for r in rows):
+        checks["A+ writes NOTES.md"] = sum(d.get("notes_md_writes") or 0 for r in rows if r["arm"] == "Aplus"
+                                           for d in r["days"]) > 0
+    if any(r["cell"] == "F2" for r in rows):
+        checks["F2 sessions finish"] = all(d.get("subtype") == "success" for r in rows if r["cell"] == "F2"
+                                           for d in r["days"])
+    gate("G5 mechanisms fire", bool(checks) and all(checks.values()),
+         "; ".join(f"{k}: {'yes' if v else 'NO'}" for k, v in checks.items()))
+    # G6 grader: the key follows from what the agent sees; no malformed answers (refusals are wrong answers, and fair)
+    variants = set()  # every instance the F1 runs saw: seed, length, inbox
+    for r in rows:
+        cfg = Path(r["_dir"]) / "runs" / r["run"] / "config.json"
+        if r["cell"] != "F2":
+            c = json.loads(cfg.read_text()).get("inbox_chars", 0) if cfg.exists() else 0
+            variants.add((r["seed"], len(r["days"]), c))
+    oracle_ok = all(L.solve(i) == i["key"] for i in (L.generate(s, days=n, inbox_chars=c) for s, n, c in variants))
+    f1_days = [d for r in rows if r["cell"] != "F2" for d in r["days"]]
+    malformed = sum(bool(d.get("format_error")) for d in f1_days)
+    refusals = sum(not d["grade"]["parsed"] and not d.get("format_error") for d in f1_days)
+    gate("G6 grader", oracle_ok and malformed == 0, f"key reproducible from what the agent sees {oracle_ok}; "
+         f"malformed answers {malformed}; recorded: refusals {refusals}/{len(f1_days)}")
     # G7 noise: A against A2 on the same instances
     by = {(r["cell"], r["arm"], r["instance"]): r for r in rows}
     pairs = [(by[k], by[(k[0], "A2", k[2])]) for k in by if k[1] == "A" and (k[0], "A2", k[2]) in by]
     spread = max((abs(math.log(b["cost"] / a["cost"])) for a, b in pairs if a["cost"] and b["cost"]), default=math.inf)
     accd = max((abs(100 * (a["accuracy"] - b["accuracy"])) for a, b in pairs), default=math.inf)
-    gate("G7 noise", spread <= 0.35 and accd <= 10, f"{len(pairs)} pairs; largest |log cost ratio| {spread:.2f}; "
-         f"largest accuracy difference {accd:.1f} points")
+    if pairs:
+        gate("G7 noise", spread <= 0.35 and accd <= 10, f"{len(pairs)} pairs; largest |log cost ratio| {spread:.2f}; "
+             f"largest accuracy difference {accd:.1f} points")
+    else:
+        gate("G7 noise", None, "no A/A2 pair in these runs")
     # G8 cost against the estimates (scaled to the planned run length)
     parts, ok = [], True
     for cell in sorted({r["cell"] for r in rows}):

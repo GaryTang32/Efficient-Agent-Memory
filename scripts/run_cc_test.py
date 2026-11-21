@@ -54,32 +54,61 @@ ARMS = {
     "L": {"auto_memory": True, "plugin": "lean"},
     "V2": {"auto_memory": True, "plugin": "full"},
 }
+# R cells get the daily inbox (about 25K tokens a day to read): without it a resumed session stayed under 50K tokens in
+# the pilot and never compacted
 CELLS = {
     "N": {"task": "F1", "mode": "new", "window": 500_000},
-    "R100": {"task": "F1", "mode": "resume", "window": 100_000},
-    "R500": {"task": "F1", "mode": "resume", "window": 500_000},
+    "R100": {"task": "F1", "mode": "resume", "window": 100_000, "inbox_chars": 100_000},
+    "R500": {"task": "F1", "mode": "resume", "window": 500_000, "inbox_chars": 100_000},
     "F2": {"task": "F2", "mode": "new", "window": 500_000},
 }
 # the only variables passed on from this machine: path, home (Claude Code's credentials), proxy and certificates
 PASS_ENV = ["PATH", "HOME", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"]
 SECRET = re.compile(r"(TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL)", re.I)
 LOCK = threading.Lock()
+SPENT = {"usd": 0.0, "cap": 0.0}  # this invocation's spend, and its hard cap (--cap-usd)
+
+
+class CapReached(RuntimeError):
+    pass
 RESULTS = ROOT / "results"
 # Each session runs in its own mount namespace (root only): a private /tmp (its working folder and any scratch files),
 # a private /var/tmp, a private ~/.claude/projects (transcripts, auto memory), and the results and the other runs'
-# folders hidden. The working folder keeps a unique path, so each run keeps its own Claude Code project.
+# folders hidden. The working folder keeps a unique path, so each run keeps its own Claude Code project. HIDDEN folders
+# (the test's own code and plan, and Claude Code's per-session folders that other sessions would share) are each
+# covered by a private empty folder of the run's own: what a session writes there stays in its run (and is archived).
+CLAUDE_HOME = Path.home() / ".claude"
+HIDDEN = [ROOT / "scripts", ROOT / "docs", ROOT / "tests", ROOT / ".git"] + [
+    CLAUDE_HOME / n for n in ("tasks", "sessions", "session-env", "backups", "uploads", "shell-snapshots", "state",
+                              "rm-guard", "file-history", "todos", "plans", "debug")]
 NS_SCRIPT = r"""set -e
-P="$1"; CWD="$2"; RES="$3"; BASE="$4"; STAGE="$5"; shift 5
+P="$1"; CWD="$2"; RES="$3"; BASE="$4"; STAGE="$5"; HIDE="$6"; shift 6
 mount --bind "$P" "$STAGE"                      # a fixed handle on the run's area, before anything is hidden
 mount --bind "$STAGE/var_tmp" /var/tmp
 if [ -d "$RES" ]; then mount --bind "$STAGE/empty" "$RES"; fi
 mount --bind "$STAGE/empty" "$BASE"
+i=0
+IFS=:
+for X in $HIDE; do
+  if [ -d "$X" ]; then i=$((i+1)); mkdir -p "$STAGE/hidden/$i"; mount --bind "$STAGE/hidden/$i" "$X"; fi
+done
+unset IFS
 mount --bind "$STAGE/tmp" /tmp
 mkdir -p "$HOME/.claude/projects"                # after /tmp, so a home folder under /tmp works too
 mount --bind "$STAGE/claude_projects" "$HOME/.claude/projects"
 cd "$CWD"
 exec "$@"
 """
+
+
+RUN_NAME = re.compile(r"(?:/tmp/|-tmp-)((?:N|R100|R500|F2)-[A-Za-z0-9]+-i\d+)-")
+DISK_SEARCH = re.compile(r"\b(?:grep|rg)\s+-\w*r[^\n]*?\s/(?:\s|$|\*)|\bfind\s+/(?:\s|$)")
+
+
+def own_run_name(cwd) -> str:
+    """The run's name from its working folder, /tmp/<run>-<random>/work."""
+    m = RUN_NAME.search(str(cwd))
+    return m.group(1) if m else ""
 
 
 def sanitize(path) -> str:
@@ -117,12 +146,22 @@ def mcp_config(root: Path, window: int, host_root: Path | None = None) -> Path:
     return root / "mcp.json"
 
 
+def system_line(cell: str, day: int) -> str:
+    """One line added to Claude Code's system prompt, new each day, the same in every arm: yesterday's conversation is
+    then not read back from the prompt cache (Claude Code caches for an hour here), as on a real next morning. Claude
+    Code's own prompt stays cached across sessions, as it is in any company."""
+    return f"This is issue {day} of today's workday." if CELLS[cell]["task"] == "F2" else \
+        f"Today is workday {day} of this job."
+
+
 def command(claude: list[str], prompt: str, arm: str, root: Path, window: int, model: str, budget: float,
-            sid: str | None, host_root: Path | None = None) -> list[str]:
+            sid: str | None, host_root: Path | None = None, line: str | None = None) -> list[str]:
     tools = TOOLS + (NOTE_TOOLS if ARMS[arm].get("plugin") == "full" else [])
     cmd = [*claude, "-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose",
            "--setting-sources", "", "--strict-mcp-config", "--max-budget-usd", str(budget),
            "--allowedTools", " ".join(tools)]
+    if line:
+        cmd += ["--append-system-prompt", line]
     if ARMS[arm].get("plugin"):
         cmd += ["--plugin-dir", str(PLUGIN)]
     if ARMS[arm].get("plugin") == "full":
@@ -176,7 +215,8 @@ def parse_stream(lines: list[str], cwd) -> dict:
                 if isinstance(b, dict) and b.get("type") == "tool_result":
                     s = _text_of(b.get("content"))
                     results.append({"id": b.get("tool_use_id"), "chars": len(s), "preview": "[AutoMemory:" in s,
-                                    "cc_cut": ("tool-results/" in s or "Output too large" in s) and "[AutoMemory:" not in s})
+                                    "cc_cut": ("tool-results/" in s or "Output too large" in s) and "[AutoMemory:" not in s,
+                                    "runs": set(RUN_NAME.findall(s))})
         elif t == "result":
             result = ev
     for c in calls.values():
@@ -196,9 +236,13 @@ def parse_stream(lines: list[str], cwd) -> dict:
             k["cc_cut"] += bool(r.get("cc_cut"))
             k["chars"] += r.get("chars", 0)
     home_projects = str(Path.home() / ".claude" / "projects")
-    own_project = sanitize(cwd)
-    outside = [x for x in bash + paths if (home_projects in x or str(RESULTS) in x or "/var/lib/cct" in x)
-               and own_project not in x]
+    inputs = [json.dumps(tc["input"]) for tc in tool_calls.values()]
+    own_run = own_run_name(cwd)
+    cross = sorted({n for r in results for n in r["runs"] if n != own_run})  # another run's files reached this one
+    hidden = [str(h) for h in HIDDEN] + [str(RESULTS), "/var/lib/cct"]
+    hidden_access = [x[:300] for x in inputs if any(h in x for h in hidden)]
+    own_logs = [x[:300] for x in inputs if (home_projects in x or "~/.claude" in x or ".claude/projects" in x)
+                and not (sid and f"{sid}/tool-results" in x)]
     return {
         "session_id": sid, "result": result, "init": init, "calls": list(calls.values()),
         "turns": result.get("num_turns"), "subtype": result.get("subtype"), "final_text": result.get("result") or "",
@@ -215,7 +259,11 @@ def parse_stream(lines: list[str], cwd) -> dict:
         "note_writes": names.count("mcp__automem__write_note"), "note_reads": names.count("mcp__automem__read_notes"),
         "notes_md_writes": sum(p.endswith("NOTES.md") for p in paths) + sum("NOTES.md" in b and ">" in b for b in bash),
         "auto_memory_writes": sum("/memory/" in p and home_projects in p for p in paths),
-        "isolation_flags": outside,
+        "isolation_flags": cross,          # names of other runs seen in tool results: a real leak
+        "hidden_access": hidden_access,    # attempts at hidden folders (they are empty in the session)
+        "own_log_reads": len(own_logs),    # looks into Claude Code's saved logs of its own earlier sessions
+        "disk_searches": sum(bool(DISK_SEARCH.search(x)) for x in bash),
+        "inbox_reads": sum("inbox" in x for x in inputs),
         "assistant_events": len(calls),
     }
 
@@ -228,11 +276,14 @@ def project_dir(run: dict) -> Path:
 # ---- one day of one run ------------------------------------------------------------------------------------------
 def run_day(claude: list[str], run: dict, day: int, prompt: str, sid: str | None, args) -> dict:
     run_dir = run["dir"]
-    cmd = command(claude, prompt, run["arm"], run["root_in"], CELLS[run["cell"]]["window"], args.model,
-                  args.budget_day, sid, run["root_host"])
+    cmd = command(run.get("claude") or claude, prompt, run["arm"], run["root_in"], CELLS[run["cell"]]["window"],
+                  args.model, args.budget_day, sid, run["root_host"], system_line(run["cell"], day))
     if run["isolation"] == "namespace":
         cmd = ["unshare", "--mount", "--propagation", "private", "bash", "-c", NS_SCRIPT, "ns", str(run["P"]),
-               str(run["cwd_in"]), str(RESULTS), str(run["base"]), str(run["stage"]), *cmd]
+               str(run["cwd_in"]), str(RESULTS), str(run["base"]), str(run["stage"]),
+               ":".join(str(h) for h in HIDDEN), *cmd]
+    if SPENT["cap"] and SPENT["usd"] >= SPENT["cap"]:
+        raise CapReached(f"spending cap ${SPENT['cap']:.2f} reached (${SPENT['usd']:.2f} spent)")
     t0 = time.time()
     timeout = False
     try:
@@ -251,6 +302,10 @@ def run_day(claude: list[str], run: dict, day: int, prompt: str, sid: str | None
     with open(run_dir / f"day_{day:02d}.calls.jsonl", "w") as fh:
         fh.write("".join(json.dumps(c) + "\n" for c in s["calls"]))
     res = s["result"]
+    with LOCK:
+        SPENT["usd"] += max(0.0, float(res.get("total_cost_usd") or 0.0) - (run.get("cum_cost") or 0.0))
+        if res.get("total_cost_usd") is not None and CELLS[run["cell"]]["mode"] == "resume":
+            run["cum_cost"] = float(res["total_cost_usd"])
     infra = (not timeout and s["assistant_events"] == 0)  # nothing reached the model: an outage or a startup error
     cap = "budget" in str(s["subtype"] or "")
     return {"day": day, "sid": s["session_id"] or sid, "code": code, "timeout": timeout, "cap_hit": cap, "infra": infra,
@@ -308,15 +363,22 @@ def new_run(args, cell: str, arm: str, inst_no: int, seed: int, meta: dict) -> d
         root_in, tmp_in, projects = root_host, P / "tmp", Path.home() / ".claude" / "projects"
     (root_host / "work").mkdir(parents=True)
     extra = {}
-    if args.fake_mode:
-        extra = {"FAKE_MODE": args.fake_mode, "FAKE_KEY": str(root_in / "fake_key.json")}  # rehearsal only
+    if args.fake_mode:  # rehearsal only
+        extra = {"FAKE_MODE": args.fake_mode, "FAKE_KEY": str(root_in / "fake_key.json"), "FAKE_REPO": str(ROOT)}
     env = child_env(arm, cell, root_in, tmp_in, extra)
     cfg = {"run": name, "cell": cell, "arm": arm, "instance": inst_no, "seed": seed, "model": args.model,
            "days": args.days, "gap_min": args.gap_min, "long_gap": args.long_gap, "budget_day": args.budget_day,
            "timeout_day": args.timeout_day, "isolation": args.isolation, **CELLS[cell], **ARMS[arm], **meta,
            "env": {k: ("<redacted>" if SECRET.search(k) else v) for k, v in env.items()}}
     (run_dir / "config.json").write_text(json.dumps(cfg, indent=1))
-    return {"name": name, "cell": cell, "arm": arm, "instance": inst_no, "seed": seed, "dir": run_dir,
+    claude = None
+    if args.isolation == "namespace" and args.claude_bin.endswith(".py"):
+        src = Path(args.claude_bin).resolve()
+        if any(h in src.parents for h in HIDDEN):  # the stand-in lives in a hidden folder: hand the session a copy
+            (P / "bin").mkdir()
+            shutil.copy2(src, P / "bin" / src.name)
+            claude = [sys.executable, str(stage / "bin" / src.name)]
+    return {"name": name, "cell": cell, "arm": arm, "instance": inst_no, "seed": seed, "dir": run_dir, "claude": claude,
             "cwd": root_host / "work", "cwd_in": root_in / "work", "root_host": root_host, "root_in": root_in,
             "P": P, "base": base, "stage": stage, "projects": projects, "isolation": args.isolation, "env": env, "days": [],
             "sid": None, "cfg": cfg}
@@ -324,7 +386,7 @@ def new_run(args, cell: str, arm: str, inst_no: int, seed: int, meta: dict) -> d
 
 def run_instance_f1(claude: list[str], args, cell: str, arms: list[str], inst_no: int, meta: dict) -> list[dict]:
     seed = args.first_seed + inst_no
-    inst = L.generate(seed, days=args.days)
+    inst = L.generate(seed, days=args.days, inbox_chars=CELLS[cell].get("inbox_chars", 0))
     runs = [new_run(args, cell, arm, inst_no, seed, meta) for arm in arms]
     if args.fake_mode:  # rehearsal only: the stand-in answers from the key, so it must see it
         for r in runs:
@@ -336,8 +398,13 @@ def run_instance_f1(claude: list[str], args, cell: str, arms: list[str], inst_no
 
         def one(r):
             sid = r["sid"] if resume else None
-            d = run_day(claude, r, day, L.prompt(inst, day, ARMS[r["arm"]].get("notes_prompt", False)), sid, args)
+            try:
+                d = run_day(claude, r, day, L.prompt(inst, day, ARMS[r["arm"]].get("notes_prompt", False)), sid, args)
+            except CapReached:
+                return None
             d["grade"] = L.grade(d.get("final_text", ""), inst["key"][day - 1])
+            text = d.get("final_text", "")  # unparsed: a refusal (wrong, and fair) or a malformed answer (grader issue)
+            d["format_error"] = not d["grade"]["parsed"] and ('"stock"' in text or '"lowest"' in text)
             prev = r["days"][-1]["cum_cost"] if (resume and r["days"]) else 0.0
             d["cost"] = max(0.0, (d["cum_cost"] or prev or 0.0) - (prev or 0.0)) if resume else (d["cum_cost"] or 0.0)
             r["sid"] = d["sid"]
@@ -347,6 +414,11 @@ def run_instance_f1(claude: list[str], args, cell: str, arms: list[str], inst_no
 
         with ThreadPoolExecutor(len(runs)) as ex:
             done = list(ex.map(one, runs))
+        if any(d is None for d in done):  # the spending cap: this instance stops, and is left out of the analysis
+            for r in runs:
+                r["capped"] = True
+            print(f"[{cell} i{inst_no}] stopped on day {day}: spending cap reached", flush=True)
+            break
         with LOCK:
             print(f"[{cell} i{inst_no}] day {day}: " + " | ".join(
                 f"{r['arm']} {d['grade']['correct']}/7 ${d['cost']:.3f}{' INFRA' if d['infra'] else ''}"
@@ -379,12 +451,22 @@ def finish(r: dict) -> None:
         dest.mkdir(exist_ok=True)
         for p in scratch:
             (shutil.copytree if p.is_dir() else shutil.copy2)(p, dest / p.name)
+    hidden = r["P"] / "hidden"
+    if hidden.exists() and any(p.is_file() for p in hidden.rglob("*")):  # e.g. Claude Code's per-session folders
+        shutil.copytree(hidden, r["dir"] / "hidden_writes", dirs_exist_ok=True)
     shutil.rmtree(r["P"], ignore_errors=True)
     if r["isolation"] == "namespace":
         shutil.rmtree(r["stage"], ignore_errors=True)
 
 
 def summarize(r: dict) -> dict:
+    row = _summarize(r)
+    if r.get("capped"):
+        row["discarded"] = "spending cap reached; the instance is incomplete"
+    return row
+
+
+def _summarize(r: dict) -> dict:
     days = r["days"]
     correct = sum(d["grade"]["correct"] for d in days)
     total = sum(d["grade"]["total"] for d in days)
@@ -393,7 +475,8 @@ def summarize(r: dict) -> dict:
     keep = ("day", "grade", "cost", "wall_s", "turns", "subtype", "timeout", "cap_hit", "infra", "n_calls",
             "peak_prompt", "mean_prompt", "tokens", "compactions", "microcompacts", "previews", "cc_cut",
             "report_calls", "report_previews", "report_cc_cut", "report_kinds", "note_writes", "note_reads", "notes_md_writes",
-            "auto_memory_writes", "isolation_flags", "tool_names", "init")
+            "auto_memory_writes", "isolation_flags", "hidden_access", "own_log_reads", "disk_searches", "inbox_reads",
+            "format_error", "tool_names", "init")
     return {"run": r["name"], "cell": r["cell"], "arm": r["arm"], "instance": r["instance"], "seed": r["seed"],
             "model": r["cfg"]["model"], "claude_version": r["cfg"].get("claude_version"),
             "plugin_commit": r["cfg"].get("plugin_commit"), "correct": correct, "total": total,
@@ -443,7 +526,11 @@ def run_instance_f2(claude: list[str], args, cell: str, arms: list[str], inst_no
             prompt = F2_PROMPT.format(k=k, py=E.VENV_PY, iid=iid, issue=insts[iid]["problem_statement"].strip())
 
             def one(r):
-                d = run_day(claude, r, k, prompt, None, args)
+                try:
+                    d = run_day(claude, r, k, prompt, None, args)
+                except CapReached:
+                    r["capped"] = True
+                    return None
                 d["cost"] = d["cum_cost"] or 0.0
                 d["issue"] = iid
                 r["days"].append(d)
@@ -452,6 +539,10 @@ def run_instance_f2(claude: list[str], args, cell: str, arms: list[str], inst_no
 
             with ThreadPoolExecutor(len(runs)) as ex:
                 list(ex.map(one, runs))
+            if any(r.get("capped") for r in runs):
+                for r in runs:
+                    r["capped"] = True
+                break
             time.sleep(args.gap_min * 60 if k < len(ids) else 0)
         for r in runs:
             for d, (iid, wt) in zip(r["days"], zip(ids, r["dirs"])):
@@ -491,14 +582,20 @@ def main() -> None:
     ap.add_argument("--isolation", default="namespace", choices=["namespace", "none"],
                     help="namespace: each session gets a private /tmp, /var/tmp and ~/.claude/projects (needs root)")
     ap.add_argument("--work-base", default="/var/lib/cct", help="where the runs' private areas live on the host")
+    ap.add_argument("--cap-usd", type=float, default=0.0,
+                    help="hard cap on this invocation's spend: no new session starts once it is reached (0: none)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    SPENT["cap"] = a.cap_usd
     a.out = str(Path(a.out).resolve())  # sessions run in their own folders: every path handed to them is absolute
     claude = [sys.executable, str(Path(a.claude_bin).resolve())] if a.claude_bin.endswith(".py") else [a.claude_bin]
     if a.isolation == "namespace":
         probe = subprocess.run(["unshare", "--mount", "--propagation", "private", "true"], capture_output=True)
         if probe.returncode != 0:
             sys.exit("namespace isolation is not available here (it needs root); use --isolation none knowingly")
+        for h in HIDDEN:  # Claude Code's per-session folders: made now (empty), so each session gets a private one
+            if CLAUDE_HOME in h.parents:
+                h.mkdir(parents=True, exist_ok=True)
     version = subprocess.run([*claude, "--version"], capture_output=True, text=True).stdout.strip()
     commit = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     dirty = bool(subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain", "plugins", "eam"],
@@ -511,8 +608,11 @@ def main() -> None:
     def with_retry(i: int) -> list[dict]:
         """The agreed re-run rule: if any session of the instance never reached the model (an outage or a startup
         error), the whole instance is run again for every arm, once; the failed attempt is kept, marked discarded."""
+        if SPENT["cap"] and SPENT["usd"] >= SPENT["cap"]:
+            print(f"instance {i} not started: spending cap reached", flush=True)
+            return []
         rows = runner(claude, a, a.cell, a.arms, i, meta)
-        if not any(r["infra"] for r in rows) or a.no_retry:
+        if not any(r["infra"] for r in rows) or a.no_retry or any(r.get("discarded") for r in rows):
             return rows
         for r in rows:
             src = Path(a.out) / "runs" / r["run"]

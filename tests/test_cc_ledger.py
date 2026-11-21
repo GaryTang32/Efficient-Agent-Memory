@@ -68,3 +68,57 @@ def test_grader_and_prompt():
                                           "correct": 0, "total": 7}
     assert L.NOTES_LINE in L.prompt(inst, 3, notes_prompt=True) and L.NOTES_LINE not in L.prompt(inst, 3)
     assert "day 3 of 10" in L.prompt(inst, 3) and "opening" in L.prompt(inst, 1) and "opening" not in L.prompt(inst, 2)
+
+
+# ---- the inbox (long-session cells) ---------------------------------------------------------------------------
+def test_without_an_inbox_nothing_changed():
+    """Cell N was piloted on these instances and this prompt: the inbox must not move them."""
+    import hashlib
+    keys = json.dumps([L.generate(s)["key"] for s in (1000, 1001)]).encode()
+    assert hashlib.sha256(keys).hexdigest()[:16] == "c732ebaa047aea59"
+    assert hashlib.sha256(L.prompt(L.generate(1000), 2).encode()).hexdigest()[:16] == "76aa1a7b15b7bb3b"
+    assert "inbox" not in L.generate(1000) and "inbox" not in L.prompt(L.generate(1000), 2)
+
+
+def test_what_the_agent_sees_determines_the_key_with_an_inbox():
+    for seed in range(20):
+        inst = L.generate(seed, inbox_chars=100_000)
+        assert L.solve(inst) == inst["key"], seed
+
+
+def test_the_inbox_changes_answers_and_reaches_back():
+    inst = L.generate(4, inbox_chars=100_000)
+    blind = L.solve({k: v for k, v in inst.items() if k != "inbox"})  # an agent that never reads the inbox
+    assert sum(b != k for b, k in zip(blind, inst["key"])) >= 8      # most days come out wrong
+    first_day = {}
+    earlier = 0
+    for d, rep in enumerate(inst["reports"], 1):
+        for kind in ("receipts", "shipments"):
+            for _, ref in L.LINE_REF_RE.findall(rep[kind]):
+                first_day.setdefault(ref, d)
+        earlier += sum(first_day[x] < d for what, x, _ in L.read_inbox(inst["inbox"][d - 1], inst["names"])
+                       if what == "event")
+    assert earlier >= 5  # short shipments and deliveries of earlier days: they need memory
+
+
+def test_inbox_size_and_wording():
+    inst = L.generate(9, inbox_chars=100_000)
+    for msgs in inst["inbox"]:
+        assert 10 <= len(msgs) <= 14
+        assert 80_000 < sum(len(t) for _, t in msgs) < 125_000  # about 25K tokens a day to read
+        text = "".join(t for _, t in msgs)
+        assert not any(s in text for s in inst["tracked"])     # products by description only
+    assert set(inst["names"]) == set(inst["tracked"])
+    heads = {n.split(",")[0] for n in inst["names"].values()}
+    assert len(heads) == 6                                     # material and type tell the products apart
+
+
+def test_inbox_released_one_day_at_a_time_and_prompted(tmp_path):
+    inst = L.generate(2, inbox_chars=100_000)
+    L.release_day(tmp_path, inst, 1)
+    L.release_day(tmp_path, inst, 2)
+    names = sorted(p.name for p in (tmp_path / "inbox").iterdir())
+    assert names == sorted(n for n, _ in inst["inbox"][1]) and all(n.startswith("day02-") for n in names)
+    p = L.prompt(inst, 2)
+    assert "inbox/" in p and "Read every message" in p
+    assert all(f"{s} ({inst['names'][s]})" in p for s in inst["tracked"])

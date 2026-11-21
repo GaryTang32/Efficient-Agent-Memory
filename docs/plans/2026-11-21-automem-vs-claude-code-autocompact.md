@@ -88,8 +88,8 @@ hypothesis is "not exercised" in that cell.
 |---|---|---|---|
 | **N** (headline) | F1 · a new session per day · **500K** (the company setting) | A, A′, A+, V2 × **6**; A0, L × **4** | The verdict, a prompt as alternative, attribution |
 | **F2** | Coding · a new session per issue · **500K** | A, L, V2 × **8 workdays** (40 issues) | No harm (equivalence); notes on related tickets |
-| **R100** | F1 · one resumed session over 10 days · **100K** (Claude Code's minimum) | A, L, V2 × **4** | The recap at compaction (2–3 compactions per run) |
-| **R500** (optional) | F1 · one resumed session · **500K**, never compacting | A, V2 × **3** | The cost of a long, uncompacted history. Decided at the post-pilot checkpoint |
+| **R100** | F1 with the daily inbox (section 16) · one resumed session over 10 days · **100K** (Claude Code's minimum) | A, V2, A+ × **4** (amended: L dropped, A+ added) | The recap at compaction (2–3 compactions per run) |
+| ~~R500~~ | Dropped at the checkpoint (section 16) | — | — |
 
 The compaction window is set with `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. In N, F2 and R500, sessions peak far below
 both 400K and 500K. So either value behaves the same in this test, and 500K is kept because it is the company's
@@ -293,6 +293,56 @@ then on, only the instance counts may change, and only as set at the checkpoint.
 - **A beats A0, and nothing beats A.** Claude Code's own auto memory and compaction are enough. Position AutoMemory
   for agents without them (the adapters), and say so plainly.
 
+## 16. Post-pilot amendments (2026-11-21, approved before any main run)
+
+**What the pilot found** ($4.66; cell N at 5 days with all six arms, cell R100 with A and V2):
+- **No session got long.** The largest prompt in any session was 24K to 46K tokens; nothing compacted. Sonnet saves
+  big outputs to files and searches them, and Claude Code cuts command output above 30,000 characters, so the
+  reports never fill the context. A resumed session grew by about 2.5K tokens a day.
+- **Claude Code caches for an hour here,** not five minutes. After a 6-minute gap, a resumed day read the whole of
+  yesterday from the cache; only the day after the 61-minute gap started cold.
+- **Claude Code's auto memory was on** (its instructions add 685 tokens to A's prompt) **but wrote nothing** in 25
+  sessions. Without memory, A's agents refused to answer on 7 of 20 later days, or dug through Claude Code's saved
+  logs of their own earlier sessions. A+, L and V2 got every check right.
+- **No session saw another run's files.** Three sessions searched the whole disk; the test's own code and plan were
+  visible to such a search, though nobody opened them.
+
+**Changes:**
+
+| Change | Why |
+|---|---|
+| R cells get a **daily inbox**: 10–14 messages, about 100,000 characters (25K tokens) a day. Messages name products by description. Some change stock in plain words (write-offs, stock found, short shipments and deliveries by order or PO number, often from earlier days); others only mention products. The prompt lists the tracked products' names and says to read every message | The resumed session fills up through reading, as real sessions do, so it compacts. Without it H3 cannot be tested. Cell N keeps the piloted task, byte for byte |
+| **A new line in the system prompt each day** (`Today is workday N of this job.`), the same in every arm | Yesterday's conversation is not read back from the cache, as on a real next morning. Claude Code's own shared prompt stays cached, as in any company. Gaps between days drop to 1 minute, since time no longer decides the cache |
+| The repository's `scripts/`, `docs/`, `tests/` and `.git`, and Claude Code's per-session folders in `~/.claude` (`tasks`, `sessions`, `session-env`, `backups`, `uploads`, `shell-snapshots`, `file-history`, `todos`, `plans`, `debug` and others), are each covered by a private empty folder of the run's own | A whole-disk search cannot reach the generator, the plan, or other sessions' files. What a session writes there is archived with its run |
+| Agents' reads of their **own** earlier session logs stay allowed, and are counted | That is Claude Code as shipped |
+| A hard spending cap in the runner (`--cap-usd`); an instance stopped by it is left out of the analysis | The budget is enforced by the runner, not by watching |
+| R100: **A+ added, L dropped**. R500 dropped | A+ tests "beats a notes prompt" in a long session. At 25K tokens a day, a 500K session would need 20 days to compact once |
+
+**Gates, as amended** (G1 and G9 unchanged):
+
+| Gate | Passes if |
+|---|---|
+| **G2 Isolation** | No session sees another run's files (names of other runs in tool results). Attempts at hidden folders, whole-disk searches and reads of the run's own logs are recorded |
+| **G3 Realistic baseline** | A has Claude Code's auto memory on (folder present; with A0 alongside, A's prompt is at least 300 tokens longer), and A0 writes none. Whether A writes to it is a result, recorded |
+| **G4 Cold days** | No later day's first call reads more than 20K tokens from the cache (Claude Code's shared prompt only) |
+| **G5 Mechanisms fire** | Every R run compacts at least twice; the inbox is read on at least 90% of R days; V2 writes notes and recalls them; A+ writes `NOTES.md` (when present); F2 sessions finish |
+| **G6 Grader** | The key follows from what the agent sees (reports, inbox, product names); no malformed answers. Refusals are wrong answers, and fair |
+| **G7 Noise** | As before, where A and A′ both run; otherwise not applicable |
+| **G8 Cost** | Within ±50% of: N $0.97 per run (measured), R100 $6.00 per run (re-estimated), F2 $0.40 per workday |
+
+**Second pilot:** R100 with A and V2 × 1, and an F2 check (one workday, A and V2). About $15.
+
+**The go-ahead rule (approved):** if every gate passes and an R100 run costs at most $7, the main runs start
+without another checkpoint, under a hard cap of $138 from this point (the second pilot included):
+
+| Cell | Arms × instances | Estimate |
+|---|---|---|
+| N | A, A′, A+, V2 × 6; A0, L × 4 | ~$31 |
+| R100 | A, V2, A+ × 4 | ~$50–85 |
+| F2 | A, L, V2 × 8 workdays | ~$10 |
+
+If R100 runs cost more than $6, R100 drops to 3 instances to stay inside the cap.
+
 ## Decision log
 
 | Round | Decisions |
@@ -301,3 +351,4 @@ then on, only the instance counts may change, and only as set at the checkpoint.
 | 2 | The six arms. F1 redesigned (10 days, daily release, three outputs of different sizes, the dependency stated in the prompt). F2 kept natural. The compaction cell at 100K. The headline is Sonnet V2 against A in cell N. Paired bootstrap, the noise check, an equivalence test, Holm. Identical caps; re-runs only for infrastructure failures, for every arm |
 | 3 | Margins the data can meet (−5 points; F2 ±10 points with 8 workdays). The matrix, the tiered budget, the pilot gates, the full mode on the package's MCP server, the offline rehearsal, a check with a 61-minute gap, a checkpoint after the pilot, the deliverables |
 | 4 | Sonnet only (attribution arms kept on Sonnet). R500 optional, decided at the checkpoint. A leaner Sonnet pilot. Budget: tiers 1 and 2 (≈ $113; total about $209). Sonnet-only limits stated. Compaction window kept at 500K (400K would behave the same in this test) |
+| 5 | After the pilot (section 16): the daily inbox in R cells, a new system line each day, the test's code and Claude Code's per-session folders hidden, gates G2–G8 amended, A+ added to R100, L dropped from R100, R500 dropped, a runner spending cap, the second pilot, and the go-ahead rule with a $138 cap |
