@@ -435,6 +435,7 @@ def main() -> None:
     ap.add_argument("--no-retry", action="store_true", help="do not re-run instances after an infrastructure failure")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    a.out = str(Path(a.out).resolve())  # sessions run in their own folders: every path handed to them is absolute
     if a.fake_mode and not a.fake_keys:
         a.fake_keys = str(Path(a.out) / "fake_keys")
     claude = [sys.executable, str(Path(a.claude_bin).resolve())] if a.claude_bin.endswith(".py") else [a.claude_bin]

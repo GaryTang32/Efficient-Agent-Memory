@@ -64,13 +64,17 @@ def test_stream_parsing(tmp_path):
 
 
 def test_rehearsal_end_to_end(tmp_path):
-    out = tmp_path / "out"
+    out = tmp_path / "out"  # given relative below: every path handed to a session must still be absolute
     env = {**os.environ, "HOME": str(tmp_path / "home")}
     (tmp_path / "home").mkdir()
     subprocess.run([sys.executable, str(ROOT / "scripts" / "run_cc_test.py"), "--cell", "N", "--arms", "A", "A2", "V2",
                     "--instances", "1", "--days", "2", "--gap-min", "0", "--claude-bin",
-                    str(ROOT / "scripts" / "fake_claude.py"), "--fake-mode", "oracle", "--out", str(out)],
-                   check=True, capture_output=True, text=True, env=env, timeout=300)
+                    str(ROOT / "scripts" / "fake_claude.py"), "--fake-mode", "oracle", "--out", "out"],
+                   check=True, capture_output=True, text=True, env=env, timeout=300, cwd=tmp_path)
+    cfg = json.loads((out / "runs" / "N-V2-i0" / "config.json").read_text())
+    assert all(Path(cfg["env"][k]).is_absolute() for k in ("AUTOMEM_DATA", "AUTOMEM_STORE", "AUTOMEM_TIMING_LOG"))
+    assert Path(json.loads((out / "runs" / "N-V2-i0" / "mcp.json").read_text())["mcpServers"]["automem"]["env"]
+                ["EAM_MEMORY_DIR"]).is_absolute()
     rows = [json.loads(line) for line in (out / "rows.jsonl").read_text().splitlines()]
     assert {r["arm"] for r in rows} == {"A", "A2", "V2"} and all(r["correct"] == 14 for r in rows)
     assert not list((tmp_path / "home" / ".claude" / "projects").glob("*cct*"))  # project folders archived, removed
