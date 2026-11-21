@@ -214,6 +214,15 @@ Every run gets:
 - an explicit, minimal environment, not inherited from this machine;
 - Claude Code pinned, with auto-updates off.
 
+*(Found at the first pilot launch.)* Agents save the day's reports in `/tmp`, which concurrent sessions share, so
+the arms would overwrite each other's files. Every session therefore runs in its own mount namespace:
+- a private `/tmp`, holding its working folder;
+- a private `/var/tmp`;
+- a private `~/.claude/projects`, holding its transcripts and auto memory;
+- the results and the other runs' areas hidden.
+
+A real check confirmed that a session sees only its own run.
+
 Day *k*'s files are copied in at the start of day *k*. In cell N, the folder stays the same across a run's days, so
 auto memory and notes can carry over, as in real use. Nothing is shared between runs. After each run, its folders
 are archived into the logs and deleted.

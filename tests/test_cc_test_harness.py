@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import run_cc_test as R  # noqa: E402
 
+# private mount namespaces need root (this container); elsewhere the rehearsal runs without them
+ISOLATION = "namespace" if os.geteuid() == 0 and subprocess.run(
+    ["unshare", "--mount", "--propagation", "private", "true"], capture_output=True).returncode == 0 else "none"
+
 
 def test_environment_is_explicit_and_per_arm(tmp_path, monkeypatch):
     for k, v in {"CLAUDE_EFFORT": "xhigh", "MAX_THINKING_TOKENS": "31999", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "92",
@@ -55,7 +59,7 @@ def test_stream_parsing(tmp_path):
           {"type": "system", "subtype": "compact_boundary", "compact_metadata": {"trigger": "auto", "pre_tokens": 70000}},
           {"type": "system", "subtype": "microcompact_boundary"},
           {"type": "result", "subtype": "success", "num_turns": 2, "result": "answer", "total_cost_usd": 0.1}]
-    s = R.parse_stream([json.dumps(e) for e in ev], tmp_path)
+    s = R.parse_stream([json.dumps(e) for e in ev], tmp_path / "work")
     assert s["session_id"] == sid and s["turns"] == 2 and s["final_text"] == "answer"
     assert s["compactions"] == [{"trigger": "auto", "pre_tokens": 70000}] and s["microcompacts"] == 1
     assert s["report_kinds"]["audit"] == {"calls": 1, "preview": 0, "cc_cut": 1, "chars": len(
@@ -69,12 +73,13 @@ def test_rehearsal_end_to_end(tmp_path):
     (tmp_path / "home").mkdir()
     subprocess.run([sys.executable, str(ROOT / "scripts" / "run_cc_test.py"), "--cell", "N", "--arms", "A", "A2", "V2",
                     "--instances", "1", "--days", "2", "--gap-min", "0", "--claude-bin",
-                    str(ROOT / "scripts" / "fake_claude.py"), "--fake-mode", "oracle", "--out", "out"],
+                    str(ROOT / "scripts" / "fake_claude.py"), "--fake-mode", "oracle", "--out", "out",
+                    "--work-base", str(tmp_path / "base"), "--isolation", ISOLATION],
                    check=True, capture_output=True, text=True, env=env, timeout=300, cwd=tmp_path)
     cfg = json.loads((out / "runs" / "N-V2-i0" / "config.json").read_text())
+    assert cfg["isolation"] == ISOLATION
     assert all(Path(cfg["env"][k]).is_absolute() for k in ("AUTOMEM_DATA", "AUTOMEM_STORE", "AUTOMEM_TIMING_LOG"))
-    assert Path(json.loads((out / "runs" / "N-V2-i0" / "mcp.json").read_text())["mcpServers"]["automem"]["env"]
-                ["EAM_MEMORY_DIR"]).is_absolute()
+    assert not list((tmp_path / "base").iterdir())  # private areas archived and deleted
     rows = [json.loads(line) for line in (out / "rows.jsonl").read_text().splitlines()]
     assert {r["arm"] for r in rows} == {"A", "A2", "V2"} and all(r["correct"] == 14 for r in rows)
     assert not list((tmp_path / "home" / ".claude" / "projects").glob("*cct*"))  # project folders archived, removed

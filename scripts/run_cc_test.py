@@ -64,37 +64,61 @@ CELLS = {
 PASS_ENV = ["PATH", "HOME", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"]
 SECRET = re.compile(r"(TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL)", re.I)
 LOCK = threading.Lock()
+RESULTS = ROOT / "results"
+# Each session runs in its own mount namespace (root only): a private /tmp (its working folder and any scratch files),
+# a private /var/tmp, a private ~/.claude/projects (transcripts, auto memory), and the results and the other runs'
+# folders hidden. The working folder keeps a unique path, so each run keeps its own Claude Code project.
+NS_SCRIPT = r"""set -e
+P="$1"; CWD="$2"; RES="$3"; BASE="$4"; STAGE="$5"; shift 5
+mount --bind "$P" "$STAGE"                      # a fixed handle on the run's area, before anything is hidden
+mount --bind "$STAGE/var_tmp" /var/tmp
+if [ -d "$RES" ]; then mount --bind "$STAGE/empty" "$RES"; fi
+mount --bind "$STAGE/empty" "$BASE"
+mount --bind "$STAGE/tmp" /tmp
+mkdir -p "$HOME/.claude/projects"                # after /tmp, so a home folder under /tmp works too
+mount --bind "$STAGE/claude_projects" "$HOME/.claude/projects"
+cd "$CWD"
+exec "$@"
+"""
+
+
+def sanitize(path) -> str:
+    """Claude Code's project folder name for a working folder: every character not a letter or digit becomes '-'."""
+    return re.sub(r"[^A-Za-z0-9]", "-", str(path))
 
 
 # ---- environment and command ----------------------------------------------------------------------------------
-def child_env(arm: str, cell: str, run_dir: Path, tmp: Path, extra: dict | None = None) -> dict:
+def child_env(arm: str, cell: str, root: Path, tmp: Path, extra: dict | None = None) -> dict:
+    """`root` is the run's folder as the session sees it; the plugin's data and note store live under it."""
     a, c = ARMS[arm], CELLS[cell]
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
     env.update({"LANG": "C.UTF-8", "TERM": "dumb", "TMPDIR": str(tmp), "DISABLE_AUTOUPDATER": "1",
                 "PYTHONDONTWRITEBYTECODE": "1", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(c["window"]),
                 "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0" if a["auto_memory"] else "1"})
     if a.get("plugin"):
-        env.update({"AUTOMEM_DATA": str(run_dir / "automem_data"), "AUTOMEM_TIMING_LOG": str(run_dir / "hook_timing.jsonl")})
+        env.update({"AUTOMEM_DATA": str(root / "automem" / "data"),
+                    "AUTOMEM_TIMING_LOG": str(root / "automem" / "timing.jsonl")})
         if a["plugin"] == "lean":
             env["AUTOMEM_NOTES"] = "off"
         else:
-            env.update({"AUTOMEM_WORKSPACE": "on", "AUTOMEM_STORE": str(run_dir / "store")})
+            env.update({"AUTOMEM_WORKSPACE": "on", "AUTOMEM_STORE": str(root / "automem" / "store")})
     env.update(extra or {})
     return env
 
 
-def mcp_config(run_dir: Path, window: int) -> Path:
-    path = run_dir / "mcp.json"
-    path.write_text(json.dumps({"mcpServers": {"automem": {
+def mcp_config(root: Path, window: int, host_root: Path | None = None) -> Path:
+    """Write the MCP config at the host's view of the run folder; its paths are as the session sees them."""
+    (host_root or root).mkdir(parents=True, exist_ok=True)
+    (host_root or root).joinpath("mcp.json").write_text(json.dumps({"mcpServers": {"automem": {
         "command": sys.executable, "args": ["-m", "eam.mcp_server"],
-        "env": {"EAM_MEMORY_DIR": str(run_dir / "store"), "EAM_MEMORY_WINDOW": str(window), "PYTHONPATH": str(ROOT),
-                "EAM_MEMORY_TOOLS": "write_note,read_notes,read_artifact"}}}},
-        indent=1))
-    return path
+        "env": {"EAM_MEMORY_DIR": str(root / "automem" / "store"), "EAM_MEMORY_WINDOW": str(window),
+                "PYTHONPATH": str(ROOT),
+                "EAM_MEMORY_TOOLS": "write_note,read_notes,read_artifact"}}}}, indent=1))
+    return root / "mcp.json"
 
 
-def command(claude: list[str], prompt: str, arm: str, run_dir: Path, window: int, model: str, budget: float,
-            sid: str | None) -> list[str]:
+def command(claude: list[str], prompt: str, arm: str, root: Path, window: int, model: str, budget: float,
+            sid: str | None, host_root: Path | None = None) -> list[str]:
     tools = TOOLS + (NOTE_TOOLS if ARMS[arm].get("plugin") == "full" else [])
     cmd = [*claude, "-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose",
            "--setting-sources", "", "--strict-mcp-config", "--max-budget-usd", str(budget),
@@ -102,7 +126,7 @@ def command(claude: list[str], prompt: str, arm: str, run_dir: Path, window: int
     if ARMS[arm].get("plugin"):
         cmd += ["--plugin-dir", str(PLUGIN)]
     if ARMS[arm].get("plugin") == "full":
-        cmd += ["--mcp-config", str(mcp_config(run_dir, window))]
+        cmd += ["--mcp-config", str(mcp_config(root, window, host_root))]
     if sid:
         cmd += ["--resume", sid]
     return cmd
@@ -117,7 +141,8 @@ def _text_of(content) -> str:
     return ""
 
 
-def parse_stream(lines: list[str], cwd: Path) -> dict:
+def parse_stream(lines: list[str], cwd) -> dict:
+    """`cwd`: the working folder as the session sees it (it names the run's own Claude Code project)."""
     calls, tool_calls, results = {}, {}, []
     sid, result, compactions, micro, init = None, {}, [], 0, {}
     for line in lines:
@@ -171,8 +196,9 @@ def parse_stream(lines: list[str], cwd: Path) -> dict:
             k["cc_cut"] += bool(r.get("cc_cut"))
             k["chars"] += r.get("chars", 0)
     home_projects = str(Path.home() / ".claude" / "projects")
-    own_project = project_dir(cwd).name
-    outside = [x for x in bash + paths if home_projects in x and own_project not in x]
+    own_project = sanitize(cwd)
+    outside = [x for x in bash + paths if (home_projects in x or str(RESULTS) in x or "/var/lib/cct" in x)
+               and own_project not in x]
     return {
         "session_id": sid, "result": result, "init": init, "calls": list(calls.values()),
         "turns": result.get("num_turns"), "subtype": result.get("subtype"), "final_text": result.get("result") or "",
@@ -194,19 +220,24 @@ def parse_stream(lines: list[str], cwd: Path) -> dict:
     }
 
 
-def project_dir(cwd: Path) -> Path:
-    """Claude Code's project folder for `cwd`: every character that is not a letter or digit becomes '-'."""
-    return Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
+def project_dir(run: dict) -> Path:
+    """The run's Claude Code project folder, as seen from the host."""
+    return run["projects"] / sanitize(run["cwd_in"])
 
 
 # ---- one day of one run ------------------------------------------------------------------------------------------
 def run_day(claude: list[str], run: dict, day: int, prompt: str, sid: str | None, args) -> dict:
-    run_dir, cwd = run["dir"], run["cwd"]
-    cmd = command(claude, prompt, run["arm"], run_dir, CELLS[run["cell"]]["window"], args.model, args.budget_day, sid)
+    run_dir = run["dir"]
+    cmd = command(claude, prompt, run["arm"], run["root_in"], CELLS[run["cell"]]["window"], args.model,
+                  args.budget_day, sid, run["root_host"])
+    if run["isolation"] == "namespace":
+        cmd = ["unshare", "--mount", "--propagation", "private", "bash", "-c", NS_SCRIPT, "ns", str(run["P"]),
+               str(run["cwd_in"]), str(RESULTS), str(run["base"]), str(run["stage"]), *cmd]
     t0 = time.time()
     timeout = False
     try:
-        p = subprocess.run(cmd, cwd=cwd, env=run["env"], capture_output=True, text=True, timeout=args.timeout_day)
+        p = subprocess.run(cmd, cwd=run["cwd"], env=run["env"], capture_output=True, text=True,
+                           timeout=args.timeout_day)
         out, err, code = p.stdout, p.stderr, p.returncode
     except subprocess.TimeoutExpired as exc:
         out = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
@@ -216,7 +247,7 @@ def run_day(claude: list[str], run: dict, day: int, prompt: str, sid: str | None
         fh.write(out)
     if err.strip():
         (run_dir / f"day_{day:02d}.stderr.txt").write_text(err[-200_000:])
-    s = parse_stream(lines, cwd)
+    s = parse_stream(lines, run["cwd_in"])
     with open(run_dir / f"day_{day:02d}.calls.jsonl", "w") as fh:
         fh.write("".join(json.dumps(c) + "\n" for c in s["calls"]))
     res = s["result"]
@@ -233,13 +264,15 @@ def run_day(claude: list[str], run: dict, day: int, prompt: str, sid: str | None
 def snapshot(run: dict, day: int, sids: list[str]) -> None:
     snap = run["dir"] / "snapshots" / f"day_{day:02d}"
     snap.mkdir(parents=True, exist_ok=True)
-    proj = project_dir(run["cwd"])
+    proj = project_dir(run)
     if (proj / "memory").exists():
         shutil.copytree(proj / "memory", snap / "claude_auto_memory", dirs_exist_ok=True)
-    for name in ("store", "automem_data"):
-        if (run["dir"] / name).exists():
-            shutil.copytree(run["dir"] / name, snap / name, dirs_exist_ok=True,
-                            ignore=shutil.ignore_patterns("*.lock"))
+    am = run["root_host"] / "automem"
+    for name, dest in (("store", "store"), ("data", "automem_data")):
+        if (am / name).exists():
+            shutil.copytree(am / name, snap / dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns("*.lock"))
+    if (am / "timing.jsonl").exists():
+        shutil.copy2(am / "timing.jsonl", run["dir"] / "hook_timing.jsonl")
     if (run["cwd"] / "NOTES.md").exists():
         shutil.copy2(run["cwd"] / "NOTES.md", snap / "NOTES.md")
     tr = run["dir"] / "transcripts"
@@ -257,31 +290,45 @@ def new_run(args, cell: str, arm: str, inst_no: int, seed: int, meta: dict) -> d
     if run_dir.exists():
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
-    work_root = Path(tempfile.mkdtemp(prefix="cct-"))  # away from the results: the agent cannot reach other runs' logs
-    cwd, tmp = work_root / "work", work_root / "tmp"
-    cwd.mkdir()
-    tmp.mkdir()
+    # the run's private area on the host: P/tmp becomes the session's /tmp (namespace isolation); the working folder
+    # is /tmp/<uniq>/work as the session sees it, unique per run
+    base = Path(args.work_base)
+    base.mkdir(parents=True, exist_ok=True)
+    P = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=base))
+    uniq = P.name
+    for sub_dir in ("tmp", "var_tmp", "claude_projects", "empty"):
+        (P / sub_dir).mkdir()
+    root_host = P / "tmp" / uniq
+    stage = Path("/run/cct") / uniq  # an empty mount point outside /tmp and the runs' area (namespace isolation)
+    if args.isolation == "namespace":
+        stage.mkdir(parents=True, exist_ok=True)
+    if args.isolation == "namespace":
+        root_in, tmp_in, projects = Path("/tmp") / uniq, Path("/tmp"), P / "claude_projects"
+    else:
+        root_in, tmp_in, projects = root_host, P / "tmp", Path.home() / ".claude" / "projects"
+    (root_host / "work").mkdir(parents=True)
     extra = {}
     if args.fake_mode:
-        extra = {"FAKE_MODE": args.fake_mode, "FAKE_KEY": str(Path(args.fake_keys) / f"{name}.json")}
-    env = child_env(arm, cell, run_dir, tmp, extra)
+        extra = {"FAKE_MODE": args.fake_mode, "FAKE_KEY": str(root_in / "fake_key.json")}  # rehearsal only
+    env = child_env(arm, cell, root_in, tmp_in, extra)
     cfg = {"run": name, "cell": cell, "arm": arm, "instance": inst_no, "seed": seed, "model": args.model,
            "days": args.days, "gap_min": args.gap_min, "long_gap": args.long_gap, "budget_day": args.budget_day,
-           "timeout_day": args.timeout_day, **CELLS[cell], **ARMS[arm], **meta,
+           "timeout_day": args.timeout_day, "isolation": args.isolation, **CELLS[cell], **ARMS[arm], **meta,
            "env": {k: ("<redacted>" if SECRET.search(k) else v) for k, v in env.items()}}
     (run_dir / "config.json").write_text(json.dumps(cfg, indent=1))
-    return {"name": name, "cell": cell, "arm": arm, "instance": inst_no, "seed": seed, "dir": run_dir, "cwd": cwd,
-            "work_root": work_root, "env": env, "days": [], "sid": None, "cfg": cfg}
+    return {"name": name, "cell": cell, "arm": arm, "instance": inst_no, "seed": seed, "dir": run_dir,
+            "cwd": root_host / "work", "cwd_in": root_in / "work", "root_host": root_host, "root_in": root_in,
+            "P": P, "base": base, "stage": stage, "projects": projects, "isolation": args.isolation, "env": env, "days": [],
+            "sid": None, "cfg": cfg}
 
 
 def run_instance_f1(claude: list[str], args, cell: str, arms: list[str], inst_no: int, meta: dict) -> list[dict]:
     seed = args.first_seed + inst_no
     inst = L.generate(seed, days=args.days)
     runs = [new_run(args, cell, arm, inst_no, seed, meta) for arm in arms]
-    if args.fake_mode:
-        Path(args.fake_keys).mkdir(parents=True, exist_ok=True)
+    if args.fake_mode:  # rehearsal only: the stand-in answers from the key, so it must see it
         for r in runs:
-            (Path(args.fake_keys) / f"{r['name']}.json").write_text(json.dumps(inst["key"]))
+            (r["root_host"] / "fake_key.json").write_text(json.dumps(inst["key"]))
     resume = CELLS[cell]["mode"] == "resume"
     for day in range(1, args.days + 1):
         for r in runs:
@@ -315,13 +362,26 @@ def run_instance_f1(claude: list[str], args, cell: str, arms: list[str], inst_no
         (r["dir"] / "key.json").write_text(json.dumps(inst["key"]))  # only now, after the run
         work = r["dir"] / "work_final"
         shutil.copytree(r["cwd"], work, dirs_exist_ok=True, ignore=shutil.ignore_patterns("today.bin"))
-        proj = project_dir(r["cwd"])
-        if proj.exists():
-            shutil.copytree(proj, r["dir"] / "claude_project", dirs_exist_ok=True)
-            shutil.rmtree(proj, ignore_errors=True)
-        shutil.rmtree(r["work_root"], ignore_errors=True)
+        finish(r)
         rows.append(summarize(r))
     return rows
+
+
+def finish(r: dict) -> None:
+    """Archive the run's Claude Code project and private area into its log folder, then delete them."""
+    proj = project_dir(r)
+    if proj.exists():
+        shutil.copytree(proj, r["dir"] / "claude_project", dirs_exist_ok=True)
+        shutil.rmtree(proj, ignore_errors=True)
+    scratch = [p for p in (r["P"] / "tmp").iterdir() if p.name != r["root_host"].name]
+    if scratch:  # files the agent left in its private /tmp outside its working folder (e.g. saved reports)
+        dest = r["dir"] / "agent_tmp"
+        dest.mkdir(exist_ok=True)
+        for p in scratch:
+            (shutil.copytree if p.is_dir() else shutil.copy2)(p, dest / p.name)
+    shutil.rmtree(r["P"], ignore_errors=True)
+    if r["isolation"] == "namespace":
+        shutil.rmtree(r["stage"], ignore_errors=True)
 
 
 def summarize(r: dict) -> dict:
@@ -402,11 +462,7 @@ def run_instance_f2(claude: list[str], args, cell: str, arms: list[str], inst_no
         for r in runs:
             for wt in r.get("dirs", []):
                 E.drop_worktree(wt)
-            proj = project_dir(r["cwd"])
-            if proj.exists():
-                shutil.copytree(proj, r["dir"] / "claude_project", dirs_exist_ok=True)
-                shutil.rmtree(proj, ignore_errors=True)
-            shutil.rmtree(r["work_root"], ignore_errors=True)
+            finish(r)
             for d in r["days"]:
                 d.setdefault("grade", {"parsed": False, "checks": {"resolved": False}, "correct": 0, "total": 1})
             rows.append(summarize(r))
@@ -431,14 +487,18 @@ def main() -> None:
     ap.add_argument("--validation", default=str(ROOT / "results" / "swe_validation_related.jsonl"))
     ap.add_argument("--claude-bin", default="claude")
     ap.add_argument("--fake-mode", default="", help="rehearsal only: oracle | stale (with scripts/fake_claude.py)")
-    ap.add_argument("--fake-keys", default="", help="rehearsal only: where the fake reads keys from")
     ap.add_argument("--no-retry", action="store_true", help="do not re-run instances after an infrastructure failure")
+    ap.add_argument("--isolation", default="namespace", choices=["namespace", "none"],
+                    help="namespace: each session gets a private /tmp, /var/tmp and ~/.claude/projects (needs root)")
+    ap.add_argument("--work-base", default="/var/lib/cct", help="where the runs' private areas live on the host")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     a.out = str(Path(a.out).resolve())  # sessions run in their own folders: every path handed to them is absolute
-    if a.fake_mode and not a.fake_keys:
-        a.fake_keys = str(Path(a.out) / "fake_keys")
     claude = [sys.executable, str(Path(a.claude_bin).resolve())] if a.claude_bin.endswith(".py") else [a.claude_bin]
+    if a.isolation == "namespace":
+        probe = subprocess.run(["unshare", "--mount", "--propagation", "private", "true"], capture_output=True)
+        if probe.returncode != 0:
+            sys.exit("namespace isolation is not available here (it needs root); use --isolation none knowingly")
     version = subprocess.run([*claude, "--version"], capture_output=True, text=True).stdout.strip()
     commit = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     dirty = bool(subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain", "plugins", "eam"],
