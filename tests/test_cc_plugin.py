@@ -124,3 +124,38 @@ def test_out_of_range_settings_fall_back_to_the_defaults(tmp_path):
         out = json.loads(run("post_tool_use", payload, tmp_path, **bad))  # the default 6000-character threshold
         assert "[AutoMemory:" in out["hookSpecificOutput"]["updatedToolOutput"]["stdout"], bad
     assert not run("post_tool_use", payload, tmp_path, AUTOMEM_PREVIEW_CHARS="0")  # 0 still turns previews off
+
+
+def test_full_mode_shares_the_note_store_with_the_library(tmp_path):
+    """AUTOMEM_WORKSPACE=on: session start adds the note rule and recalls the store the MCP server writes; stop
+    autosaves into it (each answer supersedes the previous one); resume skips recall; the timing log records calls."""
+    from eam.automem import JsonStore
+    from eam.memory_skill import MemorySkill
+
+    store, log = tmp_path / "store", tmp_path / "timing.jsonl"
+    env = {"AUTOMEM_WORKSPACE": "on", "AUTOMEM_STORE": str(store), "AUTOMEM_TIMING_LOG": str(log)}
+    first = json.loads(run("session_start", {"cwd": str(tmp_path), "source": "startup"}, tmp_path, **env))
+    ctx = first["hookSpecificOutput"]["additionalContext"]
+    assert "write_note" in ctx and "<memory>" in ctx and "Your persistent workspace notes" not in ctx  # rule, no notes
+
+    MemorySkill(store).write_note("EV-50012", "RECEIPT of AB-12, qty 40 (day 1)", type="fact")  # as write_note does
+    for answer in ("Day 1: AB-12 431, CD-34 220 (long enough to keep)", "Day 2: AB-12 401, CD-34 260 (long enough)"):
+        run("stop", {"cwd": str(tmp_path), "session_id": "s1", "last_assistant_message": answer}, tmp_path, **env)
+    notes = JsonStore(store).load()  # the library reads what the plugin wrote
+    results = [n for n in notes if n.type == "result"]
+    assert [n.active for n in results] == [False, True] and results[1].supersedes == results[0].name
+    recall = json.loads(run("session_start", {"cwd": str(tmp_path), "source": "startup"}, tmp_path, **env))
+    text = recall["hookSpecificOutput"]["additionalContext"]
+    assert "EV-50012" in text and "Day 2: AB-12 401" in text and "Day 1: AB-12 431" not in text
+    assert not run("session_start", {"cwd": str(tmp_path), "source": "resume"}, tmp_path, **env)
+    events = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [e["event"] for e in events].count("session_start") == 3 and all(e["ms"] >= 0 for e in events)
+    assert any(e.get("recall_chars") for e in events) and any(e.get("skipped") == "resume" for e in events)
+
+
+def test_full_mode_off_keeps_the_default_behaviour(tmp_path):
+    run("stop", {"cwd": str(tmp_path), "last_assistant_message": "a default-mode answer, long enough to keep"},
+        tmp_path)
+    out = json.loads(run("session_start", {"cwd": str(tmp_path), "source": "startup"}, tmp_path))
+    assert "a default-mode answer" in out["hookSpecificOutput"]["additionalContext"]
+    assert "write_note" not in out["hookSpecificOutput"]["additionalContext"]

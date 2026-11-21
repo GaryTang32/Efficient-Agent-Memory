@@ -32,6 +32,14 @@ back to its default):
     AUTOMEM_RETENTION_DAYS saved outputs older than this are deleted (default 14; 0 keeps them)
     AUTOMEM_OUTPUT_MB      saved outputs per project are kept under this size, oldest deleted first (default 200)
     AUTOMEM_REDACT         on | off: replace secrets with [REDACTED:kind] before saving (default on)
+    AUTOMEM_WORKSPACE      on | off: full AutoMemory v2 mode (default off). Session start adds the note rule and
+                           recalls the shared note store (the one the automem-mcp server writes with write_note);
+                           stop autosaves into it, each answer superseding the previous one. Recall is skipped on
+                           resume, where the conversation still holds it
+    AUTOMEM_STORE          the shared note store directory (default: this project's folder/store); give the MCP
+                           server the same directory as EAM_MEMORY_DIR
+    AUTOMEM_FULL_RECALL_CHARS  recall budget in full mode, characters (default 12000)
+    AUTOMEM_TIMING_LOG     a file to append one JSON line per hook call to (event, milliseconds, what it did)
 
 Safety (automem_safety.py, a copy of eam/safety.py): secrets are redacted before an output or a note is saved; state is
 owner-only (directories 0700, files 0600) and written atomically, notes under a lock; recalled notes reach the model
@@ -77,7 +85,8 @@ RANGES = {"AUTOMEM_PREVIEW_CHARS": (500, 2_000_000), "AUTOMEM_PREVIEW_KEEP": (10
           "AUTOMEM_PREVIEW_MAX_TOKENS": (500, 1_000_000), "AUTOMEM_PREVIEW_SHARE": (0.001, 0.5),
           "AUTOMEM_RECALL_CHARS": (100, 200_000), "AUTOMEM_RECALL_TOKENS": (25, 50_000),
           "AUTOMEM_RETENTION_DAYS": (1, 3650), "AUTOMEM_OUTPUT_MB": (1, 100_000),
-          "AUTOMEM_WINDOW": (1_000, 10_000_000), "CLAUDE_CODE_AUTO_COMPACT_WINDOW": (1_000, 10_000_000)}
+          "AUTOMEM_WINDOW": (1_000, 10_000_000), "CLAUDE_CODE_AUTO_COMPACT_WINDOW": (1_000, 10_000_000),
+          "AUTOMEM_FULL_RECALL_CHARS": (500, 400_000)}
 OFF_OK = {"AUTOMEM_PREVIEW_CHARS", "AUTOMEM_PREVIEW_TOKENS", "AUTOMEM_PREVIEW_MAX_TOKENS", "AUTOMEM_RECALL_CHARS",
           "AUTOMEM_RECALL_TOKENS", "AUTOMEM_RETENTION_DAYS"}
 
@@ -229,7 +238,102 @@ def read_notes(f: Path) -> list[dict]:
     return notes
 
 
+# ---- full mode: the shared AutoMemory note store (eam.automem JsonStore, schema version 2) --------------------
+WORKSPACE_RULE = ("Workspace: you have a persistent note workspace that survives beyond this conversation and across "
+                  "sessions (the automem tools write_note and read_notes). Save every intermediate result you may need "
+                  "later - running totals, findings, identifiers and the values they stand for, what is done - and at "
+                  "the start of a session use the notes recalled below before doing anything else.")
+INFO: dict = {}  # what the current hook call did, for the timing log
+
+
+def workspace_on() -> bool:
+    return os.environ.get("AUTOMEM_WORKSPACE", "off").lower() in ("on", "1", "true", "yes")
+
+
+def store_path(cwd: str) -> Path:
+    root = os.environ.get("AUTOMEM_STORE") or str(project_dir(cwd) / "store")
+    return S.private_dir(root) / "notes.json"
+
+
+def load_store(path: Path) -> list[dict]:
+    """The store's notes, oldest first; an unreadable store reads as empty (the MCP server sets such a file aside)."""
+    if not path.exists():
+        return []
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return []
+    if isinstance(doc, dict) and doc.get("version") == 2:
+        return [n for n in doc.get("notes", []) if isinstance(n, dict)]
+    if isinstance(doc, dict):  # version 1: {name: text}
+        return [{"name": str(k), "text": str(v), "type": "note", "source": "migrated", "status": "active"}
+                for k, v in doc.items()]
+    return []
+
+
+def render_note(n: dict) -> str:
+    meta = [t for t in (n.get("type") if n.get("type") not in (None, "note") else "", str(n.get("time", ""))[:10]) if t]
+    files = f"\nFiles: {', '.join(n.get('files') or [])}" if n.get("files") else ""
+    return f"## {n.get('name', 'note')}" + (f" ({', '.join(meta)})" if meta else "") + f"\n{n.get('text', '')}{files}"
+
+
+def full_recall(notes: list[dict], budget: int) -> str:
+    """The newest active notes within `budget` characters (always at least one), oldest first; the rest by name."""
+    pool = [n for n in notes if n.get("status", "active") == "active"]
+    kept, used = [], 0
+    for n in reversed(pool):
+        r = render_note(n)
+        if kept and used + len(r) > budget:
+            break
+        kept.append(r)
+        used += len(r)
+    text = "\n\n".join(reversed(kept))
+    rest = [str(n.get("name")) for n in pool][: len(pool) - len(kept)]
+    if rest:
+        text += f"\n\n[Older notes not shown, read one with read_notes(name=...): {', '.join(rest)}]"
+    return text
+
+
+def full_session_start(d: dict) -> dict | None:
+    if d.get("source") == "resume":  # the resumed conversation still holds the rule and the earlier recall
+        INFO["skipped"] = "resume"
+        return None
+    notes = load_store(store_path(d.get("cwd") or os.getcwd()))
+    text = f"{WORKSPACE_RULE}\n{S.MEMORY_RULE}"
+    if any(n.get("status", "active") == "active" for n in notes):
+        body = full_recall(notes, _env_int("AUTOMEM_FULL_RECALL_CHARS", 12_000))
+        text += "\n\nYour persistent workspace notes (saved in earlier sessions):\n" + S.wrap_memory(body, "workspace notes")
+        INFO["recall_chars"] = len(body)
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
+
+
+def full_stop(d: dict) -> None:
+    text = str(d.get("last_assistant_message") or "").strip()
+    if len(text) < 40:
+        return None
+    path = store_path(d.get("cwd") or os.getcwd())
+    with S.locked(path):  # the MCP server's write_note holds the same lock
+        notes = load_store(path)
+        taken = {str(n.get("name")) for n in notes}
+        base = name = f"session {time.strftime('%Y-%m-%d %H:%M:%S')} final answer"
+        k = 2
+        while name in taken:
+            name, k = f"{base} ({k})", k + 1
+        prev = [n for n in notes if n.get("source") == "autosave" and n.get("type") == "result"
+                and n.get("status", "active") == "active"]
+        if prev:
+            prev[-1]["status"] = "superseded"
+        notes.append({"name": name, "text": S.redact(text)[:20_000], "type": "result", "source": "autosave",
+                      "time": time.strftime("%Y-%m-%d %H:%M:%S"), "session": str(d.get("session_id", "")),
+                      "files": [], "supersedes": str(prev[-1].get("name", "")) if prev else "", "status": "active"})
+        S.write_private(path, json.dumps({"version": 2, "notes": notes}, indent=1))
+    INFO["autosaved_chars"] = len(text)
+    return None
+
+
 def session_start(d: dict) -> dict | None:
+    if workspace_on():
+        return full_session_start(d)
     if not notes_on():
         return None
     f = notes_file(d.get("cwd") or os.getcwd())
@@ -251,7 +355,11 @@ def session_start(d: dict) -> dict | None:
 
 
 def stop(d: dict) -> None:
-    if not notes_on() or d.get("stop_hook_active"):
+    if d.get("stop_hook_active"):
+        return None
+    if workspace_on():
+        return full_stop(d)
+    if not notes_on():
         return None
     text = str(d.get("last_assistant_message") or "").strip()
     if len(text) < 40:  # acknowledgements and empty turns are not worth recalling
@@ -272,15 +380,32 @@ def main() -> None:
         d = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
         d = {}
+    t0, error = time.perf_counter(), ""
     try:
         if event == "pre_compact":
             print(HANDOFF)  # stdout becomes instructions for the compaction summary
+            INFO["handoff"] = True
             return
         out = {"post_tool_use": post_tool_use, "session_start": session_start, "stop": stop}.get(event, lambda _: None)(d)
         if out:
             print(json.dumps(out))
+            spec = out.get("hookSpecificOutput", {})
+            if "additionalContext" in spec:
+                INFO["context_chars"] = len(spec["additionalContext"])
+            if "updatedToolOutput" in spec:
+                INFO["preview"] = True
     except Exception as exc:  # a memory hook must never break the session
+        error = f"{type(exc).__name__}: {exc}"
         print(f"automem hook error ({event}): {exc}", file=sys.stderr)
+    finally:
+        log = os.environ.get("AUTOMEM_TIMING_LOG")
+        if log:
+            try:
+                with open(log, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps({"event": event, "ms": round(1000 * (time.perf_counter() - t0), 2),
+                                         "error": error, **INFO}) + "\n")
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

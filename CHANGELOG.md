@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**Claude Code plugin: full AutoMemory v2 mode** (`AUTOMEM_WORKSPACE=on`).
+- Session start adds the note rule and recalls the shared note store, the one the `automem-mcp` server writes with
+  `write_note`. Recall is skipped on resume, where the conversation still holds it.
+- Stop autosaves into the same store, each answer superseding the previous one.
+- `AUTOMEM_TIMING_LOG` records every hook call with its duration.
+
 **Large windows and per-session settings.**
 - `MemoryHooks(..., compact_at=400_000)` sets the reset point in tokens.
 - `preview_max_tokens` (default 16,000) caps the preview threshold, so that with a 1M-token window, 100K-token
@@ -13,7 +19,7 @@
   value outside it, with an error naming the range. The plugin falls back to the default instead.
 - The plugin's sizes can be given in tokens (`AUTOMEM_PREVIEW_TOKENS`, `AUTOMEM_PREVIEW_KEEP_TOKENS`,
   `AUTOMEM_RECALL_TOKENS`), or as a share of Claude Code's compaction window (`AUTOMEM_PREVIEW_SHARE`).
-- `docs/settings.md` lists all 54 settings with their defaults, ranges and where each default comes from.
+- `docs/settings.md` lists all 58 settings with their defaults, ranges and where each default comes from.
 
 ## 0.3.0 (2026-11-20): framework adapters
 

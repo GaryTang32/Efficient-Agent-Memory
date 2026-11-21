@@ -1,6 +1,6 @@
 # Settings reference
 
-AutoMemory has **54 settings** in four places. None is hard-coded: each has a default, and each can be set by the
+AutoMemory has **58 settings** in four places. None is hard-coded: each has a default, and each can be set by the
 user. The ranges are wide on purpose. They refuse values that cannot work, such as a reset after the window is full
 or a negative size, not values that are merely unmeasured. The library refuses an out-of-range value with an error
 naming the accepted range. The Claude Code plugin falls back to the default instead, because a hook must never break
@@ -10,7 +10,7 @@ a session.
 |---|---|---|
 | [Library and adapters](#library-and-adapters) (`MemorySkill`, `MemoryHooks`, every adapter) | 16 | Keyword arguments; per session with `start_session(task, ...)` or `next_session(...)` |
 | [MCP server](#mcp-server) (`automem-mcp`) | 7 | Environment variables |
-| [Claude Code plugin](#claude-code-plugin) | 14 | Environment variables, in your shell or the `env` block of Claude Code's `settings.json` |
+| [Claude Code plugin](#claude-code-plugin) | 18 | Environment variables, in your shell or the `env` block of Claude Code's `settings.json` |
 | [Bench technique](#bench-technique-research) (`automem:...` specs) | 17 | Spec options, for research runs on the bench |
 
 **Measured or chosen.**
@@ -117,6 +117,10 @@ falls back to the default. Claude Code's own `CLAUDE_CODE_AUTO_COMPACT_WINDOW` d
 | `AUTOMEM_RETENTION_DAYS` | 14 | 1 – 3,650, or `0` = keep | Chosen (security) |
 | `AUTOMEM_OUTPUT_MB` | 200 | 1 – 100,000 | Chosen (security) |
 | `AUTOMEM_REDACT` | `on` | `on` / `off` | Chosen (security): secrets are replaced before anything is saved |
+| `AUTOMEM_WORKSPACE` | `off` | `on` / `off` | Full AutoMemory v2 mode: the note rule, recall of the shared note store at session start (skipped on resume), autosave into it. Pair with the `automem-mcp` server for the note tools |
+| `AUTOMEM_STORE` | this project's folder `/store` | a directory | The shared note store; give the MCP server the same directory as `EAM_MEMORY_DIR` |
+| `AUTOMEM_FULL_RECALL_CHARS` | 12,000 | 500 – 400,000 | Chosen: the recall budget in full mode (about 3,000 tokens), newest notes first, the rest listed by name |
+| `AUTOMEM_TIMING_LOG` | unset | a file | One JSON line per hook call: event, milliseconds, what it did |
 
 **Precedence for the preview threshold:**
 1. `AUTOMEM_PREVIEW_TOKENS`;

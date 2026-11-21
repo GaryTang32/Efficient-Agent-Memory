@@ -39,6 +39,10 @@ or add the repository as a plugin marketplace in Claude Code and install `autome
 | `AUTOMEM_REDACT` | `on` | Replace secrets with `[REDACTED:kind]` before saving outputs and notes |
 | `AUTOMEM_RETENTION_DAYS` | `14` | Saved outputs older than this are deleted; `0` keeps them |
 | `AUTOMEM_OUTPUT_MB` | `200` | Saved outputs per project are kept under this size, oldest deleted first |
+| `AUTOMEM_WORKSPACE` | `off` | `on`: full AutoMemory v2 mode. Session start adds the note rule and recalls the shared note store, but not on resume. Stop autosaves into it, each answer superseding the previous one. Add the `automem-mcp` server (from `pip install efficient-agent-memory`) for the `write_note` and `read_notes` tools, with `EAM_MEMORY_DIR` set to the same store |
+| `AUTOMEM_STORE` | project folder `/store` | The shared note store directory |
+| `AUTOMEM_FULL_RECALL_CHARS` | `12000` | Recall budget in full mode |
+| `AUTOMEM_TIMING_LOG` | — | Append one JSON line per hook call (event, ms, what it did) |
 
 Saved files are owner-only and written atomically. Recalled notes reach the model as a `<memory>` block marked as
 data, never as instructions. See [SECURITY.md](../../SECURITY.md).
