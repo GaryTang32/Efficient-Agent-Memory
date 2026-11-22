@@ -1,10 +1,11 @@
 # Test plan: does AutoMemory v2 work inside Claude Code, and does it beat Claude Code on its own?
 
-**Status:** agreed in four review rounds (2026-11-21); not yet run. This document is frozen once the pilot has
-passed and before the main runs start (section 13).
+**Status:** agreed in four review rounds (2026-11-21). Two pilots have run (sections 16 and 17). The main runs have
+not run: **the revised plan in section 17 is documented and waits to be run.** This document is frozen once a pilot
+has passed and before the main runs start (section 13).
 
-**Model:** Claude Sonnet only. **Cost:** about $113 for the required tiers, plus about $32 for an optional tier
-decided after the pilot.
+**Model:** Claude Sonnet only. **Cost so far:** pilots $4.66 and $1.50 (plus $1.10 for two aborted starts). **The
+revised main runs:** about $62.
 
 ## 1. The question
 
@@ -343,6 +344,106 @@ without another checkpoint, under a hard cap of $138 from this point (the second
 
 If R100 runs cost more than $6, R100 drops to 3 instances to stay inside the cap.
 
+**Outcome:** the second pilot did not pass every gate, so this rule did not start the main runs. Section 17 has the
+results and the revised plan.
+
+## 17. Second pilot, and the revised plan (2026-11-21; documented, not yet run)
+
+**Status:** waiting. Nothing in "The revised plan" below has run yet. It needs a go-ahead when it is picked up.
+
+### What the second pilot found
+
+The second pilot cost $1.50 and took 13 minutes. It ran R100 with the daily inbox (A and V2 × 1, 10 days) and one F2
+workday (A and V2, 5 issues).
+
+| Gate | Result | Why |
+|---|---|---|
+| G1 Logging | Fail (harness bug) | F2 runs write no answer-key file, but the gate expects one |
+| G2 Isolation | Pass | No session saw another run's files. No session tried a hidden folder or searched the whole disk |
+| G3 Realistic baseline | Pass | |
+| G4 Cold days | Fail | The daily system-prompt line did not make days cold. Every resumed day read all of yesterday from the cache (up to 64.6K tokens). Claude Code evidently keeps that line out of the cached part of the prompt |
+| G5 Mechanisms fire | Fail | R100 compacted once in 10 days: A on day 10, at 67K tokens. V2 never compacted, and wrote no notes in the long session (it wrote one every day in the first pilot). The inbox was read every day |
+| G6 Grader | Pass | No malformed answers, no refusals |
+| G7 Noise | Not applicable | No A/A′ pair in this pilot |
+| G8 Cost | Fail (far cheaper) | R100: $0.57 per 10-day run (A), $0.45 (V2). F2: $0.24 per workday |
+| G9 Hooks | Pass | 58 hook calls, 0 errors, median 1.4 ms |
+
+- **The inbox did not fill the context.** The agents read it on day 1 by dumping it and searching for words such as
+  "write off", "found", "short", and for numbers. After that they used 3 model calls a day, and the context grew
+  about 4K tokens a day. With a 100K window, Claude Code compacts at about 67K.
+- **Mistakes came from searches that missed a write-off.** Once a day's answer was wrong, it stayed wrong, because
+  each day builds on the last. A scored 60/70 and V2 58/70.
+- **Coding is leaner still.** Sonnet fixed each Django issue in 3 calls (search, edit, run the tests). The context
+  peaked at 22K tokens, and each issue cost about $0.05. Both arms resolved 5/5.
+
+**What this means.** On these workloads, Claude Code with Sonnet keeps its context small by itself: sessions do not
+approach compaction, so large bills from 500K contexts do not arise here. So far AutoMemory has shown an effect
+only across sessions (cell N), where Claude Code's own auto memory wrote nothing.
+
+### The revised plan
+
+| Cell | What | Arms × instances | Estimate |
+|---|---|---|---|
+| **N** | As validated in the first pilot (unchanged task and prompt), 10 days | A, A′, A+, V2 × 6; A0, L × 4 | ~$31 |
+| **R100** | **30 days instead of 10**, with the inbox. At about 4K tokens a day it should compact near days 10, 20 and 30, at Claude Code's normal threshold | A, V2, A+ × 4 | ~$25 ($1.50–2 a run) |
+| **F2** | As validated | A, L, V2 × 8 workdays | ~$6 |
+| **Total** | | | **~$62**, with hard caps of $45 (N), $35 (R100) and $12 (F2) |
+
+**Rule changes:**
+- **G4 is dropped.** Days stay warm (1-minute gaps), the same for every arm. Warm days make big contexts cheap, so they
+  understate any saving from a slimmer context. Beside the measured cost, report a **next-morning cost** worked out
+  from the logs: each day's first cache read priced as a cache write.
+- **The daily system-prompt line is removed.** It does not change the cache, so it only moves the setup away from
+  Claude Code as shipped.
+- **G5:** every R100 run compacts at least twice. V2 writing and recalling notes is checked in cell N; in R100 it
+  is recorded. **R100 instance 0 runs first.** If it compacts fewer than twice in any arm, R100 stops and the
+  result is reported before anything else is spent on it.
+- **G1:** F2 runs are not expected to have an answer-key file.
+- **G8 estimates:** N $0.97 per run, R100 $1.75 per 30-day run, F2 $0.24 per workday.
+
+### Code changes to make before running (none made yet)
+
+1. `scripts/analyze_cc_test.py`:
+   - G1 skips `key.json` for F2 runs.
+   - G4 becomes a recorded figure (the share of warm days).
+   - The next-morning cost goes into the arm table; it needs the cache-write and cache-read prices.
+   - G5 as above.
+   - Update `ESTIMATE`.
+2. `scripts/run_cc_test.py`: remove `system_line` and the `--append-system-prompt` argument.
+3. Tests: update `tests/test_cc_test_harness.py` for the above, and add a 30-day check to `tests/test_cc_ledger.py`
+   (the oracle reproduces the key of a 30-day instance with the inbox).
+4. Run the full suite and the offline rehearsal, then commit before launching.
+
+### How to run (after the changes)
+
+```bash
+P=results/cc_test/main
+# Cell N: instances 0-3 with all six arms, 4-5 with A, A', A+ and V2 (pairs stay on the same instances)
+.venv/bin/python scripts/run_cc_test.py --cell N --arms A A2 A0 Aplus L V2 --instances 4 --first-instance 0 \
+  --days 10 --gap-min 1 --cap-usd 30 --out $P/N
+.venv/bin/python scripts/run_cc_test.py --cell N --arms A A2 Aplus V2 --instances 2 --first-instance 4 \
+  --days 10 --gap-min 1 --cap-usd 15 --out $P/N
+# Cell R100: instance 0 first; continue only if every arm compacted at least twice
+.venv/bin/python scripts/run_cc_test.py --cell R100 --arms A V2 Aplus --instances 1 --first-instance 0 \
+  --days 30 --gap-min 1 --cap-usd 10 --out $P/R100
+.venv/bin/python scripts/run_cc_test.py --cell R100 --arms A V2 Aplus --instances 3 --first-instance 1 \
+  --parallel 3 --days 30 --gap-min 1 --cap-usd 25 --out $P/R100
+# Cell F2: 8 workdays
+.venv/bin/python scripts/run_cc_test.py --cell F2 --arms A L V2 --instances 8 --first-instance 0 \
+  --gap-min 1 --cap-usd 12 --out $P/F2
+# Analysis, then the report (docs/results.md, and a one-line verdict in the README)
+.venv/bin/python scripts/analyze_cc_test.py $P/N $P/R100 $P/F2
+```
+
+Expected wall time: about 2 hours each for N and R100, and under an hour for F2. The three cells can run side by
+side. As before, raw results stay under `results/` (git-ignored); only the code, this plan and the final report are
+committed.
+
+**Risks known in advance:**
+- How small a session gets after compaction was measured only once (on the last day), so 30 days may give two
+  compactions rather than three. The instance-0 check covers this.
+- In a 30-day run an early mistake carries through every later day, so accuracy per run will be lumpy.
+
 ## Decision log
 
 | Round | Decisions |
@@ -352,3 +453,4 @@ If R100 runs cost more than $6, R100 drops to 3 instances to stay inside the cap
 | 3 | Margins the data can meet (−5 points; F2 ±10 points with 8 workdays). The matrix, the tiered budget, the pilot gates, the full mode on the package's MCP server, the offline rehearsal, a check with a 61-minute gap, a checkpoint after the pilot, the deliverables |
 | 4 | Sonnet only (attribution arms kept on Sonnet). R500 optional, decided at the checkpoint. A leaner Sonnet pilot. Budget: tiers 1 and 2 (≈ $113; total about $209). Sonnet-only limits stated. Compaction window kept at 500K (400K would behave the same in this test) |
 | 5 | After the pilot (section 16): the daily inbox in R cells, a new system line each day, the test's code and Claude Code's per-session folders hidden, gates G2–G8 amended, A+ added to R100, L dropped from R100, R500 dropped, a runner spending cap, the second pilot, and the go-ahead rule with a $138 cap |
+| 6 | After the second pilot (section 17): the inbox did not fill the context and the system line did not make days cold, so the main runs did not start. Revised plan documented for a later run: N and F2 as validated, R100 at 30 days with an instance-0 check, G4 dropped (warm days, plus a next-morning cost from the logs), the system line removed, G1 and G5 fixed. About $62 |
