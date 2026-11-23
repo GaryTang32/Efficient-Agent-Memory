@@ -17,7 +17,8 @@ methods that measured best on an open **test bench** (`eam`), which this reposit
 
 [What it does](#what-this-repo-does) · [Install](#install) · [Quick start](#quick-start-pick-your-agent) ·
 [How it works](#how-automemory-works) · [Methodology](#methodology) · [Results](#results-at-a-glance) ·
-[Use the bench](#use-the-bench-eam) · [Security](#security) · [Roadmap](#roadmap)
+[Compared](#how-eam-differs-from-other-approaches) · [Use the bench](#use-the-bench-eam) · [Security](#security) ·
+[Roadmap](#roadmap)
 
 </div>
 
@@ -267,6 +268,37 @@ definitions: [`docs/methodology.md`](docs/methodology.md).
 
 Every table, the validation round, the plugin pilots and the 27 methods with their papers are in
 [**docs/results.md**](docs/results.md).
+
+---
+
+## How EAM differs from other approaches
+
+Most memory tools do one of three things: summarize the history when the window fills, store facts for later
+retrieval, or keep a notes file. EAM works at the points where context is saved cheaply: a large output is previewed
+as it arrives, the history is reset once, and each session's answer is saved and recalled in the next session without
+relying on the model. It makes no model calls of its own except the rare reset.
+
+| Approach | What it does | How EAM differs | Measured here |
+|---|---|---|---|
+| **Claude Code: autocompact and microcompact** | Summarizes the conversation when it nears the window; clears old tool results | Previews large outputs as they arrive, resets once at a share of the window you choose, and puts notes back after a reset | Neutral inside Claude Code (same accuracy, cost within ±10%). In two later pilots Sonnet sessions stayed at 22–66K tokens, so compaction rarely fired |
+| **Claude Code: auto memory and dreaming** | The model saves lasting knowledge (who you are, your feedback, project facts). Dreaming tidies it in the background after at least 24 hours and 5 sessions, or on `/dream`. Its rules say not to save in-progress work | Saves the work in progress: exact figures and the newest answer, recalled in the very next session; also works outside Claude Code | On a multi-day task, auto memory wrote nothing in 25 sessions. Arms that carried the previous day forward scored 100%, against 57–76% for Claude Code as shipped. Dreaming not measured: it needs 24 hours |
+| **A notes file: `CLAUDE.md`, `AGENTS.md`, or a NOTES.md prompt** | You, or the agent when told to, keep a file that is loaded each session | Saves the answer without relying on the model, caps what recall may take, recalls only the newest answer, marks recalled text as data, and redacts secrets | A one-line NOTES.md instruction matched AutoMemory across sessions in Claude Code. If you only use Claude Code, start there |
+| **Claude API: memory tool and context editing** | The memory tool (`memory_20250818`) lets the model read and write files in a memory folder that your code stores. Context editing (beta) clears old tool results or thinking blocks | Recall and autosave happen by themselves, outputs are previewed when they arrive, and any provider works | Not measured here |
+| **Claude API: server-side compaction (beta)** | The API summarizes earlier context when the prompt reaches a trigger (150K tokens by default) | Carries notes and a recap across sessions, not only within one conversation; any provider works | Not measured here |
+| **Memory services: Mem0, Zep, Letta (MemGPT), LangMem** | Extract facts with model calls and store them with embeddings or in a graph, then retrieve them by similarity. Letta's agent edits its own memory blocks | No model or embedding calls in its hooks (a few milliseconds), plain JSON or SQLite storage, no runtime dependencies. Recall is a capped list of notes, not similarity search | Not measured here. Similar research systems (MemoryOS, LightMem, Nemori) scored 0.2–0.5 lower than plain notes on the bench |
+| **Rolling summaries and sliding windows** | Summarize or drop old turns at every step | Resets once, so the cached prompt is not rewritten every step | Methods that trim every step cost up to 6× more on the bench, because they break the prompt cache |
+| **A large window with prompt caching** | Keep everything; cached re-sends cost 0.1× of the input price | Keeps the prompt small with previews and one reset, at a point you choose (`compact_at`) | Matched the full-context ceiling's accuracy at 58–85% of its cost, with about 35% of its peak prompt |
+| **One-shot recaps from papers: ReSum, NVIDIA's handoff** | Replace the history with one summary or recap | Both are built in as the `compaction` switch, together with previews and the in-step guard | NVIDIA's recap alone ran out of window in about 1 session in 5, and resolved 5 fewer of 100 Django issues |
+
+**When something else is the better choice:**
+- **You only use Claude Code** and work continues from day to day: a line in `CLAUDE.md` telling it to keep NOTES.md
+  did as well in the pilot. The plugin adds the automatic recap and previews.
+- **You need search over many facts** (thousands of memories, user profiles): use a vector or graph store.
+- **You want memory kept tidy over weeks:** Claude Code's dreaming does that, and it can run alongside EAM.
+
+**Where EAM fits:** your own agent loop or a framework agent, work that spans sessions, a cost target, and no extra
+model calls. The Claude Code pilots are in the [test plan](docs/plans/2026-11-21-automem-vs-claude-code-autocompact.md)
+(sections 16 and 17).
 
 ---
 
