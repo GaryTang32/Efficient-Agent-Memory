@@ -278,6 +278,26 @@ retrieval, or keep a notes file. EAM works at the points where context is saved 
 as it arrives, the history is reset once, and each session's answer is saved and recalled in the next session without
 relying on the model. It makes no model calls of its own except the rare reset.
 
+### At a glance
+
+✓ yes · ✗ no · *Partly* as noted
+
+| Approach | When it acts | Carries work in progress to the next session | Shrinks large tool outputs as they arrive | Keeps the prompt cache (no rewrite every step) | Extra model calls | Works with any agent or provider |
+|---|---|---|---|---|---|---|
+| **EAM (AutoMemory)** | On each tool output, once at 75% of the window, at session start and end | ✓ automatic: the newest answer and the notes | ✓ head + tail + a pointer | ✓ one reset | Only the reset's summary | ✓ library, adapters, MCP server, Claude Code plugin |
+| Claude Code autocompact and microcompact | When the context nears the window; old tool results cleared | ✗ within one session | *Partly:* Bash output above 30K characters goes to a file | *Mostly:* one summary per compaction | One summary per compaction | ✗ Claude Code and the Agent SDK |
+| Claude Code auto memory and dreaming | When the model decides to save; dreaming after 24 hours and 5 sessions | ✗ its rules exclude in-progress work | ✗ | ✓ it does not edit the history | A background run per dream | ✗ Claude Code |
+| A notes file (`CLAUDE.md`, `AGENTS.md`, a NOTES.md prompt) | When the model writes it; loaded at session start | *Partly:* only what the model writes | ✗ | ✓ | None | ✓ |
+| Claude API memory tool | When the model calls it | *Partly:* only what the model writes | ✗ | ✓ | None | ✗ Claude API |
+| Claude API context editing (beta) | Clears old tool results or thinking blocks | ✗ | ✗ clears them later | *Partly:* rewrites from the cleared point | None | ✗ Claude API |
+| Claude API server-side compaction (beta) | When the prompt reaches a trigger (150K by default) | ✗ within one conversation | ✗ | ✓ one rewrite per compaction | One summary per compaction | ✗ Claude API |
+| Memory services (Mem0, Zep, Letta, LangMem) | After turns (to extract facts) and before calls (to retrieve them) | ✓ facts, retrieved by similarity | ✗ | Depends on where recall is placed | Usually, to extract and embed facts | ✓ usually with a service or database |
+| Rolling summaries and sliding windows | Every step | ✗ | ✗ | ✗ rewritten every step | A summary per step (summaries) | ✓ |
+| A large window with prompt caching | Never: everything is kept | ✗ | ✗ | ✓ | None | ✓ |
+| One-shot recaps (ReSum, NVIDIA's handoff) | Once, when the window fills | ✗ | ✗ | ✓ | One summary per reset | ✓ built into EAM as a switch |
+
+### In detail
+
 | Approach | What it does | How EAM differs | Measured here |
 |---|---|---|---|
 | **Claude Code: autocompact and microcompact** | Summarizes the conversation when it nears the window; clears old tool results | Previews large outputs as they arrive, resets once at a share of the window you choose, and puts notes back after a reset | Neutral inside Claude Code (same accuracy, cost within ±10%). In two later pilots Sonnet sessions stayed at 22–66K tokens, so compaction rarely fired |
